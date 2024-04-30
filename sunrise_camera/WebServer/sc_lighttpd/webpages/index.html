@@ -1,0 +1,305 @@
+﻿<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<HEAD>
+	<title>Sunrise Camera</title>
+	<link rel="shortcut icon" href="image/favicon.png"/>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" href="CSS/bootstrap.min.css">
+	<script src="js/jquery.min.js"></script>
+	<script src="js/bootstrap.min.js"></script>
+	<script src="js/index.js"></script>
+	<!-- 在页面加载完成后立即执行 JavaScript 代码 -->
+	<script>
+		window.onload = function() {
+			// 获取 display_container 元素
+			var displayContainer = document.getElementById("display_container");
+
+			for (var i = 0; i < 16; i++) {
+				var layout = i + 1;
+
+				// 创建布局容器
+				var layoutDiv = document.createElement("div");
+
+				// 设置布局容器的 id
+				layoutDiv.id = "layout" + (i + 1);
+
+				// 添加类名
+				layoutDiv.className = "layout";
+
+				// 将布局容器添加到 display_container 中
+				displayContainer.appendChild(layoutDiv);
+
+				// 循环生成视频容器
+				for (var j = 0; j < layout; j++) {
+					// 创建视频容器
+					var videoContainer = document.createElement("div");
+					videoContainer.className = "video-container";
+
+					// 创建 video 元素
+					var video = document.createElement("video");
+					video.id = "video" + (i + 1) + "_" + (j + 1);
+					video.muted = true;
+					video.autoplay = true;
+
+					// 创建 canvas 元素
+					var canvas = document.createElement("canvas");
+					canvas.id = "canvas" + (i + 1) + "_" + (j + 1);
+					canvas.className = "canvas";
+
+					// 创建 overlay 元素
+					var overlay = document.createElement("div");
+					overlay.id = "status" + (i + 1) + "_" + (j + 1);
+					overlay.className = "overlay";
+					overlay.style.display = "block";
+
+					// 创建 overlay_alog 元素
+					var overlayAlog = document.createElement("div");
+					overlayAlog.id = "alog_result" + (i + 1) + "_" + (j + 1);
+					overlayAlog.className = "overlay_alog";
+					overlayAlog.style.display = "block";
+
+					// 将 video、canvas、overlay、overlayAlog 添加到 videoContainer 中
+					videoContainer.appendChild(video);
+					videoContainer.appendChild(canvas);
+					videoContainer.appendChild(overlay);
+					videoContainer.appendChild(overlayAlog);
+
+					// 将 videoContainer 添加到布局容器中
+					layoutDiv.appendChild(videoContainer);
+				}
+			}
+		};
+	</script>
+	<style>
+		body {
+			margin: 0;
+			padding: 0;
+			font-family: Lato, Helvetica, Arial, sans-serif;
+			font-size: 14px;
+			line-height: 1.72222;
+			color: #34495e;
+			background-color: #fff;
+		}
+
+		.wrap {
+			min-width: 100%;
+			position: absolute;
+			background: #eff3f6 bottom;
+			min-height: 100%;
+			overflow: hidden;
+		}
+
+		.left {
+			margin-left: 0px;
+			position: absolute;
+			box-sizing: border-box;
+			width: 15%;
+			height: 100%;
+			background: #F6F6F6 bottom;
+		}
+
+		.right {
+			box-sizing: border-box;
+			float: left;
+			box-sizing: border-box;
+			padding-left: 15%;
+			overflow-y: overlay;
+			overflow-x: hidden;
+			clear: both;
+			min-width: 100%;
+			min-height: 500px;
+			height: 100%;
+		}
+
+		.left-align {
+			text-align: left;
+			margin-left: 5%;
+		}
+
+		.container {
+			position: relative;
+		}
+
+		.container video {
+			position: relative;
+			z-index: 0;
+		}
+
+		.display-flex {
+			display: inline-flex;
+		}
+
+		/* 设置 span 元素的宽度并补齐文本 */
+		li span {
+			display: inline-block;
+			width: 200px;
+			/* 设置宽度为 200 像素，根据需要调整 */
+			text-align: right;
+			white-space: nowrap;
+			/* 禁止换行 */
+		}
+
+		/* 使用 ::after 伪元素补齐文本 */
+		li span::after {
+			content: '';
+			display: inline-block;
+			width: 100%;
+			/* 将伪元素宽度设为父元素宽度的 100% */
+		}
+
+		#solutionForm label {
+			margin-right: 20px;
+			/* 调整合适的外部间距 */
+		}
+
+		#display_container {
+			display: flex;
+			flex-wrap: wrap;
+			justify-content: center;
+		}
+
+		.layout {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(640px, 1fr));
+			/* 自适应列，每列最小宽度200px */
+			grid-auto-rows: minmax(100px, auto);
+			/* 自适应行，每行最小高度100px */
+			gap: 10px;
+			/* 间隔 */
+			width: 100%;
+			height: 100%;
+			margin: 10px;
+			position: relative;
+			border: 2px solid #000;
+		}
+
+		.video {
+			aspect-ratio: 16/9;
+			/* 保持 video 的纵横比为16:9 */
+			background-color: #ccc;
+			/* 视觉上区分各个 video */
+		}
+
+		.video-container {
+			width: 100%;
+			height: 100%;
+			position: relative;
+		}
+
+		video {
+			width: 100%;
+			height: 100%;
+		}
+
+		canvas {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+		}
+
+		.overlay {
+			position: absolute;
+			top: 0;
+			right: 0;
+			z-index: 1;
+			background-color: rgba(0, 0, 0, 0);
+			/* 完全透明背景 */
+			color: white;
+			padding: 10px;
+		}
+
+		.overlay_alog {
+			position: absolute;
+			top: 20px;
+			right: 0;
+			z-index: 1;
+			background-color: rgba(0, 0, 0, 0);
+			/* 完全透明背景 */
+			color: white;
+			padding: 10px;
+		}
+
+		/* 不同背景颜色 */
+		.video-container {
+			background-color: #000000;
+			/* 全黑背景 */
+		}
+
+		/* 设置 form-control-sm 元素固定宽度为 180px */
+		.form-control-sm {
+			width: 180px;
+		}
+
+		input[type="text"],
+		input[type="number"] {
+			width: 180px;
+		}
+
+		.info-icon {
+			display: inline-block;
+			width: 20px;
+			height: 20px;
+			text-align: center;
+			line-height: 20px;
+			border-radius: 50%; /* 将问号放在圆圈中 */
+			background-color: #2196F3; /* 背景色 */
+			color: #FFF; /* 文本颜色 */
+			margin-left: 5px; /* 调整问号图标与文本之间的间距 */
+			font-weight: bold; /* 问号加粗 */
+			text-decoration: none;
+		}
+	</style>
+</HEAD>
+
+<BODY>
+	<div class="wrap">
+		<!-- 左边内容 -->
+		<div id="id_left" class="left">
+			<center>
+				<div class="buttons">
+					<button class="btn btn-primary" style="margin-top: 20px;" onclick=show_solution_configs()>配置应用方案</button>
+				</div>
+				</br>
+				<div>
+					<p id="solution_status">
+						当前无方案运行
+					</p>
+				</div>
+			</center>
+			<div id="copyright">
+				<!-- 这个元素将由 JavaScript 动态更新 -->
+			</div>
+		</div>
+		<!-- 右边内容 -->
+		<div id="id_right" class="tab-content right">
+			<div id="solution_configs" style="display: none;">
+				<div>
+					<div id="solutionConfig"></div>
+					<div id="div_ctl_btns" style="text-align: center;">
+						<button class="btn btn-primary" type="button" id="submitButton"
+							onclick=switch_solution()>提交</button>
+						<button class="btn btn-primary" type="button" onclick=save_solution_configs()>保存当前配置</button>
+						<button class="btn btn-warning" type="button"
+							onclick=recovery_solution_configs()>恢复默认配置</button>
+					</div>
+				</div>
+			</div>
+			<div id="display_container"></div>
+		</div>
+	</div>
+	<script>
+		// 获取当前年份
+		const currentYear = new Date().getFullYear();
+		// 更新版权信息
+		document.getElementById("copyright").innerHTML =
+			`<div class="text-center p-4" style="background-color: rgba(0, 0, 0, 0.05);">
+			Copyright - ${currentYear} D-Robotics Inc.
+			</div>`;
+	</script>
+</BODY>
+
+</HTML>

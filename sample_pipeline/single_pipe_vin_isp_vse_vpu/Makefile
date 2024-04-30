@@ -1,0 +1,32 @@
+include ../../Makefile.in
+
+TARGET = single_pipe_vin_isp_vse_vpu
+
+SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
+OBJS :=  $(SRCS:.c=.o)
+
+LIBS += -lmultimedia
+
+.PHONY: all clean
+
+
+%.o:%.c
+	@mkdir -p $(abspath $(dir $@))
+	$(CC) $(INCS) $(CFLAGS) -c $< $(LIBS) $(LIBSDIR) -o $@
+
+
+$(TARGET):$(OBJS)
+	@mkdir -p $(abspath $(dir $@))
+	$(CC) -O0 -o $@ $(OBJS) $(CFLAGS) ${LIBSDIR} $(LIBS)
+
+all: ${TARGET}
+
+install: ${TARGET}
+	@echo "Generate deployment package"
+	@mkdir -p install
+	@cp -arf ${TARGET} install/
+	@cp -arf config install/
+	@cp -arf generate_custom_config/ install/
+
+clean:
+	rm -rf ${OBJS} ${TARGET} install

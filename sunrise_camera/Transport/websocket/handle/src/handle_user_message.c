@@ -1,0 +1,440 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#include "communicate/sdk_common_cmd.h"
+#include "communicate/sdk_common_struct.h"
+#include "communicate/sdk_communicate.h"
+
+#include "utils/nalu_utils.h"
+#include "utils/mthread.h"
+#include "utils/utils_log.h"
+#include "utils/common_utils.h"
+#include "utils/stream_define.h"
+#include "utils/stream_manager.h"
+#include "utils/cJSON.h"
+
+#include "Handshake.h"
+#include "Errors.h"
+#include "handle_user_message.h"
+#include "Communicate.h"
+#include "WebsocketWrap.h"
+
+typedef enum {
+	WS_CMD_UNDEFINE = -1,
+	WS_CMD_HEARTBEAT,
+	WS_CMD_SWITCH_SOLUTION,
+	WS_CMD_SNAP,
+	WS_CMD_START_STREAM,
+	WS_CMD_STOP_STREAM,
+	WS_CMD_SYNC_TIME,
+	WS_CMD_SET_BITRATE,
+	WS_CMD_GET_CONFIG,
+	WS_CMD_SAVE_CONFIG,
+	WS_CMD_RECOVERY_CONFIG,
+} WS_CMD_KIND;
+
+void ws_send_respose(ws_list *ws_lst, ws_client *ws_clt, char *msg)
+{
+	ws_message *m = message_new();
+	m->len = strlen(msg);
+	m->msg = malloc(sizeof(char)*(m->len+1) );
+	memset(m->msg, 0, m->len+1);
+	memcpy(m->msg, msg, m->len);
+	if ( (encodeMessage(m)) != CONTINUE) {
+		message_free(m);
+		free(m);
+		return;
+	}
+	list_multicast_one(ws_lst, ws_clt, m);
+	message_free(m);
+	free(m);
+}
+
+static int ws_get_stream_index(int key, int streams[], int stream_count) {
+	for (int i = 0; i < stream_count; i++) {
+		if (streams[i] == key) {
+			return i + 1;
+		}
+	}
+	// 如果未找到匹配的 key，返回 0 表示未找到
+	return 0;
+}
+
+static int ws_send_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_source, unsigned char *data, unsigned int *nalu_len)
+{
+	frame_info info;
+	unsigned int length = 0;
+	unsigned int frame_size = 0;
+
+	if (shm_stream_front(shm_source, &info, &data, &length) == 0) {
+		NALU_t nalu;
+		frame_size = length;
+		int ret = get_annexb_nalu(data + *nalu_len, frame_size - *nalu_len, &nalu);
+		if (ret < 0) {
+			SC_LOGE("[%s][%d] shm_source: %p data: %p length: %u *nalu_len: %d readers:%d",
+					__func__, __LINE__, shm_source, data, length, *nalu_len, shm_stream_readers(shm_source));
+			*nalu_len = 0;
+			return 0;
+		}
+
+		if (ret > 0) *nalu_len += nalu.len + nalu.startcodeprefix_len;    //记录nalu偏移总长
+
+#if 0
+		printf("nal_unit_type:%d data:%p buf:%p len:%u, *nalu_len:%d\n", nalu.nal_unit_type, data,
+					nalu.buf, nalu.len, *nalu_len);
+#endif
+
+		//只发送sps pps i p nalu, 其他抛弃
+		if (nalu.nal_unit_type == 7 || nalu.nal_unit_type == 8
+			|| nalu.nal_unit_type == 1 || nalu.nal_unit_type == 5)
+		{
+			frame_size = nalu.len;
+
+			// 发送数据, 需要发送带头信息的数据给 wfs
+			ws_send_nalu_to_wfs(ws_clt, ws_get_stream_index(info.key, ws_clt->stream_chn, ws_clt->stream_count), info.pts,
+				nalu.buf - nalu.startcodeprefix_len, nalu.len + nalu.startcodeprefix_len);
+			if (nalu.nal_unit_type == 1 || nalu.nal_unit_type == 5)
+			{
+				*nalu_len = 0;
+				int remains = shm_stream_remains(shm_source);
+				if(remains > 10)
+					SC_LOGI("shm_source:%p, framer video pts:%llu length:%d frame_size:%d remains:%d",
+						shm_source, info.pts, length, frame_size, remains);
+
+				//该帧发送完毕，包括sps pps等nalu拆分完毕，可以释放
+				shm_stream_post(shm_source);
+			}
+			// 会出现只有 7 和 8 类型的包
+			if ((nalu.nal_unit_type == 7 || nalu.nal_unit_type == 8) && length == nalu.len + 4) {
+				*nalu_len = 0;
+				//该帧发送完毕，包括sps pps等nalu拆分完毕，可以释放
+				shm_stream_post(shm_source);
+			}
+		}
+		// 调试过程中遇到出现 type == 23 的情况，不解析直接抛弃掉
+		else {
+			*nalu_len = 0;
+			shm_stream_post(shm_source);
+		}
+	}
+	return 0;
+}
+
+static void *ws_push_stream_thread(void *ptr)
+{
+	tsThread *privThread = (tsThread*)ptr;
+	ws_client *ws_clt = (ws_client*)privThread->pvThreadData;
+	unsigned char* data[32] = {NULL};
+	unsigned int nalu_len[32] = {0};
+	int i= 0;
+
+	// 设置线程名，方便知道退出的是什么线程
+	mThreadSetName(privThread, __func__);
+
+	// 从共享内存中读取码流数据
+	while (privThread->eState == E_THREAD_RUNNING) {
+		for (i = 0; i < ws_clt->stream_count; i++) {
+			ws_send_shm_stream_to_wfs(ws_clt, ws_clt->shm_source[i], data[i], &nalu_len[i]);
+		}
+	}
+	for (i = 0; i < ws_clt->stream_count; i++) {
+		if (ws_clt->shm_source[i] != NULL) {
+			shm_stream_destory(ws_clt->shm_source[i]); // 销毁共享内存读句柄
+			ws_clt->shm_source[i] = NULL;
+		}
+	}
+	mThreadFinish(privThread);
+	return NULL;
+}
+
+static int _do_start_stream(ws_client *ws_clt)
+{
+	int ret = 0;
+	int i = 0;
+	T_SDK_VENC_INFO venc_chn_info;
+	int num_enabled_channels = 0;
+
+	// 遍历所有通道
+	for (i = 0; i < 32; i++) {
+		if (ws_clt->venc_chns_status & (1 << i)) {
+			ws_clt->stream_chn[num_enabled_channels++] = i;
+			// 如果已找到最多 channel_count 个使能的通道，则退出循环
+			if (num_enabled_channels >= ws_clt->stream_count) {
+				break;
+			}
+		}
+	}
+	for (i = 0; i < num_enabled_channels; i++) {
+		venc_chn_info.channel = ws_clt->stream_chn[i];
+		ret = SDK_Cmd_Impl(SDK_CMD_VPP_VENC_CHN_PARAM_GET, (void*)&venc_chn_info);
+		if(ret < 0)
+		{
+			SC_LOGE("SDK_Cmd_Impl: SDK_CMD_VPP_VENC_CHN_PARAM_GET Error, ERRCODE: %d\n", ret);
+			return -1;
+		}
+
+		SC_LOGI("venc chn %d id %s, type: %d, frameRate: %d, stream_buf_size: %d",
+			venc_chn_info.channel,
+			venc_chn_info.enable == 1 ? "enable" : "disable", venc_chn_info.type,
+			venc_chn_info.framerate, venc_chn_info.stream_buf_size);
+
+		char shm_id[32] = {0}, shm_name[32] = {0};
+		int type = venc_chn_info.type;
+		sprintf(shm_id, "ws%d_id_%s_chn%d", ws_clt->socket_id, type == 96 ? "h264" :
+									(type == 265 ? "h264" :
+									(type == 26) ? "jpeg" : "other"), venc_chn_info.channel);
+		sprintf(shm_name, "name_%s_chn%d", type == 96 ? "h264" :
+									(type == 265 ? "h264" :
+									(type == 26) ? "jpeg" : "other"), venc_chn_info.channel);
+		ws_clt->shm_source[i] = shm_stream_create(shm_id, shm_name,
+			STREAM_MAX_USER, venc_chn_info.framerate,
+			venc_chn_info.stream_buf_size,
+			SHM_STREAM_READ, SHM_STREAM_MALLOC);
+
+		SC_LOGW("shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
+			shm_id, shm_name, STREAM_MAX_USER, venc_chn_info.framerate, venc_chn_info.stream_buf_size);
+
+		if (ws_clt->shm_source[i] != NULL) {
+			printf("shm_source is successfully created\n");
+		} else {
+			printf("Failed to create shm_source\n");
+			return -1;
+		}
+	}
+
+	memset(&ws_clt->stream_thread, 0, sizeof(tsThread));
+	ws_clt->stream_thread.pvThreadData = (void*)ws_clt;
+	mThreadStart(ws_push_stream_thread, &ws_clt->stream_thread, E_THREAD_JOINABLE);
+	return 0;
+}
+
+static int _do_add_sms(int channel)
+{
+	int ret = 0;
+	T_SDK_VENC_INFO venc_chn_info;
+	// 从camera模块获取chn0的码流配置
+	venc_chn_info.channel = channel; // venc 的 channel 需要作为入参，这个应该通过camera模块的参数get出来，这里先写死好了
+	ret = SDK_Cmd_Impl(SDK_CMD_VPP_VENC_CHN_PARAM_GET, (void*)&venc_chn_info);
+	if(ret < 0)
+	{
+		SC_LOGE("SDK_Cmd_Impl: SDK_CMD_VPP_VENC_CHN_PARAM_GET Error, ERRCODE: %d", ret);
+		return -1;
+	}
+
+	SC_LOGI("venc chn %d id %s, type: %d, frameRate: %f\n", venc_chn_info.channel,
+		venc_chn_info.enable == 1 ? "enable" : "disable", venc_chn_info.type,
+		venc_chn_info.framerate);
+
+	T_SDK_RTSP_SRV_PARAM sms_param = { 0 };
+	int type = venc_chn_info.type;
+
+	sprintf(sms_param.prefix, "stream_chn%d.h264", venc_chn_info.channel);
+
+	sms_param.audio.enable = 0;
+	sms_param.video.enable = 1;
+
+	if (type == 96)
+		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H264;
+	else
+		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H264; // 目前只支持H264
+
+	sprintf(sms_param.shm_id, "rtsp_id_%s_chn%d", type == 96 ? "h264" :
+								(type == 265 ? "h264" :
+								(type == 26) ? "jpeg" : "other"), venc_chn_info.channel);
+	sprintf(sms_param.shm_name, "name_%s_chn%d", type == 96 ? "h264" :
+								(type == 265 ? "h264" :
+								(type == 26) ? "jpeg" : "other"), venc_chn_info.channel);
+	sms_param.stream_buf_size = venc_chn_info.stream_buf_size;
+	sms_param.video.framerate = venc_chn_info.framerate;
+
+	SC_LOGW("prefix: %s, port: %d, video_framerate: %d, shm_id: %s, shm_name: %s, stream_buf_size: %d",
+		sms_param.prefix, sms_param.port,
+		sms_param.video.framerate,
+		sms_param.shm_id, sms_param.shm_name, sms_param.stream_buf_size);
+
+	ret = SDK_Cmd_Impl(SDK_CMD_RTSP_SERVER_ADD_SMS, (void*)&sms_param);
+	if(ret < 0)
+	{
+		SC_LOGE("SDK_Cmd_Impl: SDK_CMD_RTSP_SERVER_START Error, ERRCODE: %d", ret);
+		return -1;
+	}
+	return ret;
+}
+
+int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
+{
+	int i, ret = 0;
+	cJSON *root = cJSON_Parse(msg);
+	cJSON *print_json = NULL;
+	WS_CMD_KIND cmd_kind = WS_CMD_UNDEFINE;
+	char cmd_context[WS_MAX_BUFFER] = {0};
+	char ws_msg[WS_MAX_BUFFER + 64] = {0};
+	int stream_chn_count = -1;
+	unsigned int venc_chns_status = 0;
+
+	if (root == NULL) return -1;
+
+	SC_LOGD("handle_user_msg: %s\n", cJSON_Print(root));
+
+	cmd_kind = cJSON_GetObjectItem(root, "kind")->valueint;
+
+	switch (cmd_kind)
+	{
+		case WS_CMD_HEARTBEAT:
+			// do nothing
+			break;
+		case WS_CMD_SWITCH_SOLUTION:
+			strcpy(cmd_context, cJSON_GetObjectItem(root, "param")->valuestring);
+			// 1. 先stop、反初始化vin 、isp、vps、 venc 和 rtps 删除sms
+			SC_LOGI("========================== DEL SMS ==========================");
+			SDK_Cmd_Impl(SDK_CMD_RTSP_SERVER_DEL_SMS, NULL);
+			SC_LOGI("==================== STOP VPP SOLUTION ======================");
+			SDK_Cmd_Impl(SDK_CMD_VPP_STOP, NULL);
+			SC_LOGI("==================== UNINIT VPP SOLUTION ====================");
+			SDK_Cmd_Impl(SDK_CMD_VPP_UNINIT, NULL);
+
+			SC_LOGI("================= START NEW VPP SOLUTION ====================");
+
+			// 2. 更新配置结构体
+			SDK_Cmd_Impl(SDK_CMD_VPP_SET_SOLUTION_CONFIG, (void *)cmd_context);
+			print_json = cJSON_Parse(cmd_context);
+			SC_LOGD("%s", cJSON_Print(print_json));
+			free(print_json);
+
+			// 3. 开始启动应用
+			ret = SDK_Cmd_Impl(SDK_CMD_VPP_INIT, NULL);
+			if(ret < 0)
+			{
+				SC_LOGE("SDK_Cmd_Impl: SDK_CMD_VPP_INIT Error, ERRCODE: %d", ret);
+				ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"app_status\": \"请检查sensor是否连接正常\"}");
+				return -1;
+			}
+			usleep(500*1000);
+			ret = SDK_Cmd_Impl(SDK_CMD_VPP_START, NULL);
+			if(ret < 0)
+			{
+				SC_LOGE("SDK_Cmd_Impl: SDK_CMD_VPP_START Error, ERRCODE: %d", ret);
+				ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"app_status\": \"请检查sensor是否连接正常\"}");
+				return -1;
+			}
+			usleep(500*1000);
+			// 根据编码通道的配置添加推流
+			SDK_Cmd_Impl(SDK_CMD_VPP_GET_VENC_CHN_STATUS, (void*)&venc_chns_status);
+			SC_LOGD("venc_chns_status: %u", venc_chns_status);
+			for (i = 0; i < 32; i++) {
+				if (venc_chns_status & (1 << i))
+					_do_add_sms(i); // 给对应的编码数据建立rtsp推流sms
+			}
+			ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"Status\":\"200\"}");
+			break;
+		case WS_CMD_SNAP:
+			strcpy(cmd_context, cJSON_GetObjectItem(root, "param")->valuestring);
+			SC_LOGD("WS_CMD_SNAP type: %s", cmd_context);
+			int pipe_dev_id = 0;
+			if (strncmp(cmd_context, "raw", strlen(cmd_context)) == 0) {
+				ret = SDK_Cmd_Impl(SDK_CMD_VPP_GET_RAW_FRAME, (void *)&pipe_dev_id);
+			}
+			else if (strncmp(cmd_context, "yuv", strlen(cmd_context)) == 0) {
+				ret = SDK_Cmd_Impl(SDK_CMD_VPP_GET_YUV_FRAME, (void *)&pipe_dev_id);
+			}
+			else if (strncmp(cmd_context, "jpeg", strlen(cmd_context)) == 0) {
+				ret = SDK_Cmd_Impl(SDK_CMD_VPP_JPEG_SNAP, (void *)&pipe_dev_id);
+			}
+			else {
+				SC_LOGE("WS cmder undefined");
+			}
+
+			if(ret < 0)
+			{
+				SC_LOGE("SDK_Cmd_Impl Error, ERRCODE: %d", ret);
+				return -1;
+			}
+			break;
+		case WS_CMD_START_STREAM:
+			stream_chn_count = cJSON_GetObjectItem(root, "param")->valueint;
+			// 避免重复拉流
+			if (ws_clt->shm_source[stream_chn_count-1])
+				break;
+
+			SC_LOGI("start ws venc stream for %d channels", stream_chn_count);
+			// 根据编码通道的配置添加推流
+			SDK_Cmd_Impl(SDK_CMD_VPP_GET_VENC_CHN_STATUS, (void*)&venc_chns_status);
+			SC_LOGD("venc_chns_status: %u", venc_chns_status);
+			ws_clt->stream_count = stream_chn_count;
+			ws_clt->venc_chns_status = venc_chns_status;
+			ret = _do_start_stream(ws_clt);
+			if (ret < 0) {
+				SC_LOGE("start websocket push stream failed");
+			}
+			break;
+		case WS_CMD_STOP_STREAM:
+			SC_LOGI("stop ws venc stream for %d channels", cJSON_GetObjectItem(root, "param")->valueint);
+			mThreadStop(&ws_clt->stream_thread);
+			break;
+		case WS_CMD_SYNC_TIME:
+			SC_LOGD("sync pc time to : %d", cJSON_GetObjectItem(root, "param")->valueint);
+			long int pc_t = cJSON_GetObjectItem(root, "param")->valueint;
+// #if __GLIBC_MINOR__ == 31
+			struct timespec res;
+			res.tv_sec = pc_t;
+			clock_settime(CLOCK_REALTIME,&res);
+// #else
+// 			stime(&pc_t);
+// #endif
+			break;
+		case WS_CMD_GET_CONFIG:
+		{
+			// 获取场景配置
+			memset(ws_msg, '\0', sizeof(ws_msg));
+			char config_str[WS_MAX_BUFFER] = {0};
+			SDK_Cmd_Impl(SDK_CMD_VPP_GET_SOLUTION_CONFIG, (void *)config_str);
+			sprintf(ws_msg, "{\"kind\":%d,\"solution_configs\": %s}", WS_CMD_GET_CONFIG, config_str);
+			SC_LOGD("ws_msg: %s", ws_msg);
+			ws_send_respose(ws_lst, ws_clt, ws_msg);
+
+			break;
+		}
+		case WS_CMD_SET_BITRATE:
+		{
+			int bitrate = cJSON_GetObjectItem(root, "param")->valueint;
+			SC_LOGD("bitrate = %d", bitrate);
+			SDK_Cmd_Impl(SDK_CMD_VPP_VENC_BITRATE_SET, (void*)&bitrate);
+			break;
+		}
+		case WS_CMD_SAVE_CONFIG:
+		{
+			SC_LOGI("Save vpp solution config");
+			char cfg_str[WS_MAX_BUFFER] = {0};
+			strcpy(cfg_str, cJSON_GetObjectItem(root, "param")->valuestring);
+			print_json = cJSON_Parse(cfg_str);
+			SC_LOGD("%s", cJSON_Print(print_json));
+			free(print_json);
+			SDK_Cmd_Impl(SDK_CMD_VPP_SAVE_SOLUTION_CONFIG, (void *)cfg_str);
+			break;
+		}
+		case WS_CMD_RECOVERY_CONFIG:
+		{
+			memset(ws_msg, '\0', sizeof(ws_msg));
+			char config_str[WS_MAX_BUFFER] = {0};
+			SDK_Cmd_Impl(SDK_CMD_VPP_RECOVERY_SOLUTION_CONFIG, (void *)config_str);
+			sprintf(ws_msg, "{\"kind\":%d,\"solution_configs\": %s}", WS_CMD_GET_CONFIG, config_str);
+			SC_LOGD("ws_msg: %s", ws_msg);
+			ws_send_respose(ws_lst, ws_clt, ws_msg);
+			break;
+		}
+		case WS_CMD_UNDEFINE:
+		default:
+			SC_LOGE("WS cmder undefined");
+	}
+
+	if (root)
+		cJSON_free(root);
+
+	return 0;
+}

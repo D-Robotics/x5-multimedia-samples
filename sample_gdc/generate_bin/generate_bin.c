@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
 	char* config_file = "./custom_config/gdc_bin_custom_config.json";
 	char* gdc_bin_file = "./gdc.bin";
 
-	while((c = getopt(argc, argv, "c:o::h")) != -1) {
+	while((c = getopt(argc, argv, "c:o:h")) != -1) {
 		switch (c)
 		{
 		case 'c':
@@ -44,7 +44,8 @@ int main(int argc, char** argv) {
 			return 0;
 		}
 	}
-	
+
+	printf("gdc_bin_file: %s\n", gdc_bin_file);
 	ret = gdc_gen_bin_and_config(gdc_bin_file, config_file);
 	if (ret != 0) {
 		printf("Generate bin file failed\n");

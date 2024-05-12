@@ -42,7 +42,7 @@ static struct option const long_options[] = {
 int read_gdc_config(gdc_info_s * gdc_info, hb_mem_common_buf_t *bin_buf);
 int gdc_config_free(hb_mem_common_buf_t *bin_buf);
 int read_nv12_image(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image);
-int create_and_run_vflow(gdc_info_s *gdc_info, 
+int create_and_run_vflow(gdc_info_s *gdc_info,
 						hbn_vnode_image_t *input_image,
 						hb_mem_common_buf_t *bin_buf);
 
@@ -55,12 +55,12 @@ static void print_help() {
 int main(int argc, char** argv) {
 	hbn_vnode_image_t input_image = {0};
 	int ret = 0;
-	gdc_info_s gdc_info = {0}; 
+	gdc_info_s gdc_info = {0};
 	int opt_index = 0;
 	int c = 0;
 	hb_mem_common_buf_t bin_buf = {0};
 
-	while((c = getopt_long(argc, argv, "f:i:j:p:q:m:h", 
+	while((c = getopt_long(argc, argv, "f:i:j:p:q:m:h",
 							long_options, &opt_index)) != -1) {
 		switch (c)
 		{
@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
 			gdc_info.output_height = atoi(optarg);
 			break;
 		case 'h':
-		
+
 		default:
 			print_help();
 			return 0;
@@ -95,7 +95,7 @@ int main(int argc, char** argv) {
 	}
 
 	printf("Using input image:%s, config file:%s\n \
-			input:%dx%d  output:%dx%d\n", 
+			input:%dx%d  output:%dx%d\n",
 			gdc_info.image_file, gdc_info.gdc_bin_file,
 			gdc_info.input_width, gdc_info.input_height,
 			gdc_info.output_width, gdc_info.output_height);
@@ -139,7 +139,7 @@ int read_gdc_config(gdc_info_s *gdc_info, hb_mem_common_buf_t *bin_buf) {
 	fclose(fp);
 
 	memset(bin_buf, 0, sizeof(hb_mem_common_buf_t));
-	alloc_flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD | HB_MEM_USAGE_CPU_READ_OFTEN | 
+	alloc_flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD | HB_MEM_USAGE_CPU_READ_OFTEN |
 				HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
 	ret = hb_mem_alloc_com_buf(file_size, alloc_flags, bin_buf);
 	if (ret != 0 || bin_buf->virt_addr == NULL) {
@@ -163,7 +163,7 @@ int read_nv12_image(gdc_info_s *gdc_info, hbn_vnode_image_t *input_image) {
 	alloc_flags = HB_MEM_USAGE_MAP_INITIALIZED |
 				HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD |
 				HB_MEM_USAGE_CPU_READ_OFTEN |
-		      	HB_MEM_USAGE_CPU_WRITE_OFTEN |
+				HB_MEM_USAGE_CPU_WRITE_OFTEN |
 				HB_MEM_USAGE_CACHED;
 	ret = hb_mem_alloc_graph_buf(gdc_info->input_width,
 								gdc_info->input_height,
@@ -189,21 +189,21 @@ int gdc_config_free(hb_mem_common_buf_t *bin_buf) {
 	return hb_mem_free_buf(bin_buf->fd);
 }
 
-int create_and_run_vflow(gdc_info_s *gdc_info, 
+int create_and_run_vflow(gdc_info_s *gdc_info,
 							hbn_vnode_image_t *input_image,
 							hb_mem_common_buf_t *bin_buf) {
 	int ret = 0;
 	uint32_t hw_id = 0;
 	uint32_t chn_id = 0;
 	hbn_vflow_handle_t vflow_fd;
-	hbn_vnode_handle_t vnode_fd;
+	hbn_vnode_handle_t gdc_vnode_fd;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
 	hbn_vnode_image_t output_img = {0};
 	gdc_attr_t gdc_attr = {0};
 	int timeout = 1000;
 	char *output_image_path = "./gdc_output_nv12.yuv";
 
-	ret = hbn_vnode_open(HB_GDC, hw_id, AUTO_ALLOC_ID, &vnode_fd);
+	ret = hbn_vnode_open(HB_GDC, hw_id, AUTO_ALLOC_ID, &gdc_vnode_fd);
 	ERR_CON_EQ(ret, 0);
 	gdc_attr.config_addr = bin_buf->phys_addr;
 	gdc_attr.config_size = bin_buf->size;
@@ -212,46 +212,47 @@ int create_and_run_vflow(gdc_info_s *gdc_info,
 	gdc_attr.total_planes = 2;
 	gdc_attr.div_width = 0;
 	gdc_attr.div_height = 0;
-	ret = hbn_vnode_set_attr(vnode_fd, &gdc_attr);
+	ret = hbn_vnode_set_attr(gdc_vnode_fd, &gdc_attr);
 	ERR_CON_EQ(ret, 0);
 
-	gdc_ichn_attr_t gdc_ichn_attr;
+	gdc_ichn_attr_t gdc_ichn_attr = {0};
 	gdc_ichn_attr.input_width = gdc_info->input_width;
 	gdc_ichn_attr.input_height = gdc_info->input_height;
 	gdc_ichn_attr.input_stride = gdc_info->input_width;
-	ret = hbn_vnode_set_ichn_attr(vnode_fd, chn_id, &gdc_ichn_attr);
+	ret = hbn_vnode_set_ichn_attr(gdc_vnode_fd, chn_id, &gdc_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
-	gdc_ochn_attr_t gdc_ochn_attr;
+	gdc_ochn_attr_t gdc_ochn_attr = {0};
 	gdc_ochn_attr.output_width = gdc_info->output_width;
 	gdc_ochn_attr.output_height = gdc_info->output_height;
 	gdc_ochn_attr.output_stride = gdc_info->output_width;
-	ret = hbn_vnode_set_ochn_attr(vnode_fd, chn_id, &gdc_ochn_attr);
+	ret = hbn_vnode_set_ochn_attr(gdc_vnode_fd, chn_id, &gdc_ochn_attr);
 	ERR_CON_EQ(ret, 0);
 	alloc_attr.buffers_num = 3;
 	alloc_attr.is_contig = 1;
-	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
-					| HB_MEM_USAGE_CPU_WRITE_OFTEN
-					| HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(vnode_fd, chn_id, &alloc_attr);
+	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN |
+					HB_MEM_USAGE_CPU_WRITE_OFTEN |
+					HB_MEM_USAGE_CACHED;
+	ret = hbn_vnode_set_ochn_buf_attr(gdc_vnode_fd, chn_id, &alloc_attr);
 	ERR_CON_EQ(ret, 0);
 
 	ret = hbn_vflow_create(&vflow_fd);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_add_vnode(vflow_fd, vnode_fd);
+	ret = hbn_vflow_add_vnode(vflow_fd, gdc_vnode_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_start(vflow_fd);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_sendframe(vnode_fd, chn_id, input_image);
+	printf("111\n");
+	ret = hbn_vnode_sendframe(gdc_vnode_fd, chn_id, input_image);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_getframe(vnode_fd, chn_id, timeout, &output_img);
+	ret = hbn_vnode_getframe(gdc_vnode_fd, chn_id, timeout, &output_img);
 	ERR_CON_EQ(ret, 0);
 	dump_2plane_yuv_to_file(output_image_path,
 					output_img.buffer.virt_addr[0],
 					output_img.buffer.virt_addr[1],
 					output_img.buffer.size[0],
 					output_img.buffer.size[1]);
-	ret = hbn_vnode_releaseframe(vnode_fd, chn_id, &output_img);
+	ret = hbn_vnode_releaseframe(gdc_vnode_fd, chn_id, &output_img);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_stop(vflow_fd);
 	ERR_CON_EQ(ret, 0);

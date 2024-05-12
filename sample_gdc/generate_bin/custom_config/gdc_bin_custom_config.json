@@ -11,7 +11,7 @@
     },
     "outputRes": [
         1280,
-        960 
+        960
     ],
     "transformations": [
         {
@@ -33,9 +33,9 @@
                 "w": 1280,
                 "h": 960
             },
-			"param": {
-				"customTransformation": "./custom_config.txt"
-			}
+            "param": {
+                "customTransformation": "./custom_config.txt"
+            }
         }
     ],
     "mode": "semiplanar420",

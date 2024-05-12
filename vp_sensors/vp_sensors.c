@@ -330,15 +330,45 @@ static int32_t check_sensor_reg_value(vcon_propertie_t vcon_props,
 	return -1;
 }
 
-#define MIPI_HOST_FREQ_PATH "echo %d > /sys/class/vps/mipi_host%d/param/snrclk_freq"
-#define MIPI_HOST_MCLK_ENABLE_PATH "echo %d > /sys/class/vps/mipi_host%d/param/snrclk_en"
+// Function to write frequency to MIPI host
+static void write_mipi_host_freq(int freq, int host_id) {
+	char path[256];
+	FILE *file;
+
+	// Construct path to the file
+	snprintf(path, 256, "/sys/class/vps/mipi_host%d/param/snrclk_freq", host_id);
+
+	// Open the file for writing
+	file = fopen(path, "w");
+	if (file) {
+		// Write frequency to the file
+		fprintf(file, "%d", freq);
+		fclose(file);
+	}
+}
+
+// Function to enable MIPI host clock
+static void enable_mipi_host_clock(int enable, int host_id) {
+	char path[256];
+	FILE *file;
+
+	// Construct path to the file
+	snprintf(path, 256, "/sys/class/vps/mipi_host%d/param/snrclk_en", host_id);
+
+	// Open the file for writing
+	file = fopen(path, "w");
+	if (file) {
+		// Write enable value to the file
+		fprintf(file, "%d", enable);
+		fclose(file);
+	}
+}
+
 
 int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
 {
 	int32_t ret = 0, i = 0, j = 0, k = 0, index = 0;
-	char mipi_host_cmd[256];
 	uint32_t frequency = 24000000;
-	uint32_t mclk_enable = 1;
 	char sensor_name_with_prefix[256] = {0};
 
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
@@ -353,14 +383,9 @@ int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
 
 		// 如果该vcon使能了，检测该vcon上是否有连接 sensor
 		if (vcon_props_array[i].status[0] == 'o') { // okay
-			/*enable mclk */
-			memset(mipi_host_cmd, 0, sizeof(mipi_host_cmd));
-			snprintf(mipi_host_cmd, sizeof(mipi_host_cmd), MIPI_HOST_FREQ_PATH, frequency, i);
-			system(mipi_host_cmd);
-			memset(mipi_host_cmd, 0, sizeof(mipi_host_cmd));
-			mclk_enable = 1;
-			snprintf(mipi_host_cmd, sizeof(mipi_host_cmd), MIPI_HOST_MCLK_ENABLE_PATH, mclk_enable, i);
-			system(mipi_host_cmd);
+			/* enable mclk */
+			write_mipi_host_freq(frequency, i);
+			enable_mipi_host_clock(1, i);
 
 			for (j = 0; j < vp_get_sensors_list_number(); j++) {
 				// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
@@ -395,9 +420,7 @@ int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
 			}
 
 			// Disable frequency
-			mclk_enable = 0;
-			snprintf(mipi_host_cmd, sizeof(mipi_host_cmd), MIPI_HOST_MCLK_ENABLE_PATH, mclk_enable, i);
-			system(mipi_host_cmd);
+			enable_mipi_host_clock(0, i);
 		}
 	}
 
@@ -409,9 +432,7 @@ int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
 int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 {
 	int32_t ret = 0, i = 0, j = 0;
-	char mipi_host_cmd[256];
 	uint32_t frequency = 24000000;
-	uint32_t mclk_enable = 1;
 
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
 
@@ -437,13 +458,9 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 				}
 			}
 
-			memset(mipi_host_cmd, 0, sizeof(mipi_host_cmd));
-			snprintf(mipi_host_cmd, sizeof(mipi_host_cmd), MIPI_HOST_FREQ_PATH, frequency, i);
-			system(mipi_host_cmd);
-			memset(mipi_host_cmd, 0, sizeof(mipi_host_cmd));
-			mclk_enable = 1;
-			snprintf(mipi_host_cmd, sizeof(mipi_host_cmd), MIPI_HOST_MCLK_ENABLE_PATH, mclk_enable, i);
-			system(mipi_host_cmd);
+			/* enable mclk */
+			write_mipi_host_freq(frequency, i);
+			enable_mipi_host_clock(1, i);
 
 			// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
 			ret = check_sensor_reg_value(vcon_props_array[i], sensor_config);
@@ -455,9 +472,7 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 			}
 
 			// Disable frequency
-			mclk_enable = 0;
-			snprintf(mipi_host_cmd, sizeof(mipi_host_cmd), MIPI_HOST_MCLK_ENABLE_PATH, mclk_enable, i);
-			system(mipi_host_cmd);
+			enable_mipi_host_clock(0, i);
 		}
 	}
 

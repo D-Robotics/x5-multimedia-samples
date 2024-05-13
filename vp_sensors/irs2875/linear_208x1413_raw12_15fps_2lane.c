@@ -41,8 +41,8 @@ static camera_config_t irs2875_camera_config = {
 	.format = RAW12,
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
-	.gpio_enable = 0x07,
-	.gpio_level = 0,
+	.gpio_enable_bit = 0x07,
+	.gpio_level_bit = 0x00,
 	.mipi_cfg = &irs2875_mipi_config,
 	.calib_lname = "disable",
 };

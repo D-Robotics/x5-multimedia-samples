@@ -32,8 +32,8 @@ static camera_config_t sc230ai_camera_config = {
 	.format = RAW10,
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
-	.gpio_enable = 0x07,
-	.gpio_level = 0,
+	.gpio_enable_bit = 0x07,
+	.gpio_level_bit = 0,
 	.mipi_cfg = &sc230ai_mipi_config,
 	.calib_lname = "disable",
 };

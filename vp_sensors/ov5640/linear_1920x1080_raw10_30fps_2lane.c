@@ -33,8 +33,8 @@ static camera_config_t camera_config = {
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
 	.mipi_cfg = &mipi_config,
-	.gpio_enable = 0x01,	//NOTICE: OV5640+SVB board, only set pwd gpio low level, not high level.
-	.gpio_level = 1,
+	.gpio_enable_bit = 0x03,
+	.gpio_level_bit = 0x01,
 	.calib_lname = "disable",
 };
 

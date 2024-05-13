@@ -33,8 +33,8 @@ static camera_config_t camera_config = {
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
 	.mipi_cfg = &mipi_config,
-	.gpio_enable = 0x01,
-	.gpio_level = 0,
+	.gpio_enable_bit = 0x01,
+	.gpio_level_bit = 0x00,
 	.calib_lname = "disable",
 };
 

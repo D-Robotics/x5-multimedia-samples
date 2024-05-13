@@ -394,10 +394,10 @@ int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
 				/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
 				for (k = 0; k < 8; ++k) {
 					if (vcon_props_array[i].gpio_oth[k] != 0) {
-						if ((vp_sensor_config_list[j]->camera_config->gpio_enable & (1 << k)) != 0) {
+						if ((vp_sensor_config_list[j]->camera_config->gpio_enable_bit & (1 << k)) != 0) {
 							// gpio_level should be from sensor config and sensor spec
 							enable_sensor_pin(vcon_props_array[i].gpio_oth[k],
-								(1 - vp_sensor_config_list[j]->camera_config->gpio_level));
+								(1 - vp_sensor_config_list[j]->camera_config->gpio_level_bit));
 						}
 					}
 				}
@@ -452,10 +452,10 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
 			for (j = 0; j < 8; ++j) {
 				if (vcon_props_array[i].gpio_oth[j] != 0) {
-					if (sensor_config->camera_config->gpio_enable != 0) {
+					if (sensor_config->camera_config->gpio_enable_bit != 0) {
 						// gpio_level should be from sensor config and sensor spec
 						enable_sensor_pin(vcon_props_array[i].gpio_oth[j],
-							(1 - sensor_config->camera_config->gpio_level));
+							(1 - sensor_config->camera_config->gpio_level_bit));
 					}
 				}
 			}

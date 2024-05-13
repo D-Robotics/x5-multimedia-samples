@@ -394,7 +394,7 @@ int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
 				/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
 				for (k = 0; k < 8; ++k) {
 					if (vcon_props_array[i].gpio_oth[k] != 0) {
-						if (vp_sensor_config_list[j]->camera_config->gpio_enable != 0) {
+						if ((vp_sensor_config_list[j]->camera_config->gpio_enable & (1 << k)) != 0) {
 							// gpio_level should be from sensor config and sensor spec
 							enable_sensor_pin(vcon_props_array[i].gpio_oth[k],
 								(1 - vp_sensor_config_list[j]->camera_config->gpio_level));

@@ -79,7 +79,7 @@ void common_attr_config() {
 	g_hbn_cfg[0].vin_attr.vin_ochn_attr[VIN_MAIN_FRAME].roi_attr.roi_y = 0;
 	g_hbn_cfg[0].vin_attr.vin_ochn_attr[VIN_MAIN_FRAME].roi_attr.roi_width = 1280;
 	g_hbn_cfg[0].vin_attr.vin_ochn_attr[VIN_MAIN_FRAME].roi_attr.roi_height = 960;
-	g_hbn_cfg[0].vin_attr.vin_attr_ex.ex_attr_type = VIN_STATIC_MCLK_ATTR;
+	g_hbn_cfg[0].vin_attr.vin_attr_ex.vin_attr_ex_mask = 0x80;
 	g_hbn_cfg[0].vin_attr.vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000;
 	if (g_hbn_cfg[0].vin_attr.vin_ichn_attr.width > 8192)
 		printf("x5 vin_ichn_attr setting error, vin_ichn_attr width value should from 0 to 8192\n");
@@ -413,6 +413,7 @@ static hbn_vnode_handle_t creat_vin_node(int pipe_index) {
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
 	uint32_t chn_id = 0;
+	uint64_t vin_attr_ex_mask = 0;
 
 	hw_id = g_hbn_cfg[pipe_index].vin_attr.vin_node_attr.cim_attr.mipi_rx;
 
@@ -428,8 +429,19 @@ static hbn_vnode_handle_t creat_vin_node(int pipe_index) {
 	ret = hbn_vnode_set_ochn_attr(vin_node_handle, chn_id, &g_hbn_cfg[pipe_index].vin_attr.vin_ochn_attr[VIN_MAIN_FRAME]);
 	ERR_CON_EQ(ret, 0);
 	// 设置额外属性，for mclk
-	ret = hbn_vnode_set_attr_ex(vin_node_handle, &g_hbn_cfg[pipe_index].vin_attr.vin_attr_ex);
-	ERR_CON_EQ(ret, 0);
+	vin_attr_ex_mask = g_hbn_cfg[pipe_index].vin_attr.vin_attr_ex.vin_attr_ex_mask;
+	if (vin_attr_ex_mask) {
+		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
+			if ((vin_attr_ex_mask & (1 << i)) == 0)
+				continue;
+
+			g_hbn_cfg[pipe_index].vin_attr.vin_attr_ex.ex_attr_type = i;
+			/*we need to set hbn_vnode_set_attr_ex in a loop*/
+			ret = hbn_vnode_set_attr_ex(vin_node_handle, &g_hbn_cfg[pipe_index].vin_attr.vin_attr_ex);
+			ERR_CON_EQ(ret, 0);
+		}
+	}
+
 
 	return vin_node_handle;
 }

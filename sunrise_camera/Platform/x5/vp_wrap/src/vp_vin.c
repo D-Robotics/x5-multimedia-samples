@@ -30,10 +30,11 @@ int32_t vp_vin_init(vp_vflow_contex_t *vp_vflow_contex)
 	vin_node_attr->cim_attr.mipi_rx = vp_vflow_contex->mipi_csi_rx_index;
 	uint32_t hw_id = vin_node_attr->cim_attr.mipi_rx;
 	uint32_t chn_id = 0;
+	uint64_t vin_attr_ex_mask = 0;
 	hbn_vnode_handle_t *vin_node_handle = &vp_vflow_contex->vin_node_handle;
 	vin_attr_ex_t vin_attr_ex;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
-	vin_attr_ex.ex_attr_type = VIN_STATIC_MCLK_ATTR;
+	vin_attr_ex.vin_attr_ex_mask = 0x80;
 	vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
 
 	// 创建pipeline中的vin node
@@ -52,8 +53,18 @@ int32_t vp_vin_init(vp_vflow_contex_t *vp_vflow_contex)
 	vin_ochn_attr->ddr_en = 1;
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, chn_id, vin_ochn_attr);
 	SC_ERR_CON_EQ(ret, 0, "hbn_vnode_set_ochn_attr");
-	ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
-	SC_ERR_CON_EQ(ret, 0, "hbn_vnode_set_attr_ex");
+	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+	if (vin_attr_ex_mask) {
+		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
+			if ((vin_attr_ex_mask & (1 << i)) == 0)
+				continue;
+
+			vin_attr_ex.ex_attr_type = i;
+			/*we need to set hbn_vnode_set_attr_ex in a loop*/
+			ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
+			SC_ERR_CON_EQ(ret, 0, "hbn_vnode_set_attr_ex");
+		}
+	}
 	alloc_attr.buffers_num = 3;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN

@@ -112,6 +112,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
 	uint32_t chn_id = 0;
+	uint64_t vin_attr_ex_mask = 0;
 
 	sensor_config = pipe_contex->sensor_config;
 	vin_node_attr = sensor_config->vin_node_attr;
@@ -120,7 +121,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
-	vin_attr_ex.ex_attr_type = VIN_STATIC_MCLK_ATTR;
+	vin_attr_ex.vin_attr_ex_mask = 0x80;
 	vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
 
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
@@ -134,8 +135,18 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	// 设置输出通道的属性
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, chn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
-	ERR_CON_EQ(ret, 0);
+	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+	if (vin_attr_ex_mask) {
+		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
+			if ((vin_attr_ex_mask & (1 << i)) == 0)
+				continue;
+
+			vin_attr_ex.ex_attr_type = i;
+			/*we need to set hbn_vnode_set_attr_ex in a loop*/
+			ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
+			ERR_CON_EQ(ret, 0);
+		}
+	}
 
 	return 0;
 }

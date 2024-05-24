@@ -107,12 +107,16 @@ int rtsp_server_add_sms(void* param, unsigned int length)
 
 	rtspserver_info_t* sms_param = (rtspserver_info_t*)param;
 
-	rtspsvr_wrap_add_sms(handle->instance, sms_param->prefix,
+	int ret = rtspsvr_wrap_add_sms(handle->instance, sms_param->prefix,
 		sms_param->audio.enable, sms_param->audio.type, sms_param->audio.samplerate,
 		sms_param->audio.bitspersample, sms_param->audio.channels,
 		sms_param->video.enable, sms_param->video.type, sms_param->video.framerate,
 		sms_param->shm_id, sms_param->shm_name, sms_param->stream_buf_size,
 		sms_param->video.framerate);
+	if(ret != 0){
+		SC_LOGE("rtspsvr_wrap_add_sms failed stream_buf_size: %d, framerate:%d\n",
+		sms_param->stream_buf_size, sms_param->video.framerate);
+	}
 	SC_LOGI("rtsp_server_add_sms stream_buf_size: %d, framerate:%d\n",
 		sms_param->stream_buf_size, sms_param->video.framerate);
 

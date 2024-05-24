@@ -14,6 +14,7 @@
 #include "utils/common_utils.h"
 #include "utils/cJSON.h"
 #include "utils/cJSON_Direct.h"
+#include "utils/utils_log.h"
 
 #include "solution_config.h"
 #include "vp_wrap.h"
@@ -180,8 +181,8 @@ int32_t solution_cfg_load_default_config()
 	strcpy(g_solution_config.hardware_capability.chip_type, "");
 	strcpy(g_solution_config.hardware_capability.sensor_list, "");
 	strcpy(g_solution_config.hardware_capability.model_list, "");
-	// strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265/Mjpeg");
-	strcpy(g_solution_config.hardware_capability.codec_type_list, "H264");
+	strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265/Mjpeg");
+	//strcpy(g_solution_config.hardware_capability.codec_type_list, "H264");
 	// 初始化编码码率列表
 	// 标清视频（480p） 256, 512, 768, 1024, 1536, 2048,
 	// 高清视频（720p） 512, 1024, 2048, 3072, 4096, 6144,
@@ -263,9 +264,10 @@ int32_t solution_cfg_load()
 				str_json[file_size] = '\0'; // 添加字符串结束符
 				fclose(fd);
 
-				printf("str_json: %s\n", str_json);
+				SC_LOGI("read config from config file: [%s]\n", str_json);
 				if (cjson_string2object(solution_cfg_key, str_json, &g_solution_config) == NULL)
 				{
+					SC_LOGW("config file parser failed, so use default config .");
 					solution_cfg_load_default_config();
 				}
 				print_solution_cfg(&g_solution_config);

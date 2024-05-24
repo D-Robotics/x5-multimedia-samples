@@ -152,22 +152,47 @@ static int32_t release_output_tensor(hbDNNTensor *output, int32_t len)
 	return 0;
 }
 
+#include <stdio.h>
+#include <time.h>
+
+uint64_t get64BitTimestampMs() {
+    struct timespec ts;
+    uint64_t timestamp;
+
+    clock_gettime(CLOCK_REALTIME, &ts);
+    timestamp = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+
+    return timestamp;
+}
+
 static void *post_process_yolov5s(void *ptr)
 {
 	tsThread *privThread = (tsThread*)ptr;
 	Yolov5PostProcessInfo_t *post_info;
 
+	int count = 0;
 	mThreadSetName(privThread, __func__);
 
 	bpu_handle_t *bpu_handle = (bpu_handle_t *)privThread->pvThreadData;
 	while (privThread->eState == E_THREAD_RUNNING) {
 		if (mQueueDequeueTimed(&bpu_handle->m_output_queue, 100, (void**)&post_info) != E_QUEUE_OK)
 			continue;
-
+			
 		char *results = Yolov5PostProcess(post_info);
 
 		if (results) {
 			if (NULL != bpu_handle->callback) {
+
+				{
+					int pipeline_id = -1;
+					if (bpu_handle->m_userdata)
+						pipeline_id = *(int*)bpu_handle->m_userdata;
+
+					if(count % 3300 == 0){
+						SC_LOGI("[%d] inference:[%s]", pipeline_id, results);
+					}
+					count++;
+				}
 				bpu_handle->callback(results, bpu_handle->m_userdata);
 			} else {
 				SC_LOGI("%s", results);
@@ -264,6 +289,8 @@ static void *inference_yolov5s(void *ptr)
 			SC_LOGI("post process queue full, skip it");
 			cur_ouput_buf_idx++;
 			cur_ouput_buf_idx %= 5;
+
+			usleep(20 * 1000); //睡眠20ms 否则CPU占用 100%
 			continue;
 		}
 

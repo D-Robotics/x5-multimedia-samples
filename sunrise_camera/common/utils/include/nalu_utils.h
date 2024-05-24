@@ -19,7 +19,7 @@ typedef struct
 
 int find_start_code2(unsigned char *data);
 int find_start_code3(unsigned char *data);
-int get_annexb_nalu(unsigned char *frame, int length, NALU_t *nalu);
+int get_annexb_nalu(unsigned char *frame, int length, NALU_t *nalu, int is_h265);
 
 #ifdef __cplusplus
 }  /* extern "C" */

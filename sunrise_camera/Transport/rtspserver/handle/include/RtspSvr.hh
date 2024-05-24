@@ -5,6 +5,7 @@
 #include "BasicUsageEnvironment.hh"
 #include "RTSPServer.hh"
 #include "H264VideoLiveServerMediaSubsession.hh"
+#include "H265VideoLiveServerMediaSubsession.hh"
 #include "LPCMAudioLiveServerMediaSubsession.hh"
 #include "PCMAAudioLiveServerMediaSubsession.hh"
 

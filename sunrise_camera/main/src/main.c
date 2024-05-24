@@ -40,25 +40,38 @@ static int32_t _do_add_sms(int32_t channel)
 
 	T_SDK_RTSP_SRV_PARAM sms_param = { 0 };
 	int32_t type = venc_chn_info.type;
-
-	sprintf(sms_param.prefix, "stream_chn%d.h264", venc_chn_info.channel);
+	char *codec_type_string = "h264";
+	
 
 	sms_param.audio.enable = 0;
 
 	sms_param.video.enable = 1;
-	if (type == 96)
+	if (type == 96){
 		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H264;
-	else
-		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H264; // 目前只支持H264
+		codec_type_string = "h264";
+	}else if(type == 265){
+		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H265; 
+		codec_type_string = "h265";		
+	}else if(type == 26){
+		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_MJPEG;
+		codec_type_string = "jpeg";
+	}else{
+		SC_LOGE("not support codec type [%d],so use h264.", type);
+		codec_type_string = "h264";
+		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H264;
+	}
+
+	sprintf(sms_param.prefix, "stream_chn%d.%s", venc_chn_info.channel, codec_type_string);
 	sprintf(sms_param.shm_id, "rtsp_id_%s_chn%d", type == 96 ? "h264" :
-								(type == 265 ? "h264" :
+								(type == 265 ? "h265" :
 								(type == 26) ? "jpeg" : "other"), venc_chn_info.channel);
 	sprintf(sms_param.shm_name, "name_%s_chn%d", type == 96 ? "h264" :
-								(type == 265 ? "h264" :
+								(type == 265 ? "h265" :
 								(type == 26) ? "jpeg" : "other"), venc_chn_info.channel);
+
 	sms_param.stream_buf_size = venc_chn_info.stream_buf_size;
 	sms_param.video.framerate = venc_chn_info.framerate;
-	SC_LOGW("prefix: %s, port: %d, video_framerate: %d, shm_id: %s, shm_name: %s, stream_buf_size: %d",
+	SC_LOGI("prefix: %s, port: %d, video_framerate: %d, shm_id: %s, shm_name: %s, stream_buf_size: %d",
 		sms_param.prefix, sms_param.port,
 		sms_param.video.framerate,
 		sms_param.shm_id, sms_param.shm_name, sms_param.stream_buf_size);
@@ -351,7 +364,7 @@ int32_t main(int32_t argc, char *argv[]) {
 		return -1;
 	}
 #endif
-
+#if 1
 	ret = module_init();
 	if (ret) {
 		SC_LOGE("module_init failed, ret: %d\n", ret);
@@ -363,8 +376,10 @@ int32_t main(int32_t argc, char *argv[]) {
 		SC_LOGE("module_init failed, ret: %d\n", ret);
 	}
 	usleep(5*1000*1000);
-
 loop:
+#endif
+
+
 	while(1)
 	{
 		usleep(5*1000*1000);

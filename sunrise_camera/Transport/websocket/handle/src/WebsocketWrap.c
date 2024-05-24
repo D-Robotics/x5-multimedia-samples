@@ -302,8 +302,10 @@ void *handleClient(void *args)
 
 	while (1)
 	{
-		if (communicate(n, next, next_len) != CONTINUE)
+		ws_connection_close ret = communicate(n, next, next_len);
+		if (ret != CONTINUE)
 		{
+			printf("communicate is error %d\n", ret);
 			break;
 		}
 
@@ -478,7 +480,10 @@ static void *_ws_wrap_start(void *ptr)
 		memcpy(addr, temp, strlen(temp));
 
 		ws_client *n = client_new(client_socket, addr);
-
+		if(n == NULL){
+			printf("client_new failed so exit(-1) .\n");
+			exit(-1);
+		}
 		/**
 		 * Create client thread, which will take care of handshake and all
 		 * communication with the client.
@@ -487,11 +492,15 @@ static void *_ws_wrap_start(void *ptr)
 							(void *)n)) < 0)
 		{
 			server_error(strerror(errno), server_socket, ws_wrap->m_list);
+			printf("error pthread create failed\n");
+			exit(-1);
 			break;
 		}
 
 		pthread_detach(pthread_id);
 	}
+	printf("Server is exit ... (websocket)\n\n");
+	fflush(stdout);
 
 	close(server_socket);
 	pthread_attr_destroy(&pthread_attr);

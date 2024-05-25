@@ -19,6 +19,18 @@
 
 #define VSE_MAX_CHANNELS 6
 
+// 视频编码参数结构体
+typedef struct {
+	media_codec_id_t codec_type;
+	int32_t width;
+	int32_t height;
+	int32_t frame_rate;
+	uint32_t bit_rate;
+	char input[128];
+	char output[128];
+	int32_t frame_num;
+} EncodeParams;
+
 static media_codec_context_t media_context;
 
 static struct option const long_options[] = {
@@ -30,8 +42,9 @@ static struct option const long_options[] = {
 int32_t running = 0;
 
 int create_and_run_vflow(pipe_contex_t *pipe_contex);
+int encode_init(void *data);
+int encode_deinit(void *data);
 void *read_vse_data(void *contex);
-void *read_vpu_data(void *context);
 
 static void print_help(const char *argv0) {
 	printf("usage: %s [options]\n", argv0);
@@ -39,7 +52,6 @@ static void print_help(const char *argv0) {
 	printf("-s/--sensor                    sensor_index\n");
 	vp_show_sensors_list();
 	printf("----------------- extra options -----------------\n");
-	printf("-e                             enable vse dump\n");
 	printf("-h                             show help message\n");
 }
 
@@ -47,204 +59,21 @@ void signal_handle(int signo) {
 	running = 0;
 }
 
-static int get_rc_params(media_codec_context_t *context,
-			mc_rate_control_params_t *rc_params) {
-	int ret = 0;
-	ret = hb_mm_mc_get_rate_control_config(context, rc_params);
-	if (ret != 0) {
-		printf("hb_mm_mc_get_rate_control_config Failed to get rc params ret=0x%x\n", ret);
-		return -1;
-	}
-	switch (rc_params->mode) {
-	case MC_AV_RC_MODE_H264CBR:
-		rc_params->h264_cbr_params.intra_period = 30;
-		rc_params->h264_cbr_params.intra_qp = 30;
-		rc_params->h264_cbr_params.bit_rate = 5000;
-		rc_params->h264_cbr_params.frame_rate = 30;
-		rc_params->h264_cbr_params.initial_rc_qp = 20;
-		rc_params->h264_cbr_params.vbv_buffer_size = 20;
-		rc_params->h264_cbr_params.mb_level_rc_enalbe = 1;
-		rc_params->h264_cbr_params.min_qp_I = 8;
-		rc_params->h264_cbr_params.max_qp_I = 50;
-		rc_params->h264_cbr_params.min_qp_P = 8;
-		rc_params->h264_cbr_params.max_qp_P = 50;
-		rc_params->h264_cbr_params.min_qp_B = 8;
-		rc_params->h264_cbr_params.max_qp_B = 50;
-		rc_params->h264_cbr_params.hvs_qp_enable = 1;
-		rc_params->h264_cbr_params.hvs_qp_scale = 2;
-		rc_params->h264_cbr_params.max_delta_qp = 10;
-		rc_params->h264_cbr_params.qp_map_enable = 0;
-		break;
-	case MC_AV_RC_MODE_H264VBR:
-		rc_params->h264_vbr_params.intra_qp = 20;
-		rc_params->h264_vbr_params.intra_period = 30;
-		rc_params->h264_vbr_params.intra_qp = 35;
-		break;
-	case MC_AV_RC_MODE_H264AVBR:
-		rc_params->h264_avbr_params.intra_period = 15;
-		rc_params->h264_avbr_params.intra_qp = 25;
-		rc_params->h264_avbr_params.bit_rate = 2000;
-		rc_params->h264_avbr_params.vbv_buffer_size = 3000;
-		rc_params->h264_avbr_params.min_qp_I = 15;
-		rc_params->h264_avbr_params.max_qp_I = 50;
-		rc_params->h264_avbr_params.min_qp_P = 15;
-		rc_params->h264_avbr_params.max_qp_P = 45;
-		rc_params->h264_avbr_params.min_qp_B = 15;
-		rc_params->h264_avbr_params.max_qp_B = 48;
-		rc_params->h264_avbr_params.hvs_qp_enable = 0;
-		rc_params->h264_avbr_params.hvs_qp_scale = 2;
-		rc_params->h264_avbr_params.max_delta_qp = 5;
-		rc_params->h264_avbr_params.qp_map_enable = 0;
-		break;
-	case MC_AV_RC_MODE_H264FIXQP:
-		rc_params->h264_fixqp_params.force_qp_I = 23;
-		rc_params->h264_fixqp_params.force_qp_P = 23;
-		rc_params->h264_fixqp_params.force_qp_B = 23;
-		rc_params->h264_fixqp_params.intra_period = 23;
-		break;
-	case MC_AV_RC_MODE_H264QPMAP:
-		break;
-	case MC_AV_RC_MODE_H265CBR:
-		rc_params->h265_cbr_params.intra_period = 20;
-		rc_params->h265_cbr_params.intra_qp = 30;
-		rc_params->h265_cbr_params.bit_rate = 5000;
-		rc_params->h265_cbr_params.frame_rate = 30;
-		if (context->video_enc_params.width >= 480 ||
-			context->video_enc_params.height >= 480) {
-			rc_params->h265_cbr_params.initial_rc_qp = 30;
-			rc_params->h265_cbr_params.vbv_buffer_size = 3000;
-			rc_params->h265_cbr_params.ctu_level_rc_enalbe = 1;
-		} else {
-			rc_params->h265_cbr_params.initial_rc_qp = 20;
-			rc_params->h265_cbr_params.vbv_buffer_size = 20;
-			rc_params->h265_cbr_params.ctu_level_rc_enalbe = 1;
-		}
-		rc_params->h265_cbr_params.min_qp_I = 8;
-		rc_params->h265_cbr_params.max_qp_I = 50;
-		rc_params->h265_cbr_params.min_qp_P = 8;
-		rc_params->h265_cbr_params.max_qp_P = 50;
-		rc_params->h265_cbr_params.min_qp_B = 8;
-		rc_params->h265_cbr_params.max_qp_B = 50;
-		rc_params->h265_cbr_params.hvs_qp_enable = 1;
-		rc_params->h265_cbr_params.hvs_qp_scale = 2;
-		rc_params->h265_cbr_params.max_delta_qp = 10;
-		rc_params->h265_cbr_params.qp_map_enable = 0;
-		break;
-	case MC_AV_RC_MODE_H265VBR:
-		rc_params->h265_vbr_params.intra_qp = 20;
-		rc_params->h265_vbr_params.intra_period = 30;
-		rc_params->h265_vbr_params.intra_qp = 35;
-		break;
-	case MC_AV_RC_MODE_H265AVBR:
-		rc_params->h265_avbr_params.intra_period = 15;
-		rc_params->h265_avbr_params.intra_qp = 25;
-		rc_params->h265_avbr_params.bit_rate = 2000;
-		rc_params->h265_avbr_params.vbv_buffer_size = 3000;
-		rc_params->h265_avbr_params.min_qp_I = 15;
-		rc_params->h265_avbr_params.max_qp_I = 50;
-		rc_params->h265_avbr_params.min_qp_P = 15;
-		rc_params->h265_avbr_params.max_qp_P = 45;
-		rc_params->h265_avbr_params.min_qp_B = 15;
-		rc_params->h265_avbr_params.max_qp_B = 48;
-		rc_params->h265_avbr_params.hvs_qp_enable = 0;
-		rc_params->h265_avbr_params.hvs_qp_scale = 2;
-		rc_params->h265_avbr_params.max_delta_qp = 5;
-		rc_params->h265_avbr_params.qp_map_enable = 0;
-		break;
-	case MC_AV_RC_MODE_H265FIXQP:
-		rc_params->h265_fixqp_params.force_qp_I = 23;
-		rc_params->h265_fixqp_params.force_qp_P = 23;
-		rc_params->h265_fixqp_params.force_qp_B = 23;
-		rc_params->h265_fixqp_params.intra_period = 23;
-		break;
-	case MC_AV_RC_MODE_H265QPMAP:
-		break;
-	default:
-		ret = HB_MEDIA_ERR_INVALID_PARAMS;
-		break;
-	}
-	return ret;
-}
-
-static int codec_init(pipe_contex_t *pipe_contex){
-	int32_t ret = 0;
-	int32_t channel_idx = 0;
-	int32_t fd_venc = 0;
-
-	mc_video_codec_enc_params_t *params;
-	memset(&media_context, 0x00, sizeof(media_codec_context_t));
-	media_context.codec_id = MEDIA_CODEC_ID_H264;
-	media_context.encoder = 1; //HB_TRUE;
-	params = &(media_context.video_enc_params);
-	params->width = 1280;
-	params->height = 960;
-	params->pix_fmt = MC_PIXEL_FORMAT_NV12;
-	params->frame_buf_count = 5;
-	params->external_frame_buf = 1;
-	params->bitstream_buf_count = 5;
-	params->bitstream_buf_size = (1280 * 960 * 3 / 2  + 0x3ff) & ~0x3ff;
-	params->rc_params.mode = MC_AV_RC_MODE_H264CBR;
-	ERR_CON_EQ(get_rc_params(&media_context, &params->rc_params), (int32_t)0);
-	params->gop_params.gop_preset_idx = 1;
-	params->rot_degree = MC_CCW_0;
-	params->mir_direction = MC_DIRECTION_NONE;
-	params->frame_cropping_flag = 0;
-
-	ret = hb_mm_mc_initialize(&media_context);
-	ERR_CON_EQ(ret, 0);
-
-	/* get encoder vnode actual fd */
-	fd_venc = hbn_vflow_get_vnode_handle(pipe_contex->vflow_fd, HB_CODEC, 0);
-	if (fd_venc <= 0) {
-		printf("hbn_vflow_get_vnode_handle get fd_venc(%d) failed.\n", fd_venc);
-		return -1;
-	}
-
-	ret = hbn_get_codec_channel_idx(fd_venc, 1, &channel_idx);
-	ERR_CON_EQ(ret, 0);
-
-	/* vpf init & mm configure */
-	ret = hb_mm_mc_vpf_init(&media_context, channel_idx);
-	ERR_CON_EQ(ret, 0);
-
-	ret = hb_mm_mc_configure(&media_context);
-	ERR_CON_EQ(ret, 0);
-
-	return 0;
-}
-
-static int codec_start(void){
-	int32_t ret = 0;
-
-	mc_av_codec_startup_params_t startup_params_enc;
-	startup_params_enc.video_enc_startup_params.receive_frame_number = 0;
-
-	ret = hb_mm_mc_start(&media_context, &startup_params_enc);
-	ERR_CON_EQ(ret, 0);
-
-	return 0;
-}
-
 int main(int argc, char** argv) {
 	int ret = 0;
 	pipe_contex_t pipe_contex = {0};
 	pthread_t vse_thread = 0;
-	pthread_t vpu_thread = 0;
 	int opt_index = 0;
 	int c = 0;
-	int vse_dump = 0;
 	int index = -1;
 
 	/* parse options */
-	while((c = getopt_long(argc, argv, "es:h",
+	while((c = getopt_long(argc, argv, "s:h",
 							long_options, &opt_index)) != -1) {
 		switch (c)
 		{
 		case 's':
 			index = atoi(optarg);
-			break;
-		case 'e':
-			vse_dump = 1;
 			break;
 		case 'h':
 		default:
@@ -259,7 +88,6 @@ int main(int argc, char** argv) {
 				index,
 				vp_sensor_config_list[index]->sensor_name,
 				vp_sensor_config_list[index]->config_file);
-		vp_sensor_fixed_mipi_host(pipe_contex.sensor_config);
 	} else {
 		printf("Unsupport sensor index:%d\n", index);
 		print_help(argv[0]);
@@ -268,32 +96,26 @@ int main(int argc, char** argv) {
 
 	/* prepare and run pipeline */
 	hb_mem_module_open();
-
 	ret = create_and_run_vflow(&pipe_contex);
 	ERR_CON_EQ(ret, 0);
+	encode_init(&pipe_contex);
+	ERR_CON_EQ(ret, 0);
+	usleep(1000*1000);
 	running = 1;
 
-	if (vse_dump) {
-		printf("lunch read_vse_data thread\n");
-		pthread_create(&vse_thread, NULL, (void *)read_vse_data,
-					(void *)&pipe_contex);
-	}
-
-	printf("lunch read_vpu_data thread\n");
-	pthread_create(&vpu_thread, NULL, (void *)read_vpu_data,
-						(void *)&pipe_contex);
+	printf("lunch read_vse_data thread\n");
+	pthread_create(&vse_thread, NULL, (void *)read_vse_data,
+				(void *)&pipe_contex);
 
 	/* join and wait for quit */
 	if (vse_thread)
 		pthread_join(vse_thread, NULL);
-	if (vpu_thread)
-		pthread_join(vpu_thread, NULL);
 
 	/* destroy resource */
 	ret = hbn_vflow_stop(pipe_contex.vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	hbn_vflow_destroy(pipe_contex.vflow_fd);
-	hb_mem_module_close();
+	encode_deinit(&pipe_contex);
 
 	return 0;
 }
@@ -454,8 +276,10 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 	// 放大到支持的最大分辨率
 	vse_ochn_attr[4].target_w = 672;
 	vse_ochn_attr[4].target_h = 672;
-	vse_ochn_attr[5].target_w = (input_width * 4) > 4096 ? 4096 : (input_width * 4);
-	vse_ochn_attr[5].target_h = (input_height * 4) > 3076 ? 3076 : (input_height * 4);
+	vse_ochn_attr[5].target_w =
+		(input_width * 4) > 4096 ? 4096 : (input_width * 4);
+	vse_ochn_attr[5].target_h =
+		(input_height * 4) > 3076 ? 3076 : (input_height * 4);
 
 	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, vse_node_handle);
 	ERR_CON_EQ(ret, 0);
@@ -469,64 +293,18 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 	/* FIXME: codec's front vnode needs more buffer number then codec vnode */
 	alloc_attr.buffers_num = 8;
 	alloc_attr.is_contig = 1;
-	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
+						| HB_MEM_USAGE_CPU_WRITE_OFTEN
+						| HB_MEM_USAGE_CACHED;
 
 	for (int i = 0; i < VSE_MAX_CHANNELS; ++i) {
-		printf("hbn_vnode_set_ochn_attr: %d, %dx%d\n", i, vse_ochn_attr[i].target_w, vse_ochn_attr[i].target_h);
+		printf("hbn_vnode_set_ochn_attr: %d, %dx%d\n", i,
+				vse_ochn_attr[i].target_w, vse_ochn_attr[i].target_h);
 		ret = hbn_vnode_set_ochn_attr(*vse_node_handle, i, &vse_ochn_attr[i]);
 		ERR_CON_EQ(ret, 0);
 		ret = hbn_vnode_set_ochn_buf_attr(*vse_node_handle, i, &alloc_attr);
 		ERR_CON_EQ(ret, 0);
 	}
-
-	return 0;
-}
-
-static int create_vpu_node(pipe_contex_t *pipe_contex) {
-	int ret = 0;
-	hbn_vnode_handle_t *vpu_node_handle = &pipe_contex->vpu_node_handle;
-	hbn_buf_alloc_attr_t alloc_attr = {0, };
-	codec_cfg_t vpu_attr = {0, };
-	codec_ichn_attr_t vpu_ichn_attr = {0, };
-	codec_ochn_attr_t vpu_ochn_attr = {0, };
-	uint32_t chn_id = 0;
-	uint32_t hw_id = 0;
-
-	/* vpu attr config */
-	vpu_attr.input_width = 1280;
-	vpu_attr.input_stride = 1280;
-	vpu_attr.input_height = 960;
-	vpu_attr.output_width = 1280;
-	vpu_attr.output_stride = 1280;
-	vpu_attr.output_height = 960;
-	vpu_attr.buf_num = 8;
-	vpu_attr.fb_buf_num = 8;
-
-	/* vpu ichn & ochn attr config */
-	vpu_ichn_attr.format = FRM_FMT_NV12;
-	vpu_ichn_attr.width = 1280;
-	vpu_ichn_attr.height = 960;
-
-	vpu_ochn_attr.ddr_en = 1;
-
-	/* open & configure vpu node */
-	ret = hbn_vnode_open(HB_CODEC, hw_id, AUTO_ALLOC_ID, vpu_node_handle);
-	ERR_CON_EQ(ret, 0);
-
-	ret = hbn_vnode_set_attr(*vpu_node_handle, &vpu_attr);
-	ERR_CON_EQ(ret, 0);
-
-	ret = hbn_vnode_set_ichn_attr(*vpu_node_handle, chn_id, &vpu_ichn_attr);
-	ERR_CON_EQ(ret, 0);
-
-	ret = hbn_vnode_set_ochn_attr(*vpu_node_handle, chn_id, &vpu_ochn_attr);
-	ERR_CON_EQ(ret, 0);
-
-	alloc_attr.buffers_num = 8;
-	alloc_attr.is_contig = 1;
-	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(*vpu_node_handle, chn_id, &alloc_attr);
-	ERR_CON_EQ(ret, 0);
 
 	return 0;
 }
@@ -543,8 +321,6 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	ERR_CON_EQ(ret, 0);
 	ret = create_vse_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
-	ret = create_vpu_node(pipe_contex);
-	ERR_CON_EQ(ret, 0);
 
 	// 创建HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
@@ -558,10 +334,6 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vse_node_handle);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
-							pipe_contex->vpu_node_handle);
-	ERR_CON_EQ(ret, 0);
-
 	// bind every vnode
 	/* vin -- isp */
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
@@ -579,14 +351,6 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 							0);
 	ERR_CON_EQ(ret, 0);
 
-	/* vse -- vpu */
-	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							pipe_contex->vse_node_handle,
-							0,
-							pipe_contex->vpu_node_handle,
-							0);
-	ERR_CON_EQ(ret, 0);
-
 	/* camera -- vin */
 	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
 							pipe_contex->vin_node_handle);
@@ -596,18 +360,12 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	ret = hbn_vflow_start(pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 
-	/* FIXME: codec itself needs init & start after hbn vflow start...
-	   otherwise hb_mm_mc_vpf_init will meet failure when do vdi_codec_vpf_bind */
-	ret = codec_init(pipe_contex);
-	ERR_CON_EQ(ret, 0);
-	ret = codec_start();
-	ERR_CON_EQ(ret, 0);
-
 	return 0;
 }
 
 void vp_vin_print_hbn_frame_info_t(const hbn_frame_info_t *frame_info);
-void vp_vin_print_hb_mem_graphic_buf_t(const hb_mem_graphic_buf_t *graphic_buf);
+void vp_vin_print_hb_mem_graphic_buf_t(
+	const hb_mem_graphic_buf_t *graphic_buf);
 
 // 打印 hbn_vnode_image_t 结构体的所有字段内容
 void vp_vin_print_hbn_vnode_image_t(const hbn_vnode_image_t *frame)
@@ -623,13 +381,15 @@ void vp_vin_print_hbn_frame_info_t(const hbn_frame_info_t *frame_info) {
 	printf("Frame ID: %u\n", frame_info->frame_id);
 	printf("Timestamps: %lu\n", frame_info->timestamps);
 	printf("tv: %ld.%06ld\n", frame_info->tv.tv_sec, frame_info->tv.tv_usec);
-	printf("trig_tv: %ld.%06ld\n", frame_info->trig_tv.tv_sec, frame_info->trig_tv.tv_usec);
+	printf("trig_tv: %ld.%06ld\n", frame_info->trig_tv.tv_sec,
+			frame_info->trig_tv.tv_usec);
 	printf("Frame Done: %u\n", frame_info->frame_done);
 	printf("Buffer Index: %d\n", frame_info->bufferindex);
 }
 
 // 打印 hb_mem_graphic_buf_t 结构体的所有字段内容
-void vp_vin_print_hb_mem_graphic_buf_t(const hb_mem_graphic_buf_t *graphic_buf) {
+void vp_vin_print_hb_mem_graphic_buf_t(
+		const hb_mem_graphic_buf_t *graphic_buf) {
 	printf("File Descriptors: ");
 	for (int i = 0; i < MAX_GRAPHIC_BUF_COMP; i++) {
 		printf("%d ", graphic_buf->fd[i]);
@@ -684,32 +444,69 @@ void *read_vse_data(void *context) {
 	char dst_file[128] = {0};
 	uint32_t count = 0;
 	int ret = 0;
+	media_codec_buffer_t input_buffer = {0};
+	media_codec_buffer_t ouput_buffer = {0};
+	media_codec_output_buffer_info_t info;
+	FILE *fp_output = fopen("single_pipe_vin_isp_vse_vpu.h264", "w+b");
+	if (NULL == fp_output) {
+		printf("Failed to open output file\n");
+	}
 
 	while (running) {
 		for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
 			ret = hbn_vnode_getframe(vse_node_handle, i, 1000, &out_img[i]);
 			if (ret != 0) {
 				printf("hbn_vnode_getframe VSE channel %d failed\n", i);
-				continue;
+				break;
 			}
 		}
-
+		memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
+		ret = hb_mm_mc_dequeue_input_buffer(&media_context, &input_buffer,
+											2000);
+		if (ret != 0) {
+			printf("hb_mm_mc_dequeue_input_buffer failed\n");
+			break;
+		}
+		int img_width = out_img[0].buffer.width;
+		int img_height = out_img[0].buffer.height;
+		memcpy(input_buffer.vframe_buf.vir_ptr[0], out_img[0].buffer.virt_addr[0],
+			img_width * img_height * 3 / 2);
+		ret = hb_mm_mc_queue_input_buffer(&media_context, &input_buffer, 2000);
+		if (ret != 0) {
+			printf("hb_mm_mc_queue_input_buffer failed\n");
+			break;
+		}
+		memset(&ouput_buffer, 0x0, sizeof(media_codec_buffer_t));
+		memset(&info, 0x0, sizeof(media_codec_output_buffer_info_t));
+		ret = hb_mm_mc_dequeue_output_buffer(&media_context, &ouput_buffer,
+											&info, 2000);
+		if (ret != 0) {
+			printf("hb_mm_mc_dequeue_output_buffer failed\n");
+			break;
+		}
+		fwrite(ouput_buffer.vstream_buf.vir_ptr,
+				ouput_buffer.vstream_buf.size, 1, fp_output);
+		printf("count:%d\n", count);
+		ret = hb_mm_mc_queue_output_buffer(&media_context,
+											&ouput_buffer, 2000);
+		if (ret != 0) {
+			printf("hb_mm_mc_queue_output_buffer failed\n");
+			break;
+		}
 		if (count % 60 == 0) {
 			for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
-				for (int j = 0; j < 2; ++j) {
-					hb_mem_invalidate_buf_with_vaddr((uint64_t)out_img[i].buffer.virt_addr[j], out_img[i].buffer.size[j]);
-				}
-				snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%d.yuv", i, count);
+				snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%d.yuv",
+						i, count);
 				dump_2plane_yuv_to_file(dst_file,
 					out_img[i].buffer.virt_addr[0],
 					out_img[i].buffer.virt_addr[1],
 					out_img[i].buffer.size[0],
 					out_img[i].buffer.size[1]);
-				printf("####################### vse chn %d #######################\n", i);
+				printf("####################### vse chn %d"
+						" #######################\n", i);
 				vp_vin_print_hbn_vnode_image_t(&out_img[i]);
 			}
 		}
-
 		for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
 			hbn_vnode_releaseframe(vse_node_handle, i, &out_img[i]);
 		}
@@ -717,40 +514,231 @@ void *read_vse_data(void *context) {
 		count++;
 		usleep(1000 * 20);
 	}
+	fclose(fp_output);
 
 	return NULL;
 }
 
-void *read_vpu_data(void *context)
-{
-	media_codec_buffer_t outputBuffer;
-	media_codec_output_buffer_info_t outputInfo;
-	FILE *dump_file = NULL;
-	char dst_file[128] = {0};
-	int32_t count = 0;
-	int32_t ret;
 
-	printf("codec_read_data start\n");
-
-	while(running){
-		if(dump_file == NULL){
-			snprintf(dst_file, sizeof(dst_file), "vpu_dump.h264");
-			dump_file = fopen(dst_file, "wb");
-		}
-		memset(&outputBuffer, 0x00, sizeof(media_codec_buffer_t));
-		memset(&outputInfo, 0x00, sizeof(media_codec_output_buffer_info_t));
-
-		ret = hb_mm_mc_dequeue_output_buffer(&media_context, &outputBuffer, &outputInfo, 3000);
-		if (ret == 0 && dump_file) {
-			printf("encode fwrite count(%u) size(%d)\n", count++, outputBuffer.vstream_buf.size);
-			fwrite(outputBuffer.vstream_buf.vir_ptr, outputBuffer.vstream_buf.size, 1, dump_file);
-
-			ret = hb_mm_mc_queue_output_buffer(&media_context, &outputBuffer, 100);
-			if (ret != 0)
-				printf("### queue output buffer failed. ret(%d) ###\n", ret);
-		} else {
-			printf("#### dequeue output buffer failed. ret(%d) ####\n", ret);
-		}
+static int32_t get_rc_params(media_codec_context_t *context,
+			mc_rate_control_params_t *rc_params) {
+	int32_t ret = 0;
+	ret = hb_mm_mc_get_rate_control_config(context, rc_params);
+	if (ret) {
+		printf("Failed to get rc params ret=0x%x\n", ret);
+		return ret;
 	}
-	return NULL;
+	switch (rc_params->mode) {
+	case MC_AV_RC_MODE_H264CBR:
+		rc_params->h264_cbr_params.intra_period = 30;
+		rc_params->h264_cbr_params.intra_qp = 30;
+		rc_params->h264_cbr_params.bit_rate = 5000;
+		rc_params->h264_cbr_params.frame_rate = 30;
+		rc_params->h264_cbr_params.initial_rc_qp = 20;
+		rc_params->h264_cbr_params.vbv_buffer_size = 20;
+		rc_params->h264_cbr_params.mb_level_rc_enalbe = 1;
+		rc_params->h264_cbr_params.min_qp_I = 8;
+		rc_params->h264_cbr_params.max_qp_I = 50;
+		rc_params->h264_cbr_params.min_qp_P = 8;
+		rc_params->h264_cbr_params.max_qp_P = 50;
+		rc_params->h264_cbr_params.min_qp_B = 8;
+		rc_params->h264_cbr_params.max_qp_B = 50;
+		rc_params->h264_cbr_params.hvs_qp_enable = 1;
+		rc_params->h264_cbr_params.hvs_qp_scale = 2;
+		rc_params->h264_cbr_params.max_delta_qp = 10;
+		rc_params->h264_cbr_params.qp_map_enable = 0;
+		break;
+	case MC_AV_RC_MODE_H264VBR:
+		rc_params->h264_vbr_params.intra_qp = 20;
+		rc_params->h264_vbr_params.intra_period = 30;
+		rc_params->h264_vbr_params.intra_qp = 35;
+		break;
+	case MC_AV_RC_MODE_H264AVBR:
+		rc_params->h264_avbr_params.intra_period = 15;
+		rc_params->h264_avbr_params.intra_qp = 25;
+		rc_params->h264_avbr_params.bit_rate = 2000;
+		rc_params->h264_avbr_params.vbv_buffer_size = 3000;
+		rc_params->h264_avbr_params.min_qp_I = 15;
+		rc_params->h264_avbr_params.max_qp_I = 50;
+		rc_params->h264_avbr_params.min_qp_P = 15;
+		rc_params->h264_avbr_params.max_qp_P = 45;
+		rc_params->h264_avbr_params.min_qp_B = 15;
+		rc_params->h264_avbr_params.max_qp_B = 48;
+		rc_params->h264_avbr_params.hvs_qp_enable = 0;
+		rc_params->h264_avbr_params.hvs_qp_scale = 2;
+		rc_params->h264_avbr_params.max_delta_qp = 5;
+		rc_params->h264_avbr_params.qp_map_enable = 0;
+		break;
+	case MC_AV_RC_MODE_H264FIXQP:
+		rc_params->h264_fixqp_params.force_qp_I = 23;
+		rc_params->h264_fixqp_params.force_qp_P = 23;
+		rc_params->h264_fixqp_params.force_qp_B = 23;
+		rc_params->h264_fixqp_params.intra_period = 23;
+		break;
+	case MC_AV_RC_MODE_H264QPMAP:
+		break;
+	case MC_AV_RC_MODE_H265CBR:
+		rc_params->h265_cbr_params.intra_period = 20;
+		rc_params->h265_cbr_params.intra_qp = 30;
+		rc_params->h265_cbr_params.bit_rate = 5000;
+		rc_params->h265_cbr_params.frame_rate = 30;
+		if (context->video_enc_params.width >= 480 ||
+			context->video_enc_params.height >= 480) {
+			rc_params->h265_cbr_params.initial_rc_qp = 30;
+			rc_params->h265_cbr_params.vbv_buffer_size = 3000;
+			rc_params->h265_cbr_params.ctu_level_rc_enalbe = 1;
+		} else {
+			rc_params->h265_cbr_params.initial_rc_qp = 20;
+			rc_params->h265_cbr_params.vbv_buffer_size = 20;
+			rc_params->h265_cbr_params.ctu_level_rc_enalbe = 1;
+		}
+		rc_params->h265_cbr_params.min_qp_I = 8;
+		rc_params->h265_cbr_params.max_qp_I = 50;
+		rc_params->h265_cbr_params.min_qp_P = 8;
+		rc_params->h265_cbr_params.max_qp_P = 50;
+		rc_params->h265_cbr_params.min_qp_B = 8;
+		rc_params->h265_cbr_params.max_qp_B = 50;
+		rc_params->h265_cbr_params.hvs_qp_enable = 1;
+		rc_params->h265_cbr_params.hvs_qp_scale = 2;
+		rc_params->h265_cbr_params.max_delta_qp = 10;
+		rc_params->h265_cbr_params.qp_map_enable = 0;
+		break;
+	case MC_AV_RC_MODE_H265VBR:
+		rc_params->h265_vbr_params.intra_qp = 20;
+		rc_params->h265_vbr_params.intra_period = 30;
+		rc_params->h265_vbr_params.intra_qp = 35;
+		break;
+	case MC_AV_RC_MODE_H265AVBR:
+		rc_params->h265_avbr_params.intra_period = 15;
+		rc_params->h265_avbr_params.intra_qp = 25;
+		rc_params->h265_avbr_params.bit_rate = 2000;
+		rc_params->h265_avbr_params.vbv_buffer_size = 3000;
+		rc_params->h265_avbr_params.min_qp_I = 15;
+		rc_params->h265_avbr_params.max_qp_I = 50;
+		rc_params->h265_avbr_params.min_qp_P = 15;
+		rc_params->h265_avbr_params.max_qp_P = 45;
+		rc_params->h265_avbr_params.min_qp_B = 15;
+		rc_params->h265_avbr_params.max_qp_B = 48;
+		rc_params->h265_avbr_params.hvs_qp_enable = 0;
+		rc_params->h265_avbr_params.hvs_qp_scale = 2;
+		rc_params->h265_avbr_params.max_delta_qp = 5;
+		rc_params->h265_avbr_params.qp_map_enable = 0;
+		break;
+	case MC_AV_RC_MODE_H265FIXQP:
+		rc_params->h265_fixqp_params.force_qp_I = 23;
+		rc_params->h265_fixqp_params.force_qp_P = 23;
+		rc_params->h265_fixqp_params.force_qp_B = 23;
+		rc_params->h265_fixqp_params.intra_period = 23;
+		break;
+	case MC_AV_RC_MODE_H265QPMAP:
+		break;
+	default:
+		ret = HB_MEDIA_ERR_INVALID_PARAMS;
+		break;
+	}
+	return ret;
+}
+
+int32_t vp_encode_config_param(media_codec_context_t *context,
+							media_codec_id_t codec_type,
+							int32_t width, int32_t height,
+							int32_t frame_rate, uint32_t bit_rate)
+{
+	mc_video_codec_enc_params_t *params;
+
+	memset(context, 0x00, sizeof(media_codec_context_t));
+	context->encoder = 1;
+	params = &context->video_enc_params;
+	params->width = width;
+	params->height = height;
+	params->pix_fmt = MC_PIXEL_FORMAT_NV12;
+	params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
+	params->frame_buf_count = 5;
+	params->external_frame_buf = 0;
+	params->bitstream_buf_count = 8;
+	/* Hardware limitations of x5 wave521cl:
+	 * - B-frame encoding is not supported.
+	 * - Multi-frame reference is not supported.
+	 * Therefore, GOP presets are restricted to 1 and 9.
+	 */
+	params->gop_params.gop_preset_idx = 1;
+	params->rot_degree = MC_CCW_0;
+	params->mir_direction = MC_DIRECTION_NONE;
+	params->frame_cropping_flag = 0;
+	params->enable_user_pts = 1;
+	params->gop_params.decoding_refresh_type = 2;
+	switch (codec_type)
+	{
+	case MEDIA_CODEC_ID_H264:
+		context->codec_id = MEDIA_CODEC_ID_H264;
+		params->rc_params.mode = MC_AV_RC_MODE_H264CBR;
+		get_rc_params(context, &params->rc_params);
+		params->rc_params.h264_cbr_params.frame_rate = frame_rate;
+		params->rc_params.h264_cbr_params.bit_rate = bit_rate;
+		break;
+	case MEDIA_CODEC_ID_H265:
+		context->codec_id = MEDIA_CODEC_ID_H265;
+		params->rc_params.mode = MC_AV_RC_MODE_H265CBR;
+		get_rc_params(context, &params->rc_params);
+		params->rc_params.h265_cbr_params.frame_rate = frame_rate;
+		params->rc_params.h265_cbr_params.bit_rate = bit_rate;
+		break;
+	case MEDIA_CODEC_ID_MJPEG:
+		context->codec_id = MEDIA_CODEC_ID_MJPEG;
+		params->rc_params.mode = MC_AV_RC_MODE_MJPEGFIXQP;
+		get_rc_params(context, &params->rc_params);
+		params->mjpeg_enc_config.restart_interval = width / 16;
+		break;
+	case MEDIA_CODEC_ID_JPEG:
+		context->codec_id = MEDIA_CODEC_ID_JPEG;
+		params->jpeg_enc_config.quality_factor = 50;
+		params->mjpeg_enc_config.restart_interval = width / 16;
+		break;
+	default:
+		printf("Not Support encoding type: %d!\n", codec_type);
+		return -1;
+	}
+
+	return 0;
+}
+
+int encode_init(void *data) {
+	int ret = 0;
+	pipe_contex_t *pipe_context = NULL;
+	int encode_width = 0;
+	int encode_height = 0;
+	int encode_fps = 30;
+	vse_ochn_attr_t vse_ochn_attr = {0};
+
+	mc_av_codec_startup_params_t startup_params = {0};
+
+	pipe_context = (pipe_contex_t *)data;
+	ret = hbn_vnode_get_ochn_attr(pipe_context->vse_node_handle, 0,
+								&vse_ochn_attr);
+	ERR_CON_EQ(ret, 0);
+	encode_width = vse_ochn_attr.target_w;
+	encode_height = vse_ochn_attr.target_h;
+	ret = vp_encode_config_param(&media_context, MEDIA_CODEC_ID_H264,
+								encode_width, encode_height,
+								encode_fps, 8192);
+	ERR_CON_EQ(ret, 0);
+	ret = hb_mm_mc_initialize(&media_context);
+	ERR_CON_EQ(ret, 0);
+	ret = hb_mm_mc_configure(&media_context);
+	ERR_CON_EQ(ret, 0);
+	ret = hb_mm_mc_start(&media_context, &startup_params);
+	printf("%s idx: %d, init successful\n",
+			media_context.encoder ? "Encode" : "Decode",
+			media_context.instance_index);
+	return 0;
+}
+
+int encode_deinit(void *data) {
+	int ret = 0;
+	ret = hb_mm_mc_pause(&media_context);
+	ERR_CON_EQ(ret, 0);
+	ret = hb_mm_mc_release(&media_context);
+	ERR_CON_EQ(ret, 0);
+
+	return 0;
 }

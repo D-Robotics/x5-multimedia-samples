@@ -188,6 +188,8 @@ int shm_stream_put(shm_stream_t* handle, frame_info info, unsigned char* data, u
 	{
 		return -1;
 	}
+	
+	// printf("put [%d] [%d] [%02x] [%02x]\n", info.seq, length, data[10], data[length - 1]);
 
 	unsigned int head;
 	shm_user_t* users = (shm_user_t*)handle->user_array;
@@ -226,6 +228,25 @@ int shm_stream_put(shm_stream_t* handle, frame_info info, unsigned char* data, u
 			   frame[i++], frame[i++], frame[i++], frame[i++],
 			length);
 #endif
+	#if 0
+	static FILE *enc_data_file = NULL;
+	if(enc_data_file == NULL){
+		char enc_file_name [100];			
+		sprintf(enc_file_name, "/tmp/put_websocker_%s.h265", handle->name);
+
+		enc_data_file = fopen(enc_file_name, "wb");
+		if(enc_data_file == NULL){
+			SC_LOGE("open file %s failed.", (char *)enc_file_name);
+		}
+	}
+	if(enc_data_file != NULL){
+		size_t elementsWritten = fwrite((unsigned char*)data,
+			1, length, enc_data_file);
+		if (elementsWritten != length) {
+			SC_LOGE("write websocker file failed, return %d.", elementsWritten);
+		}
+	}
+	#endif
 
 	//信息分发
 	//shm_stream_readers_callback(handle, info, (unsigned char*)handle->base_addr+infos[head].offset, length);
@@ -291,6 +312,9 @@ int shm_stream_front(shm_stream_t* handle, frame_info* info, unsigned char** dat
 		/*SC_LOGI("handle->base_addr: %p, infos[tail].offset: %d", handle->base_addr, infos[tail].offset);*/
 		*length = infos[tail].lenght;
 
+
+		// unsigned char *data_tmp = (unsigned char*)(handle->base_addr + infos[tail].offset);
+		// printf("front [%d] [%d] [%02x] [%02x]\n", info->seq, infos[tail].lenght, data_tmp[10], data_tmp[infos[tail].lenght - 1]);
 		cmtx_leave(handle->mtx);
 		return 0;
 	}
@@ -463,7 +487,7 @@ void shm_stream_unmalloc(shm_stream_t* handle)
 	}
 	else
 	{
-		SC_LOGW("map key:%s ref_count:%d", handle->name, n->ref_count);
+		SC_LOGI("map key:%s current ref_count:%d", handle->name, n->ref_count);
 	}
 }
 

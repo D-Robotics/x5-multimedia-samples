@@ -388,7 +388,10 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	 * - Multi-frame reference is not supported.
 	 * Therefore, GOP presets are restricted to 1 and 9.
 	 */
+
+	params->gop_params.decoding_refresh_type = 2;
 	params->gop_params.gop_preset_idx = 1;
+
 	params->rot_degree = MC_CCW_0;
 	params->mir_direction = MC_DIRECTION_NONE;
 	params->frame_cropping_flag = false;
@@ -396,6 +399,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	switch (codec_type)
 	{
 	case MEDIA_CODEC_ID_H264:
+		SC_LOGI("codec type is h264 .");
 		context->codec_id = MEDIA_CODEC_ID_H264;
 		params->rc_params.mode = MC_AV_RC_MODE_H264CBR;
 		get_rc_params(context, &params->rc_params);
@@ -403,6 +407,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 		params->rc_params.h264_cbr_params.bit_rate = bit_rate;
 		break;
 	case MEDIA_CODEC_ID_H265:
+		SC_LOGI("codec type is h265 .");
 		context->codec_id = MEDIA_CODEC_ID_H265;
 		params->rc_params.mode = MC_AV_RC_MODE_H265CBR;
 		get_rc_params(context, &params->rc_params);
@@ -410,6 +415,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 		params->rc_params.h265_cbr_params.bit_rate = bit_rate;
 		break;
 	case MEDIA_CODEC_ID_MJPEG:
+		SC_LOGI("codec type is mjpeg .");
 		context->codec_id = MEDIA_CODEC_ID_MJPEG;
 		params->rc_params.mode = MC_AV_RC_MODE_MJPEGFIXQP;
 		get_rc_params(context, &params->rc_params);
@@ -497,6 +503,19 @@ int32_t vp_codec_init(media_codec_context_t *context)
 		hb_mm_mc_release(context);
 		return -1;
 	}
+#if 0
+	SC_LOGI("request idr header\n");
+	ret = hb_mm_mc_request_idr_header(context, 1);
+	if(ret != 0){
+		SC_LOGE("request idr header faield %d!\n", ret);
+	}
+
+	SC_LOGI("enable idr frame\n");
+	ret = hb_mm_mc_enable_idr_frame(context, true);
+	if(ret != 0){
+		SC_LOGE("enable idr frame faield %d!\n", ret);
+	}
+#endif
 
 	SC_LOGD("%s idx: %d, successful", context->encoder ? "Encode" : "Decode", context->instance_index);
 	return 0;
@@ -853,7 +872,10 @@ int32_t vp_codec_release_output(media_codec_context_t *context, ImageFrame *fram
 			SC_LOGE("idx: %d, hb_mm_mc_queue_output_buffer failed ret = %d \n", context->instance_index, ret);
 			return -1;
 		}
+	}else{
+		SC_LOGW("idx: %d, hb_mm_mc_queue_output_buffer failed : buffer is null. \n", context->instance_index);
 	}
+
 
 	SC_LOGD("%s idx: %d, successful", context->encoder ? "Encode" : "Decode", context->instance_index);
 	return ret;

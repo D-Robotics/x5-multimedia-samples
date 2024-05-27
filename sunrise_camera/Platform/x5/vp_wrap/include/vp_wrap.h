@@ -30,6 +30,8 @@ void vp_print_debug_infos(void);
 
 void vp_normal_buf_info_print(ImageFrame *frame);
 
+int32_t vp_dump_nv12_to_file(char *filename, uint8_t *data_y, uint8_t *data_uv,
+		int width, int height);
 int32_t vp_dump_yuv_to_file(char *filename, uint8_t *src_buffer, uint32_t size);
 
 int32_t vp_dump_2plane_yuv_to_file(char *filename, uint8_t *src_buffer, uint8_t *src_buffer1,

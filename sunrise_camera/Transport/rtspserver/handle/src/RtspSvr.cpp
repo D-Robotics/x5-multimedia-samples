@@ -194,11 +194,18 @@ bool CRtspServer::DynamicAddSms(const char* streamName,
 	Boolean reuseFirstSource = False;
 	OutPacketBuffer::maxSize = 4*1024*1024; // 此处的配置客户根据码流的分辨率和bitrate调整，避免内存浪费
 	// A H.264 video elementary stream:
-	ServerMediaSession* sms = ServerMediaSession::createNew(*m_env, streamName, streamName, "H.264 video elementary stream", True);
+	ServerMediaSession* sms = NULL;
 	if(videoEnable && videoType == RTSPSRV_VIDEO_TYPE_H264)
 	{
+		sms = ServerMediaSession::createNew(*m_env, streamName, streamName, "H.264 video elementary stream", True);
 		sms->addSubsession(H264VideoLiveServerMediaSubsession::createNew(*m_env, reuseFirstSource, shmId, shmName, streamBufSize, frameRate));
+	}else if(videoEnable && videoType == RTSPSRV_VIDEO_TYPE_H265){
+		sms = ServerMediaSession::createNew(*m_env, streamName, streamName, "H.265 video elementary stream", True);
+		sms->addSubsession(H265VideoLiveServerMediaSubsession::createNew(*m_env, reuseFirstSource, shmId, shmName, streamBufSize, frameRate));
+	}else{
+		return false;
 	}
+
 	if(audioEnable)
 	{
 		int index = GetSamplingFrequencyIndex(audioSampleRate);

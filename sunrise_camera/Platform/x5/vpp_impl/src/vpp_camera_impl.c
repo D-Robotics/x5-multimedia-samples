@@ -38,6 +38,7 @@
 
 typedef struct
 {
+	int pipline_id;
 	vp_vflow_contex_t vp_vflow_contex;
 	media_codec_context_t m_encode_context;
 
@@ -128,12 +129,15 @@ static void* venc_get_stream_proc(void *ptr)
 	hbn_vnode_image = (hbn_vnode_image_t *)vse_frame.hbn_vnode_image;
 
 	mThreadSetName(privThread, __func__);
-
+#if 0
+	char enc_file_name [100];
+	FILE *enc_data_file = NULL;
+#endif
 	while (privThread->eState == E_THREAD_RUNNING)
 	{
 		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
 		if (ret != 0) {
-			SC_LOGE("vp_vse_get_frame failed");
+			SC_LOGE("vp_vse_get_frame failed.");
 			return NULL;
 		}
 
@@ -147,21 +151,53 @@ static void* venc_get_stream_proc(void *ptr)
 			encode_frame.data_size[0] = hbn_vnode_image->buffer.size[0] + hbn_vnode_image->buffer.size[1];
 		}
 		encode_frame.image_timestamp = vse_frame.hbn_vnode_image->info.timestamps / 1000;
-		vp_codec_set_input(&vpp_camera->m_encode_context, &encode_frame, 0);
+		ret = vp_codec_set_input(&vpp_camera->m_encode_context, &encode_frame, 0);
+		if(ret != 0){
+			SC_LOGE("vp_codec_set_input failed.");
+			return NULL;
+		}
 		// 从编码器获取码流
-		vp_codec_get_output(&vpp_camera->m_encode_context, &encode_stream, 2000);
+		ret = vp_codec_get_output(&vpp_camera->m_encode_context, &encode_stream, 2000);
+		if(ret != 0){
+			SC_LOGE("vp_codec_get_output failed.");
+			return NULL;
+		}
+
+
+		//for debug 
+		{
+			#if 0
+			if(enc_data_file == NULL){			
+				sprintf(enc_file_name, "/tmp/ch_%d_box_enc_output_%dx%d_nv12_.h265",
+					vpp_camera->pipline_id, vse_frame.width, vse_frame.height);
+
+				enc_data_file = fopen(enc_file_name, "wb");
+				if(enc_data_file == NULL){
+					SC_LOGE("open file %s failed.", (char *)enc_file_name);
+				}
+			}
+			if(enc_data_file != NULL){
+				size_t elementsWritten = fwrite((unsigned char*)encode_stream.frame_buffer->vstream_buf.vir_ptr,
+					1, encode_stream.frame_buffer->vstream_buf.size, enc_data_file);
+				if (elementsWritten != encode_stream.frame_buffer->vstream_buf.size) {
+					SC_LOGE("write file %s failed, size %d, return %d.", 
+						(char *)enc_file_name, encode_stream.frame_buffer->vstream_buf.size, elementsWritten);
+				}
+			}
+			#endif
+		}
 
 		// rtsp 推流
 		vpp_camera_push_stream(vpp_camera, &encode_stream);
 
 		ret = vp_codec_release_output(&vpp_camera->m_encode_context, &encode_stream);
 		if (ret != 0) {
-			SC_LOGE("vp_codec_release_output failed");
+			SC_LOGE("vp_codec_release_output failed.");
 			return NULL;
 		}
 		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
 		if (ret != 0) {
-			SC_LOGE("vp_vse_release_frame failed");
+			SC_LOGE("vp_vse_release_frame failed.");
 			return NULL;
 		}
 	}
@@ -424,6 +460,7 @@ int32_t vpp_camera_start(void)
 		}
 		SC_LOGI("Start video encode instance %d successful", g_vpp_camera[i].m_encode_context.instance_index);
 
+		g_vpp_camera[i].pipline_id = i;
 		ret = vp_vin_start(vp_vflow_contex);
 		ret |= vp_isp_start(vp_vflow_contex);
 		ret |= vp_vse_start(vp_vflow_contex);

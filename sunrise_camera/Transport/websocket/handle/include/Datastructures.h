@@ -98,7 +98,7 @@ typedef struct {
 typedef struct ws_client_n {
 	int socket_id;
 	char *client_ip;
-	char *string;
+	char *string;	
 	pthread_t thread_id;
 	ws_header *headers;
 	ws_message *message;
@@ -108,6 +108,9 @@ typedef struct ws_client_n {
 	shm_stream_t* shm_source[64]; // 支持传输多路码流
 	int32_t stream_chn[64]; // fShmSource 对应的编码通道号
 	struct ws_client_n *next;
+
+	int codec_type;
+	char *codec_type_string;
 } ws_client;
 
 typedef struct {

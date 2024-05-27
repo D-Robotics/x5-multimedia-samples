@@ -46,6 +46,8 @@ typedef struct
 typedef enum
 {
 	T_SDK_RTSP_VIDEO_TYPE_H264,
+	T_SDK_RTSP_VIDEO_TYPE_H265,
+	T_SDK_RTSP_VIDEO_TYPE_MJPEG,
 }T_SDK_RTSP_VIDEO_TYPE_E;
 
 typedef struct

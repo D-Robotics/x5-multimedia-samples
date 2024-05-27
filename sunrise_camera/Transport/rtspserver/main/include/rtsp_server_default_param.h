@@ -24,6 +24,7 @@ typedef struct
 typedef enum
 {
 	RTSPSRV_VIDEO_TYPE_H264,
+	RTSPSRV_VIDEO_TYPE_H265,
 }RTSPSRV_VIDEO_TYPE_E;
 
 typedef struct

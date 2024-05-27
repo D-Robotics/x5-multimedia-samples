@@ -14,7 +14,7 @@ int find_start_code3(unsigned char *data)
 	else return 1;
 }
 
-int get_annexb_nalu(unsigned char *frame, int length, NALU_t *nalu)
+int get_annexb_nalu(unsigned char *frame, int length, NALU_t *nalu, int is_h265)
 {
 	int info2, info3;
 	int pos = 0;
@@ -64,7 +64,12 @@ int get_annexb_nalu(unsigned char *frame, int length, NALU_t *nalu)
 			nalu->buf = &frame[nalu->startcodeprefix_len];
 			nalu->forbidden_bit = nalu->buf[0] & 0x80;     // 1 bit--10000000
 			nalu->nal_reference_idc = nalu->buf[0] & 0x60; // 2 bit--01100000
-			nalu->nal_unit_type = (nalu->buf[0]) & 0x1f;   // 5 bit--00011111
+			if(is_h265){
+				nalu->nal_unit_type = ((nalu->buf[0]) & 0x7e) >> 1;   // 5 bit--00011111
+			}else{
+				nalu->nal_unit_type = (nalu->buf[0]) & 0x1f;   // 5 bit--00011111
+			}
+			
 			return pos - 1;
 		}
 		pos++;
@@ -86,7 +91,11 @@ int get_annexb_nalu(unsigned char *frame, int length, NALU_t *nalu)
 	nalu->buf = &frame[nalu->startcodeprefix_len];
 	nalu->forbidden_bit = nalu->buf[0] & 0x80;                     //1 bit
 	nalu->nal_reference_idc = nalu->buf[0] & 0x60;                 // 2 bit
-	nalu->nal_unit_type = (nalu->buf[0]) & 0x1f;                   // 5 bit
+	if(is_h265){
+		nalu->nal_unit_type = ((nalu->buf[0]) & 0x7e) >> 1;   // 5 bit--00011111
+	}else{
+		nalu->nal_unit_type = (nalu->buf[0]) & 0x1f;   // 5 bit--00011111
+	}
 
 	return (pos + rewind);                                           //Return the length of bytes from between one NALU and the next NALU
 }

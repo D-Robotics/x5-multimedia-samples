@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <time.h>
+#include <unistd.h>
 #include <errno.h>
 #include <sys/time.h>
 #include <sys/prctl.h>
@@ -114,6 +115,21 @@ teThreadStatus mThreadStop(tsThread *psThreadInfo)
 		{
 			printf("Cannot join detached thread %p\n", psThreadInfo);
 			return E_THREAD_ERROR_FAILED;
+		}
+	}
+
+	{
+		int wait_count = 0;
+		while(psThreadInfo->eState == E_THREAD_STOPPING){
+			usleep(10 * 1000);
+			if(psThreadInfo->eState != E_THREAD_STOPPING){
+				break;
+			}
+			if(wait_count % 100 == 0){
+				printf("waited [%d] second for thread [%s:%lu] complete stop.\n", 
+				wait_count/100, psThreadInfo->pThread_Name, psThreadInfo->pThread_Id);
+			}
+			wait_count++;
 		}
 	}
 

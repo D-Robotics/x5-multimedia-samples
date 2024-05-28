@@ -900,7 +900,7 @@ void *vp_decode_work_func(void *param)
 	if (frame.frame_buffer == NULL)
 	{
 		SC_LOGE("malloc media_codec_buffer_t failed.");
-		return NULL;
+		goto exit;
 	}
 
 	SC_LOGD("frame_buffer: %p", frame.frame_buffer);
@@ -909,7 +909,8 @@ void *vp_decode_work_func(void *param)
 	if (frame.buffer_info == NULL)
 	{
 		SC_LOGE("malloc media_codec_output_buffer_info_t failed.");
-		return NULL;
+		free(frame.frame_buffer);
+		goto exit;
 	}
 
 	mThreadSetName(privThread, __func__);
@@ -1053,7 +1054,7 @@ void *vp_decode_work_func(void *param)
 err_av_open:
 	if (avContext)
 		avformat_close_input(&avContext);
-
+exit:
 	mThreadFinish(privThread);
 	return NULL;
 }

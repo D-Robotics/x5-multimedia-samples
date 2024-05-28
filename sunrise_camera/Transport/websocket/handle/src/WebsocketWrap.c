@@ -383,7 +383,7 @@ static void *_ws_wrap_start(void *ptr)
 	if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 	{
 		server_error(strerror(errno), server_socket, ws_wrap->m_list);
-		return NULL;
+		goto exit;
 	}
 
 	printf("Socket: \t\tInitialized\n");
@@ -396,7 +396,7 @@ static void *_ws_wrap_start(void *ptr)
 					sizeof(on))) < 0)
 	{
 		server_error(strerror(errno), server_socket, ws_wrap->m_list);
-		return NULL;
+		goto exit;
 	}
 
 	printf("Reuse Port %d: \tEnabled\n", port);
@@ -417,7 +417,7 @@ static void *_ws_wrap_start(void *ptr)
 			  sizeof(server_addr))) < 0)
 	{
 		server_error(strerror(errno), server_socket, ws_wrap->m_list);
-		return NULL;
+		goto exit;
 	}
 
 	printf("Binding: \t\tSuccess\n");
@@ -429,7 +429,7 @@ static void *_ws_wrap_start(void *ptr)
 	if ((listen(server_socket, 10)) < 0)
 	{
 		server_error(strerror(errno), server_socket, ws_wrap->m_list);
-		return NULL;
+		goto exit;
 	}
 
 	printf("Listen: \t\tSuccess\n\n");
@@ -504,7 +504,7 @@ static void *_ws_wrap_start(void *ptr)
 
 	close(server_socket);
 	pthread_attr_destroy(&pthread_attr);
-
+exit:
 	mThreadFinish(privThread);
 	return NULL;
 }

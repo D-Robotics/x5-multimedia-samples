@@ -221,7 +221,7 @@ static void *inference_yolov5s(void *ptr)
 	mThreadSetName(privThread, __func__);
 
 	if (bpu_handle == NULL)
-		return NULL;
+		goto exit;
 
 	hbPackedDNNHandle_t packed_dnn_handle = bpu_handle->m_packed_dnn_handle;
 	hbDNNHandle_t dnn_handle = bpu_handle->m_dnn_handle;
@@ -237,7 +237,7 @@ static void *inference_yolov5s(void *ptr)
 		ret = prepare_output_tensor(output_tensors[i], dnn_handle);
 		if (ret) {
 			SC_LOGE("prepare model output tensor failed");
-			return NULL;
+			goto exit;
 		}
 	}
 
@@ -262,13 +262,13 @@ static void *inference_yolov5s(void *ptr)
 				&infer_ctrl_param);
 		if (ret) {
 			SC_LOGE("hbDNNInfer failed");
-			return NULL;
+			break;
 		}
 		// wait task done
 		ret = hbDNNWaitTaskDone(task_handle, 0);
 		if (ret) {
 			SC_LOGE("hbDNNWaitTaskDone failed");
-			return NULL;
+			break;
 		}
 
 		// make sure CPU read data from DDR before using output tensor data
@@ -280,7 +280,7 @@ static void *inference_yolov5s(void *ptr)
 		ret = hbDNNReleaseTask(task_handle);
 		if (ret) {
 			SC_LOGE("hbDNNReleaseTask failed");
-			return NULL;
+			break;
 		}
 		task_handle = NULL;
 
@@ -318,7 +318,7 @@ static void *inference_yolov5s(void *ptr)
 
 	for (i = 0; i < 5; i++)
 		release_output_tensor(output_tensors[i], 3);	// 释放模型输出资源
-
+exit:
 	mThreadFinish(privThread);
 	return NULL;
 }
@@ -368,7 +368,7 @@ static void *inference_fcos(void *ptr)
 	mThreadSetName(privThread, __func__);
 
 	if (bpu_handle == NULL)
-		return NULL;
+		goto exit;
 
 	hbPackedDNNHandle_t packed_dnn_handle = bpu_handle->m_packed_dnn_handle;
 	hbDNNHandle_t dnn_handle = bpu_handle->m_dnn_handle;
@@ -384,7 +384,7 @@ static void *inference_fcos(void *ptr)
 		ret = prepare_output_tensor(output_tensors[i], dnn_handle);
 		if (ret) {
 			SC_LOGE("prepare model output tensor failed");
-			return NULL;
+			goto exit;
 		}
 	}
 
@@ -409,13 +409,13 @@ static void *inference_fcos(void *ptr)
 				&infer_ctrl_param);
 		if (ret) {
 			SC_LOGE("hbDNNInfer failed");
-			return NULL;
+			break;
 		}
 		// wait task done
 		ret = hbDNNWaitTaskDone(task_handle, 0);
 		if (ret) {
 			SC_LOGE("hbDNNWaitTaskDone failed");
-			return NULL;
+			break;
 		}
 
 		// make sure CPU read data from DDR before using output tensor data
@@ -427,7 +427,7 @@ static void *inference_fcos(void *ptr)
 		ret = hbDNNReleaseTask(task_handle);
 		if (ret) {
 			SC_LOGE("hbDNNReleaseTask failed");
-			return NULL;
+			break;
 		}
 		task_handle = NULL;
 
@@ -463,7 +463,7 @@ static void *inference_fcos(void *ptr)
 
 	for (i = 0; i < 5; i++)
 		release_output_tensor(output_tensors[i], 3);	// 释放模型输出资源
-
+exit:
 	mThreadFinish(privThread);
 	return NULL;
 }
@@ -497,7 +497,7 @@ static void *inference_mobilenetv2(void *ptr)
 	mThreadSetName(privThread, __func__);
 
 	if (bpu_handle == NULL)
-		return NULL;
+		goto exit;
 
 	hbPackedDNNHandle_t packed_dnn_handle = bpu_handle->m_packed_dnn_handle;
 	hbDNNHandle_t dnn_handle = bpu_handle->m_dnn_handle;
@@ -511,7 +511,7 @@ static void *inference_mobilenetv2(void *ptr)
 	ret = prepare_output_tensor(output_tensors, dnn_handle);
 	if (ret) {
 		printf("prepare model output tensor failed\n");
-		return NULL;
+		goto exit;
 	}
 
 	hbDNNTaskHandle_t task_handle = NULL;
@@ -534,13 +534,13 @@ static void *inference_mobilenetv2(void *ptr)
 				&infer_ctrl_param);
 		if (ret) {
 			SC_LOGE("hbDNNInfer failed");
-			return NULL;
+			break;
 		}
 		// wait task done
 		ret = hbDNNWaitTaskDone(task_handle, 0);
 		if (ret) {
 			SC_LOGE("hbDNNWaitTaskDone failed");
-			return NULL;
+			break;
 		}
 
 		// make sure CPU read data from DDR before using output tensor data
@@ -552,7 +552,7 @@ static void *inference_mobilenetv2(void *ptr)
 		ret = hbDNNReleaseTask(task_handle);
 		if (ret) {
 			SC_LOGE("hbDNNReleaseTask failed");
-			return NULL;
+			break;
 		}
 		task_handle = NULL;
 
@@ -578,7 +578,7 @@ static void *inference_mobilenetv2(void *ptr)
 	ret = hbSysFreeMem(&(output_tensors[0].sysMem[0]));			  // 释放模型输出资源
 	if (ret)
 		printf("output data free failed\n");
-
+exit:
 	mThreadFinish(privThread);
 	return NULL;
 }

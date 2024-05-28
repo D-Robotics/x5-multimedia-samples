@@ -122,9 +122,18 @@ static void* venc_get_stream_proc(void *ptr)
 
 	vpp_camera_t *vpp_camera = (vpp_camera_t *)privThread->pvThreadData;
 
-	if (vp_allocate_image_frame(&vse_frame) == NULL) return NULL;
-	if (vp_allocate_image_frame(&encode_frame) == NULL) return NULL;
-	if (vp_allocate_image_frame(&encode_stream) == NULL) return NULL;
+	if (vp_allocate_image_frame(&vse_frame) == NULL) {
+		SC_LOGE("vp_allocate_image_frame for vse_frame failed, so exit program.");
+		exit(-1);
+	}
+	if (vp_allocate_image_frame(&encode_frame) == NULL) {
+		SC_LOGE("vp_allocate_image_frame for encode_frame failed, so exit program.");
+		exit(-1);
+	}
+	if (vp_allocate_image_frame(&encode_stream) == NULL) {
+		SC_LOGE("vp_allocate_image_frame for encode_stream failed, so exit program.");
+		exit(-1);
+	}
 
 	hbn_vnode_image = (hbn_vnode_image_t *)vse_frame.hbn_vnode_image;
 
@@ -138,7 +147,7 @@ static void* venc_get_stream_proc(void *ptr)
 		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
 		if (ret != 0) {
 			SC_LOGE("vp_vse_get_frame failed.");
-			return NULL;
+			break;
 		}
 
 		// vp_vin_print_hbn_vnode_image_t(hbn_vnode_image);
@@ -154,20 +163,20 @@ static void* venc_get_stream_proc(void *ptr)
 		ret = vp_codec_set_input(&vpp_camera->m_encode_context, &encode_frame, 0);
 		if(ret != 0){
 			SC_LOGE("vp_codec_set_input failed.");
-			return NULL;
+			break;
 		}
 		// 从编码器获取码流
 		ret = vp_codec_get_output(&vpp_camera->m_encode_context, &encode_stream, 2000);
 		if(ret != 0){
 			SC_LOGE("vp_codec_get_output failed.");
-			return NULL;
+			break;
 		}
 
 
 		//for debug 
 		{
 			#if 0
-			if(enc_data_file == NULL){			
+			if(enc_data_file == NULL){
 				sprintf(enc_file_name, "/tmp/ch_%d_box_enc_output_%dx%d_nv12_.h265",
 					vpp_camera->pipline_id, vse_frame.width, vse_frame.height);
 
@@ -193,12 +202,12 @@ static void* venc_get_stream_proc(void *ptr)
 		ret = vp_codec_release_output(&vpp_camera->m_encode_context, &encode_stream);
 		if (ret != 0) {
 			SC_LOGE("vp_codec_release_output failed.");
-			return NULL;
+			break;
 		}
 		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
 		if (ret != 0) {
 			SC_LOGE("vp_vse_release_frame failed.");
-			return NULL;
+			break;
 		}
 	}
 
@@ -220,7 +229,10 @@ static void *send_yuv_to_bpu(void *ptr) {
 
 	vpp_camera_t *vpp_camera = (vpp_camera_t *)privThread->pvThreadData;
 
-	if (vp_allocate_image_frame(&vse_frame) == NULL) return NULL;
+	if (vp_allocate_image_frame(&vse_frame) == NULL) {
+		SC_LOGE("vp_allocate_image_frame for vse_frame failed, so exit program.");
+		exit(-1);
+	};
 
 	mThreadSetName(privThread, __func__);
 
@@ -228,7 +240,7 @@ static void *send_yuv_to_bpu(void *ptr) {
 		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 1, &vse_frame);
 		if (ret != 0) {
 			SC_LOGE("vp_vse_get_frame failed");
-			return NULL;
+			break;
 		}
 
 		hbn_vnode_image = (hbn_vnode_image_t *)vse_frame.hbn_vnode_image;
@@ -240,11 +252,10 @@ static void *send_yuv_to_bpu(void *ptr) {
 		// print_bpu_buffer_info(&bpu_input_buffer);
 
 		bpu_wrap_send_frame(&vpp_camera->m_bpu_handle, &bpu_input_buffer);
-
 		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, 1, &vse_frame);
 		if (ret != 0) {
 			SC_LOGE("vp_vse_release_frame failed");
-			return NULL;
+			break;
 		}
 	}
 

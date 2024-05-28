@@ -157,10 +157,23 @@ static void *get_decode_output_thread(void *ptr) {
 
 	vpp_box_t *vpp_box = (vpp_box_t *)privThread->pvThreadData;
 
-	if (vp_allocate_image_frame(&decode_frame) == NULL) return NULL;
-	if (vp_allocate_image_frame(&vse_frame) == NULL) return NULL;
-	if (vp_allocate_image_frame(&encode_frame) == NULL) return NULL;
-	if (vp_allocate_image_frame(&encode_stream) == NULL) return NULL;
+	if (vp_allocate_image_frame(&decode_frame) == NULL) {
+		SC_LOGE("vp_allocate_image_frame for decode_frame failed, so exit program.");
+		exit(-1);
+	}
+
+	if (vp_allocate_image_frame(&vse_frame) == NULL) {
+		SC_LOGE("vp_allocate_image_frame for vse_frame failed, so exit program.");
+		exit(-1);
+	}
+	if (vp_allocate_image_frame(&encode_frame) == NULL) {
+		SC_LOGE("vp_allocate_image_frame for encode_frame failed, so exit program.");
+		exit(-1);
+	}
+	if (vp_allocate_image_frame(&encode_stream) == NULL) {
+		SC_LOGE("vp_allocate_image_frame for encode_stream failed, so exit program.");
+		exit(-1);
+	}
 
 	mThreadSetName(privThread, __func__);
 
@@ -170,7 +183,7 @@ static void *get_decode_output_thread(void *ptr) {
 							MEM_PIX_FMT_NV12);
 	if (ret < 0) {
 		SC_LOGE("alloc_graphic_buffer failed");
-		return NULL;
+		exit(-1);
 	}
 
 	char nv12_file_name[128];
@@ -178,6 +191,8 @@ static void *get_decode_output_thread(void *ptr) {
 	while (privThread->eState == E_THREAD_RUNNING) {
 		ret = vp_codec_get_output(&vpp_box->m_decode_context, &decode_frame, VP_GET_FRAME_TIMEOUT);
 		if (ret != 0) {
+			SC_LOGE("vpu maybe can't alloc memory, so wiat 1 second.");
+			sleep(1); 
 			continue;
 		}
 

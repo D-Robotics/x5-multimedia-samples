@@ -38,9 +38,10 @@ typedef struct pipe_contex_s {
 	hbn_vnode_handle_t vse_node_handle;
 	hbn_vnode_handle_t gdc_node_handle;
 	hbn_vnode_handle_t vpu_node_handle;
+	hbn_vnode_handle_t codec_node_handle;
 	camera_handle_t cam_fd;
 	vp_sensor_config_t *sensor_config;
-}pipe_contex_t;
+} pipe_contex_t;
 
 int32_t read_yuv420_file(const char *filename, char *addr0, char *addr1, uint32_t y_size);
 int32_t read_yuvv_nv12_file(const char *filename, char *addr0, char *addr1, uint32_t y_size);
@@ -53,6 +54,7 @@ int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, uint32_t width,
 			     uint32_t height, uint32_t cached, int32_t format);
 uint64_t vio_test_gettime_us(void);
 uint32_t load_file_2_buff_nosize(const char *path, char *filebuff);
+char* get_program_name();
 
 #ifdef __cplusplus
 	}

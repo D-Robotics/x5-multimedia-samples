@@ -50,5 +50,6 @@ void vp_show_sensors_list();
 vp_sensor_config_t *vp_get_sensor_config_by_name(char *sensor_name);
 int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors);
 int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config);
+int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int used_mipi_host);
 
 #endif // __VP_SENSORS_H__

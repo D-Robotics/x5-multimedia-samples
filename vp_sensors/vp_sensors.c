@@ -429,6 +429,61 @@ int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
 	return -1;
 }
 
+int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int used_mipi_host)
+{
+	int32_t ret = -1, j = 0;
+	static int32_t i = 0;
+	uint32_t frequency = 24000000;
+
+	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
+
+	// Iterate over vcon@0 - 3
+	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
+		// 跳过使用使用的mipi csi控制器，支持同时接入相同的摄像头
+		if (used_mipi_host & (1 << i))
+			continue;
+
+		read_device_tree(i, &vcon_props_array[i]);
+
+		printf("Searching camera sensor on device: %s ", vcon_props_array[i].device_path);
+		printf("i2c bus: %d ", vcon_props_array[i].bus);
+		printf("mipi rx phy: %d\n", vcon_props_array[i].rx_phy[1]);
+
+		// 如果该vcon使能了，检测该vcon上是否有连接 sensor
+		if (vcon_props_array[i].status[0] == 'o') { // okay
+			// 检测该vcon上连接的 sensor
+			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
+			for (j = 0; j < 8; ++j) {
+				if (vcon_props_array[i].gpio_oth[j] != 0) {
+					if (sensor_config->camera_config->gpio_enable_bit != 0) {
+						// gpio_level should be from sensor config and sensor spec
+						enable_sensor_pin(vcon_props_array[i].gpio_oth[j],
+							(1 - sensor_config->camera_config->gpio_level_bit));
+					}
+				}
+			}
+
+			/* enable mclk */
+			write_mipi_host_freq(frequency, i);
+			enable_mipi_host_clock(1, i);
+
+			// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
+			ret = check_sensor_reg_value(vcon_props_array[i], sensor_config);
+			// Disable frequency
+			enable_mipi_host_clock(0, i);
+			if (ret == 0) {
+				// 检测到 sensor，保存 sensor 信息
+				printf("INFO: Found sensor_name:%s on mipi rx csi %d, i2c addr 0x%x, config_file:%s\n",
+					sensor_config->sensor_name, vcon_props_array[i].rx_phy[1],
+					sensor_config->camera_config->addr, sensor_config->config_file);
+				break;
+			}
+		}
+	}
+
+	return ret;
+}
+
 int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 {
 	int32_t ret = 0, i = 0, j = 0;
@@ -469,6 +524,7 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 				printf("INFO: Found sensor_name:%s on mipi rx csi %d, i2c addr 0x%x, config_file:%s\n",
 					sensor_config->sensor_name, vcon_props_array[i].rx_phy[1],
 					sensor_config->camera_config->addr, sensor_config->config_file);
+				break;
 			}
 
 			// Disable frequency

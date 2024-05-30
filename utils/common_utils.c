@@ -65,7 +65,6 @@ int32_t dump_2plane_yuv_to_file(char *filename, uint8_t *src_buffer, uint8_t *sr
 
 	close(yuv_fd);
 
-	printf("Dump yuv to file(%s), size(%d) + size1(%d) succeeded\n", filename, size, size1);
 	return 0;
 }
 
@@ -208,4 +207,30 @@ int32_t read_yuvv_nv12_file(const char *filename, char *addr0, char *addr1, uint
 
 	printf("(%s):file read(%s), y-size(%d)\n", __func__, filename, y_size);
 	return 0;
+}
+
+char* get_program_name()
+{
+	FILE* file = fopen("/proc/self/cmdline", "r");
+	if (file == NULL) {
+		return NULL;
+	}
+
+	static char buffer[1024];
+	size_t len = fread(buffer, 1, sizeof(buffer) - 1, file);
+	fclose(file);
+
+	if (len <= 0) {
+		return NULL;
+	}
+
+	buffer[len] = '\0';
+	char* program_name = strrchr(buffer, '/');
+	if (program_name != NULL) {
+		program_name++;
+	} else {
+		program_name = buffer;
+	}
+
+	return program_name;
 }

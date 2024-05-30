@@ -1,4 +1,6 @@
 #include "RtspSvr.hh"
+#include <sched.h>
+#include <sys/prctl.h>
 #include "utils/utils_log.h"
 #include "utils/common_utils.h"
 #include "rtsp_server_default_param.h"
@@ -72,6 +74,8 @@ void CRtspServer::ThreadRtspServer()
 	authDB = new UserAuthenticationDatabase;
 	authDB->addUserRecord("admin", "admin123"); // replace these with real strings
 #endif
+
+	prctl(PR_SET_NAME, "rtsp server");
 
 	do{
 		portNumBits rtspServerPortNum = m_port;

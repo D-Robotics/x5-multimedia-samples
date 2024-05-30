@@ -2,6 +2,7 @@
 #define _H264_MAIN_VIDEO_SOURCE_HH_
 
 #include "FramedSource.hh"
+#include "utils/time_utils.h"
 #include "utils/stream_manager.h"
 
 /*extern shm_stream_t* 		fH264LiveShmSource;*/
@@ -43,6 +44,9 @@ private:
 	u_int64_t 	fNumBytesToStream; // used iff "fLimitNumBytesToStream" is True
 	unsigned long long	fPts;
 	unsigned int		fNaluLen;
+
+	//for debug
+	struct TimeStatistics fTimeStatistics;
 };
 
 

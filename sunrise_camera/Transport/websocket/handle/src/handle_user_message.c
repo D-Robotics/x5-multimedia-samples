@@ -18,6 +18,7 @@
 #include "utils/stream_define.h"
 #include "utils/stream_manager.h"
 #include "utils/cJSON.h"
+#include "utils/time_utils.h"
 
 #include "Handshake.h"
 #include "Errors.h"
@@ -70,7 +71,7 @@ void save_video_data2file_for_debug(char* name, int nal_unit_type, unsigned char
 	static FILE *enc_data_file = NULL;
 	if(enc_data_file == NULL){
 		if(nal_unit_type == 32){
-				char enc_file_name [100];			
+				char enc_file_name [100];
 				sprintf(enc_file_name, "/tmp/front_websocker_%s.h265", name);
 
 				enc_data_file = fopen(enc_file_name, "wb");
@@ -109,8 +110,8 @@ static int ws_send_h265_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_s
 		if (ret > 0) *nalu_len += nalu.len + nalu.startcodeprefix_len;    //记录nalu偏移总长
 
 		//只发送sps pps i p nalu, 其他抛弃
-		if ( nalu.nal_unit_type == 1 || nalu.nal_unit_type == 32 || 
-			nalu.nal_unit_type == 33 || nalu.nal_unit_type == 34 || 
+		if ( nalu.nal_unit_type == 1 || nalu.nal_unit_type == 32 ||
+			nalu.nal_unit_type == 33 || nalu.nal_unit_type == 34 ||
 			nalu.nal_unit_type == 19)
 		{
 			frame_size = nalu.len;
@@ -162,12 +163,12 @@ static int ws_send_h264_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_s
 			return 0;
 		}
 
-		if (ret > 0) *nalu_len += nalu.len + nalu.startcodeprefix_len;    //记录nalu偏移总长
+		if (ret > 0){ //记录nalu偏移总长
+			*nalu_len += nalu.len + nalu.startcodeprefix_len;
+		}
 
-#if 0
-		printf("nal_unit_type:%d data:%p buf:%p len:%u, *nalu_len:%d\n", nalu.nal_unit_type, data,
-					nalu.buf, nalu.len, *nalu_len);
-#endif
+		// SC_LOGI("nal_unit_type:%d data:%p buf:%p len:%u, *nalu_len:%d, %d\n", nalu.nal_unit_type, data,
+		// 			nalu.buf, nalu.len, *nalu_len, length);
 
 		//只发送sps pps i p nalu, 其他抛弃
 		if (nalu.nal_unit_type == 7 || nalu.nal_unit_type == 8
@@ -195,7 +196,7 @@ static int ws_send_h264_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_s
 				//该帧发送完毕，包括sps pps等nalu拆分完毕，可以释放
 				shm_stream_post(shm_source);
 			}else{
-				// printf("recv nal_type: %d, so not post .\n", nalu.nal_unit_type);
+				SC_LOGD("recv nal_type: %d, so not post .\n", nalu.nal_unit_type);
 			}
 		}
 		// 调试过程中遇到出现 type == 23 的情况，不解析直接抛弃掉
@@ -215,19 +216,17 @@ static void *ws_push_stream_thread(void *ptr)
 {
 	tsThread *privThread = (tsThread*)ptr;
 	ws_client *ws_clt = (ws_client*)privThread->pvThreadData;
+
 	unsigned char* data[32] = {NULL};
 	unsigned int nalu_len[32] = {0};
-	int i= 0;
 
 	// 设置线程名，方便知道退出的是什么线程
 	mThreadSetName(privThread, __func__);
 
-	int ret = 0;
-	// 从共享内存中读取码流数据
-
-	printf("stream_count = %d\n", ws_clt->stream_count);
 	while (privThread->eState == E_THREAD_RUNNING) {
-		for (i = 0; i < ws_clt->stream_count; i++) {
+		int ret = 0;
+		// 从共享内存中读取码流数据
+		for (int i = 0; i < ws_clt->stream_count; i++) {
 			if(ws_clt->codec_type == T_SDK_RTSP_VIDEO_TYPE_H264){
 				ret |= ws_send_h264_shm_stream_to_wfs(ws_clt, ws_clt->shm_source[i], data[i], &nalu_len[i]);
 			}else if(ws_clt->codec_type == T_SDK_RTSP_VIDEO_TYPE_H265) {
@@ -235,14 +234,15 @@ static void *ws_push_stream_thread(void *ptr)
 			}else if(ws_clt->codec_type == T_SDK_RTSP_VIDEO_TYPE_MJPEG){
 				ret |= ws_send_mjpeg_shm_stream_to_wfs(ws_clt, ws_clt->shm_source[i], data[i], &nalu_len[i]);
 			}else{
-				//no nothing;
+				//do no nothing;
 			}
 		}
-		if(ret == 0){ // 没有读取到数据
+
+		if(ret == 0){ // 没有读取到数据, 延迟10ms 防止线程空转导致CPU 100%
 			usleep(10 * 1000);
 		}
 	}
-	for (i = 0; i < ws_clt->stream_count; i++) {
+	for (int i = 0; i < ws_clt->stream_count; i++) {
 		if (ws_clt->shm_source[i] != NULL) {
 			shm_stream_destory(ws_clt->shm_source[i]); // 销毁共享内存读句柄
 			ws_clt->shm_source[i] = NULL;
@@ -291,13 +291,13 @@ static int _do_start_stream(ws_client *ws_clt)
 		sprintf(shm_name, "name_%s_chn%d", type == 96 ? "h264" :
 									(type == 265 ? "h265" :
 									(type == 26) ? "jpeg" : "other"), venc_chn_info.channel);
-		
+
 		if (type == 96){
 			ws_clt->codec_type = T_SDK_RTSP_VIDEO_TYPE_H264;
 			ws_clt->codec_type_string = "h264";
-		}else if(type == 265){ 
+		}else if(type == 265){
 			ws_clt->codec_type = T_SDK_RTSP_VIDEO_TYPE_H265;
-			ws_clt->codec_type_string = "h265";		
+			ws_clt->codec_type_string = "h265";
 		}else if(type == 26){
 			ws_clt->codec_type = T_SDK_RTSP_VIDEO_TYPE_MJPEG;
 			ws_clt->codec_type_string = "jpeg";
@@ -356,8 +356,8 @@ static int _do_add_sms(int channel)
 		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H264;
 		codec_type_string = "h264";
 	}else if(type == 265){
-		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H265; 
-		codec_type_string = "h265";		
+		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H265;
+		codec_type_string = "h265";
 	}else if(type == 26){
 		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_MJPEG;
 		codec_type_string = "jpeg";

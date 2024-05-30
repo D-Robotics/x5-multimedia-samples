@@ -22,6 +22,7 @@
 #include "utils/stream_manager.h"
 #include "utils/mthread.h"
 #include "utils/mqueue.h"
+#include "utils/time_utils.h"
 
 #include "bpu_wrap.h"
 #include "vp_wrap.h"
@@ -105,6 +106,7 @@ static void vpp_camera_push_stream(vpp_camera_t *vpp_camera, ImageFrame *stream)
 	info.width		= vpp_camera->m_encode_context.video_enc_params.width;
 	info.height		= vpp_camera->m_encode_context.video_enc_params.height;
 
+	// SC_LOGI("codec put size %lld", buffer->vstream_buf.size);
 	shm_stream_put(vpp_camera->venc_shm, info, (unsigned char*)buffer->vstream_buf.vir_ptr, buffer->vstream_buf.size);
 }
 
@@ -142,8 +144,11 @@ static void* venc_get_stream_proc(void *ptr)
 	char enc_file_name [100];
 	FILE *enc_data_file = NULL;
 #endif
+
+	struct TimeStatistics time_statistics;
 	while (privThread->eState == E_THREAD_RUNNING)
 	{
+		time_statistics_at_beginning_of_loop(&time_statistics);
 		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
 		if (ret != 0) {
 			SC_LOGE("vp_vse_get_frame failed.");
@@ -209,6 +214,9 @@ static void* venc_get_stream_proc(void *ptr)
 			SC_LOGE("vp_vse_release_frame failed.");
 			break;
 		}
+
+		time_statistics_at_ending_of_loop(&time_statistics);
+		time_statistics_info_show(&time_statistics, "read_camera", false);
 	}
 
 	vp_free_image_frame(&vse_frame);

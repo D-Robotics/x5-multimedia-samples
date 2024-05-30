@@ -84,7 +84,8 @@ void H265MainVideoSource::incomingDataHandler1()
 	frame_info info;
 	unsigned int length;
 	unsigned char* data = NULL;
-
+	
+	time_statistics_at_beginning_of_loop(&fTimeStatistics);
 	if (shm_stream_front(fShmSource, &info, &data, &length) == 0)
 	{
 		NALU_t nalu;
@@ -150,7 +151,7 @@ void H265MainVideoSource::incomingDataHandler1()
 			if (nalu.nal_unit_type == 1 || nalu.nal_unit_type == 19)
 			{
 				fNaluLen = 0;
-				fDurationInMicroseconds = 1000 / 50;
+				fDurationInMicroseconds = 1000 * 30; //30ms
 
 				int remains = shm_stream_remains(fShmSource);
 				if(remains > 3)
@@ -176,8 +177,10 @@ void H265MainVideoSource::incomingDataHandler1()
 	}
 	else
 	{
-		nextTask() = envir().taskScheduler().scheduleDelayedTask(10,
+		nextTask() = envir().taskScheduler().scheduleDelayedTask(10 * 1000,
 			(TaskFunc*)incomingDataHandler, this);
 	}
 
+	time_statistics_at_ending_of_loop(&fTimeStatistics);
+	time_statistics_info_show(&fTimeStatistics, "rtsp-h265", false);
 }

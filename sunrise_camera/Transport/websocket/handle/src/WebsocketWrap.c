@@ -21,6 +21,7 @@
  ******************************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/prctl.h>
 
 #include "Handshake.h"
 #include "Errors.h"
@@ -215,6 +216,8 @@ void *handleClient(void *args)
 		handshake_error("Couldn't allocate memory.", ERROR_INTERNAL, n);
 		pthread_exit((void *)EXIT_FAILURE);
 	}
+
+	prctl(PR_SET_NAME, "websocket_server");
 
 	printf("Client connected with the following information:\n"
 		   "\tSocket: %d\n"

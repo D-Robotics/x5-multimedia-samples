@@ -152,19 +152,6 @@ static int32_t release_output_tensor(hbDNNTensor *output, int32_t len)
 	return 0;
 }
 
-#include <stdio.h>
-#include <time.h>
-
-uint64_t get64BitTimestampMs() {
-    struct timespec ts;
-    uint64_t timestamp;
-
-    clock_gettime(CLOCK_REALTIME, &ts);
-    timestamp = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
-
-    return timestamp;
-}
-
 static void *post_process_yolov5s(void *ptr)
 {
 	tsThread *privThread = (tsThread*)ptr;
@@ -189,7 +176,7 @@ static void *post_process_yolov5s(void *ptr)
 						pipeline_id = *(int*)bpu_handle->m_userdata;
 
 					if(count % 3300 == 0){
-						SC_LOGI("[%d] inference:[%s]", pipeline_id, results);
+						SC_LOGD("[%d] inference:[%s]", pipeline_id, results);
 					}
 					count++;
 				}
@@ -289,8 +276,6 @@ static void *inference_yolov5s(void *ptr)
 			SC_LOGI("post process queue full, skip it");
 			cur_ouput_buf_idx++;
 			cur_ouput_buf_idx %= 5;
-
-			usleep(20 * 1000); //睡眠20ms 否则CPU占用 100%
 			continue;
 		}
 

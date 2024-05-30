@@ -16,7 +16,7 @@ CC := $(COMPILE_PREFIX)gcc
 #	“groupsock/GroupsockHelper.cpp:430:21:
 #	error: invalid conversion from ‘int*’ to ‘socklen_t* {aka unsigned int*}’
 #	[-fpermissive]”
-CFLAGS := $(INC) -O0 -DBSD=1 -fPIC $(CFLAGS_EX) -DSOCKLEN_T=socklen_t
+CFLAGS := $(INC) -O0 -DBSD=1 -fPIC $(CFLAGS_EX) -DSOCKLEN_T=socklen_t -DALLOW_SERVER_PORT_REUSE
 #CFLAGS := $(INC) -O0 -Wall -DBSD=1 -fPIC
 CXX := $(COMPILE_PREFIX)c++
 CXXFLAGS := $(CFLAGS)

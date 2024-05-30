@@ -21,4 +21,5 @@ sample_vse/sample_vse
 sample_pipeline/single_pipe_vin_isp_vse/single_pipe_vin_isp_vse
 sample_pipeline/multi_pipe_vin_isp_vse/multi_pipe_vin_isp_vse
 sample_pipeline/single_pipe_vin_isp_vse_vpu/single_pipe_vin_isp_vse_vpu
+sample_codec/sample_codec
 

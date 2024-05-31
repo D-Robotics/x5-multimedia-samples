@@ -181,8 +181,10 @@ int32_t solution_cfg_load_default_config()
 	strcpy(g_solution_config.hardware_capability.chip_type, "");
 	strcpy(g_solution_config.hardware_capability.sensor_list, "");
 	strcpy(g_solution_config.hardware_capability.model_list, "");
-	strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265/Mjpeg");
+	// strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265/Mjpeg");
 	//strcpy(g_solution_config.hardware_capability.codec_type_list, "H264");
+	strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265");
+
 	// 初始化编码码率列表
 	// 标清视频（480p） 256, 512, 768, 1024, 1536, 2048,
 	// 高清视频（720p） 512, 1024, 2048, 3072, 4096, 6144,

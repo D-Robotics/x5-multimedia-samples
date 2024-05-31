@@ -88,6 +88,7 @@ int main(int argc, char** argv) {
 				index,
 				vp_sensor_config_list[index]->sensor_name,
 				vp_sensor_config_list[index]->config_file);
+		vp_sensor_fixed_mipi_host(pipe_contex.sensor_config);
 	} else {
 		printf("Unsupport sensor index:%d\n", index);
 		print_help(argv[0]);

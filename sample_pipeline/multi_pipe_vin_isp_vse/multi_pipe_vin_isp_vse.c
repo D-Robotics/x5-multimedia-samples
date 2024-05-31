@@ -607,6 +607,15 @@ void *encode_vse_chn_data(void *context)
 	media_codec_output_buffer_info_t info;
 	media_codec_context_t *media_context = &pipeline_info->media_context;
 
+	uint8_t uuid[] = "dc45e9bd-e6d948b7-962cd820-d923eeef+SEI_D-Robotics";
+
+	uint32_t length = sizeof(uuid)/sizeof(uuid[0]);
+	ret = hb_mm_mc_insert_user_data(media_context, uuid, length);
+	if (ret != 0) {
+		printf("#### insert user data failed. ret(%d) ####\n", ret);
+		return NULL;
+	}
+
 	FILE *fp_output = fopen(pipeline_info->output_file, "w+b");
 	if (NULL == fp_output) {
 		printf("Failed to open output file\n");

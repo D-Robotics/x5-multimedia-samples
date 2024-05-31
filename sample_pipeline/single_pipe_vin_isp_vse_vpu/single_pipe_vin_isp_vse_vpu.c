@@ -453,6 +453,15 @@ void *read_vse_data(void *context) {
 		printf("Failed to open output file\n");
 	}
 
+	uint8_t uuid[] = "dc45e9bd-e6d948b7-962cd820-d923eeef+SEI_D-Robotics";
+
+	uint32_t length = sizeof(uuid)/sizeof(uuid[0]);
+	ret = hb_mm_mc_insert_user_data(&media_context, uuid, length);
+	if (ret != 0) {
+		printf("#### insert user data failed. ret(%d) ####\n", ret);
+		return NULL;
+	}
+
 	while (running) {
 		for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
 			ret = hbn_vnode_getframe(vse_node_handle, i, 1000, &out_img[i]);

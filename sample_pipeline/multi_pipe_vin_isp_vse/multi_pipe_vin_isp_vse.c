@@ -583,7 +583,7 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->isp_node_handle,
-							vse_bind_index,
+							0,
 							pipe_contex->vse_node_handle,
 							0);
 	ERR_CON_EQ(ret, 0);

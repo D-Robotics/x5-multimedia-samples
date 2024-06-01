@@ -191,8 +191,7 @@ static void *get_decode_output_thread(void *ptr) {
 	while (privThread->eState == E_THREAD_RUNNING) {
 		ret = vp_codec_get_output(&vpp_box->m_decode_context, &decode_frame, VP_GET_FRAME_TIMEOUT);
 		if (ret != 0) {
-			SC_LOGE("vpu maybe can't alloc memory, so wiat 1 second.");
-			sleep(1); 
+			usleep(30 * 1000);
 			continue;
 		}
 

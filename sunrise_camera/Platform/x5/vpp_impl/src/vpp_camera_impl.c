@@ -200,8 +200,6 @@ static void* venc_get_stream_proc(void *ptr)
 			}
 			#endif
 		}
-
-		// rtsp 推流
 		vpp_camera_push_stream(vpp_camera, &encode_stream);
 
 		ret = vp_codec_release_output(&vpp_camera->m_encode_context, &encode_stream);

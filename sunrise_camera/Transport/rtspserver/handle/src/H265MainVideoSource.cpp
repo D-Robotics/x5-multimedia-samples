@@ -35,14 +35,19 @@ H265MainVideoSource::H265MainVideoSource(UsageEnvironment& env,
 		fShmSource, shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
 	fPts = 0;
 	fNaluLen = 0;
+
+	SC_LOGI("video source created for %s", shmName);
 }
 
 H265MainVideoSource::~H265MainVideoSource()
 {
+	SC_LOGI("video source deleted .");
 	if(fShmSource != NULL)
 	{
 		shm_stream_destory(fShmSource);
 		fShmSource = NULL;
+	}else{
+		SC_LOGW("shm is null.");
 	}
 }
 
@@ -151,10 +156,10 @@ void H265MainVideoSource::incomingDataHandler1()
 			if (nalu.nal_unit_type == 1 || nalu.nal_unit_type == 19)
 			{
 				fNaluLen = 0;
-				fDurationInMicroseconds = 1000 * 30; //30ms
+				fDurationInMicroseconds = 1000 * 1; //1ms
 
 				int remains = shm_stream_remains(fShmSource);
-				if(remains > 3)
+				if(remains > 10)
 					SC_LOGI("fShmSource:%p, framer video pts:%llu length:%d fFrameSize:%d remains:%d", fShmSource, info.pts, length, fFrameSize, remains);
 
 				//该帧发送完毕，包括sps pps等nalu拆分完毕，可以释放

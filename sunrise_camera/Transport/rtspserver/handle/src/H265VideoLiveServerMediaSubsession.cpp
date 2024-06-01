@@ -44,9 +44,11 @@ char *shmId, char *shmName, int streamBufSize, int frameRate)
 
 	fStreamBufSize = streamBufSize;
 	fFrameRate = frameRate;
+	SC_LOGI("media subsession created for :%s", shmName);
 }
 
 H265VideoLiveServerMediaSubsession::~H265VideoLiveServerMediaSubsession() {
+	SC_LOGI("media subsession destroyed for :%s", fShmName);
 	delete[] fAuxSDPLine;
 }
 

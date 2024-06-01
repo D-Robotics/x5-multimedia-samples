@@ -207,6 +207,7 @@ bool CRtspServer::DynamicAddSms(const char* streamName,
 		sms = ServerMediaSession::createNew(*m_env, streamName, streamName, "H.265 video elementary stream", True);
 		sms->addSubsession(H265VideoLiveServerMediaSubsession::createNew(*m_env, reuseFirstSource, shmId, shmName, streamBufSize, frameRate));
 	}else{
+		SC_LOGE("Stream <%s> recv unsupport video type :%d.", streamName, videoType);
 		return false;
 	}
 
@@ -234,13 +235,18 @@ bool CRtspServer::DynamicAddSms(const char* streamName,
 
 bool CRtspServer::DynamicDelSms(const char* streamName)
 {
+	SC_LOGI("Stop <%s> stream.", streamName);
 	ServerMediaSession* sms = m_rtspServer->lookupServerMediaSession(streamName);
-	Boolean const smsExists = sms != NULL;
+	Boolean const smsExists = (sms != NULL);
 
 	if (smsExists) {
 		// "sms" was created for a file that no longer exists. Remove it:
-		m_rtspServer->removeServerMediaSession(sms);
+		m_rtspServer->deleteServerMediaSession(sms);
+
+		sms->deleteAllSubsessions();
 		sms = NULL;
+	}else{
+		SC_LOGW("Stop <%s> stream, but not found.", streamName);
 	}
 	return true;
 }

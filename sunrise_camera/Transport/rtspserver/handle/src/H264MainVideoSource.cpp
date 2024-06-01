@@ -35,14 +35,18 @@ H264MainVideoSource::H264MainVideoSource(UsageEnvironment& env,
 		fShmSource, shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
 	fPts = 0;
 	fNaluLen = 0;
+	SC_LOGI("video source created for %s", shmName);
 }
 
 H264MainVideoSource::~H264MainVideoSource()
 {
+	SC_LOGI("video source deleted .");
 	if(fShmSource != NULL)
 	{
 		shm_stream_destory(fShmSource);
 		fShmSource = NULL;
+	}else{
+		SC_LOGW("shm is null.");
 	}
 }
 
@@ -138,7 +142,7 @@ void H264MainVideoSource::incomingDataHandler1()
 			if (nalu.nal_unit_type == 1 || nalu.nal_unit_type == 5)
 			{
 				fNaluLen = 0;
-				fDurationInMicroseconds = 1000 * 30; //30ms
+				fDurationInMicroseconds = 1000 * 1; //1ms
 
 				int remains = shm_stream_remains(fShmSource);
 				if(remains > 3)

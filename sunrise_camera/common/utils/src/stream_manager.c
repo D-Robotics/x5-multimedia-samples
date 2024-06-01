@@ -416,6 +416,7 @@ void* shm_stream_malloc(shm_stream_t* handle, const char* name, unsigned int siz
 	void* node = cmap_pkey_find(s_shmmap, name);
 	if(node == NULL)
 	{
+		SC_LOGI("[%s] node is null, so create .", name);
 		memory = (void*)malloc(size);
 		memset(memory, 0, size);
 		shmmap_node* n = (shmmap_node*)malloc(sizeof(shmmap_node));
@@ -435,6 +436,7 @@ void* shm_stream_malloc(shm_stream_t* handle, const char* name, unsigned int siz
 	}
 	else
 	{
+		SC_LOGI("[%s] node is exit so add ref.", name);
 		shmmap_node* n = (shmmap_node*)node;
 		memory = n->addr;
 		n->ref_count++;

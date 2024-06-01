@@ -19,7 +19,6 @@
 #include "hb_media_error.h"
 
 #define MAX_PIPE_NUM 4
-#define VSE_MAX_CHANNELS 6
 
 typedef struct {
 	int select_sensor_id;
@@ -497,8 +496,8 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	vse_ochn_attr_t vse_ochn_attr[VSE_MAX_CHANNELS] = {0};
 	uint32_t chn_id = 0;
 	uint32_t hw_id = 0;
-	uint32_t input_width = 0;
-	uint32_t input_height = 0;
+	uint32_t input_width = 0, input_height = 0;
+	uint32_t output_width = 0, output_height = 0;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
 
 	ret = hbn_vnode_get_ichn_attr(pipe_contex->isp_node_handle, chn_id, &isp_ichn_attr);
@@ -519,9 +518,13 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	vse_ochn_attr[vse_bind_index].fmt = FRM_FMT_NV12;
 	vse_ochn_attr[vse_bind_index].bit_width = 8;
 
+	configure_vse_max_resolution(vse_bind_index,
+		input_width, input_height,
+		&output_width, &output_height);
+
 	// 输出原分辨率
-	vse_ochn_attr[vse_bind_index].target_w = input_width;
-	vse_ochn_attr[vse_bind_index].target_h = input_height;
+	vse_ochn_attr[vse_bind_index].target_w = output_width;
+	vse_ochn_attr[vse_bind_index].target_h = output_height;
 
 	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, vse_node_handle);
 	ERR_CON_EQ(ret, 0);

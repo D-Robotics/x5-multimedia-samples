@@ -31,6 +31,8 @@ extern "C" {
 		}\
 	} while(0)\
 
+#define VSE_MAX_CHANNELS 6
+
 typedef struct pipe_contex_s {
 	hbn_vflow_handle_t vflow_fd;
 	hbn_vnode_handle_t vin_node_handle;
@@ -55,6 +57,8 @@ int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, uint32_t width,
 uint64_t vio_test_gettime_us(void);
 uint32_t load_file_2_buff_nosize(const char *path, char *filebuff);
 char* get_program_name();
+void configure_vse_max_resolution(int32_t channel, uint32_t input_width, uint32_t input_height,
+	uint32_t *output_width, uint32_t *output_height);
 
 #ifdef __cplusplus
 	}

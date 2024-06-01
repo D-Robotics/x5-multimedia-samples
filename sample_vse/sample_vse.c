@@ -245,8 +245,8 @@ int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_im
 	vse_ochn_attr[1].target_h = 512;
 
 	// 输出非 16 像素对齐的常用算法图像使用的分辨率
-	vse_ochn_attr[2].target_w = 224;
-	vse_ochn_attr[2].target_h = 224;
+	vse_ochn_attr[2].target_w = 1920;
+	vse_ochn_attr[2].target_h = 1080;
 
 	// 设置VSE通道3输出属性，ROI为原图中心点不变，宽、高各裁剪一半，输出图像宽、高等于ROI区域宽高
 	vse_ochn_attr[3].roi.x = input_width / 2 - input_width / 4;

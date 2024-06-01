@@ -234,3 +234,43 @@ char* get_program_name()
 
 	return program_name;
 }
+
+// VSE通道最大分辨率限制
+const int VSE_MAX_RESOLUTIONS[VSE_MAX_CHANNELS][2] = {
+    {4096, 3076}, // 4K Downscale
+    {1920, 1080}, // 1080P0 Downscale
+    {1920, 1080}, // 1080P1 Downscale
+    {1280,  720}, // 720P0 Downscale
+    {1280,  720}, // 720P1 Downscale
+    {4096, 3076}  // 4K Upscale
+};
+
+// 配置最大分辨率的函数
+void configure_vse_max_resolution(int32_t channel, uint32_t input_width, uint32_t input_height,
+	uint32_t *output_width, uint32_t *output_height)
+{
+	if (channel < 0 || channel >= VSE_MAX_CHANNELS) {
+		printf("Invalid vse channel number. Valid channel range is 0 to 5.\n");
+		*output_width = 0;
+		*output_height = 0;
+		return;
+	}
+
+	int max_width = VSE_MAX_RESOLUTIONS[channel][0];
+	int max_height = VSE_MAX_RESOLUTIONS[channel][1];
+
+	// 根据限制条件调整输入分辨率，并打印日志信息
+	if (input_width > max_width) {
+		printf("Input width %d exceeds maximum width %d for channel %d. Adjusting to maximum width.\n", input_width, max_width, channel);
+		*output_width = max_width;
+	} else {
+		*output_width = input_width;
+	}
+
+	if (input_height > max_height) {
+		printf("Input height %d exceeds maximum height %d for channel %d. Adjusting to maximum height.\n", input_height, max_height, channel);
+		*output_height = max_height;
+	} else {
+		*output_height = input_height;
+	}
+}

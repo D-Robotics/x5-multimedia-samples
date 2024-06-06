@@ -386,6 +386,8 @@ int32_t vpp_camera_init(void)
 	hb_mem_module_open();
 
 	for (i = 0; i < VPP_CAM_MAX_CHANNELS; i++) {
+		g_vpp_camera[i].venc_shm = NULL;
+
 		if (g_vpp_camera[i].vp_vflow_contex.sensor_config == NULL)
 			continue;
 
@@ -525,6 +527,11 @@ int32_t vpp_camera_stop(void)
 		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) == 0)
 			continue;
 		mThreadStop(&g_vpp_camera[i].m_bpu_thread);
+
+		if(g_vpp_camera[i].venc_shm != NULL){
+			shm_stream_destory(g_vpp_camera[i].venc_shm);
+			g_vpp_camera[i].venc_shm = NULL;
+		}
 	}
 
 	for (i = 0; i < VPP_CAM_MAX_CHANNELS; i++) {

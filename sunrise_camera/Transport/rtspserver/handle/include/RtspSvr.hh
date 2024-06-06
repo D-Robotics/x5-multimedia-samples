@@ -8,6 +8,24 @@
 #include "H265VideoLiveServerMediaSubsession.hh"
 #include "LPCMAudioLiveServerMediaSubsession.hh"
 #include "PCMAAudioLiveServerMediaSubsession.hh"
+#include "utils/cqueue.h"
+
+struct SmsParam{
+	int actionType; //0: 删除， 1:添加
+	char streamName[128];
+	bool audioEnable;
+	int audioType;
+	int audioSampleRate;
+	int audioBitPerSample;
+	int audioChannels;
+	bool videoEnable;
+	int videoType;
+	int videoFrameRate;
+	char shmId[32];
+	char shmName[32];
+	int streamBufSize;
+	int frameRate;
+};
 
 class CRtspServer
 {
@@ -24,7 +42,10 @@ public:
 		int audioChannels, bool videoEnable, int videoType, int videoFrameRate,
 		char *shmId, char *shmName, int streamBufSize, int frameRate);
 	bool DynamicDelSms(const char* streamName);
-
+	bool DynamicProcessSmsCommonProcess(int actionType, const char*streamName,
+		bool audioEnable, int audioType, int audioSampleRate, int audioBitPerSample,
+		int audioChannels, bool videoEnable, int videoType, int videoFrameRate,
+		char *shmId, char *shmName, int streamBufSize, int frameRate);
 	/*H264VideoLiveServerMediaSubsession* m_h264_subsession;*/
 	/*PCMAAudioLiveServerMediaSubsession* m_PCMA_subsession;*/
 
@@ -35,6 +56,10 @@ protected:
 	static void* ThreadRtspServerProcImpl(void* arg);
 	void ThreadRtspServer();
 
+	static void AsyncProcessSms(void *param);
+	static void DynamicDelSmsInternal(CRtspServer *rtsp_server, struct SmsParam *sms_param);
+	static void DynamicAddSmsInternal(CRtspServer *rtsp_server, struct SmsParam *sms_param);
+
 private:
 	static  CRtspServer* instance;
 	bool 	m_Stop;
@@ -44,6 +69,9 @@ private:
 	RTSPServer* 		m_rtspServer;
 	pthread_t 			m_pThread;
 	portNumBits			m_port;
+	cqueue m_sms_action_queue;
+
+	EventTriggerId m_process_sms;
 	/*char				m_streamName[128];*/
 	/*bool 				m_audioEnable;*/
 	/*int 				m_audioType;*/

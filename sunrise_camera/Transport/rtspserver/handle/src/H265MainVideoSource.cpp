@@ -25,7 +25,7 @@ H265MainVideoSource::H265MainVideoSource(UsageEnvironment& env,
 {
 	fPresentationTime.tv_sec = 0;
 	fPresentationTime.tv_usec = 0;
-
+	SC_LOGI("video source created for %s", shmName);
 	fShmSource = shm_stream_create(shmId, shmName, STREAM_MAX_USER,
 		frameRate, streamBufSize,
 		SHM_STREAM_READ, SHM_STREAM_MALLOC);
@@ -34,9 +34,7 @@ H265MainVideoSource::H265MainVideoSource(UsageEnvironment& env,
 			" users: %d, frameRate(infos): %d streamBufSize(size): %d",
 		fShmSource, shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
 	fPts = 0;
-	fNaluLen = 0;
-
-	SC_LOGI("video source created for %s", shmName);
+	fNaluLen = 0;	
 }
 
 H265MainVideoSource::~H265MainVideoSource()
@@ -175,7 +173,7 @@ void H265MainVideoSource::incomingDataHandler1()
 			SC_LOGW("recv not support nal_unit_type: %d\n", nalu.nal_unit_type);
 			fNaluLen = 0;
 			shm_stream_post(fShmSource);
-			fDurationInMicroseconds = 0;
+			fDurationInMicroseconds = 1000 * 30;
 			nextTask() = envir().taskScheduler().scheduleDelayedTask(fDurationInMicroseconds,
 				(TaskFunc*)incomingDataHandler, this);
 		}

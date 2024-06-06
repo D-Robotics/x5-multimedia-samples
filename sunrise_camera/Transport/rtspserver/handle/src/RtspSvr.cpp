@@ -14,6 +14,31 @@ static int const samplingFrequencyTable[16] =
 	16000, 12000, 11025, 8000,
 	7350, 0, 0, 0
 };
+static int StringCopyWithCheck(char *dst, const char *src, int dst_len){
+
+	int src_len = strlen(src) + 1;
+	if(src_len > dst_len){
+		SC_LOGE("copy <%s> failed, name is too short, %d < %d.",
+				src, dst_len, src_len);
+		return -1;
+	}
+	strncpy(dst, src, dst_len);
+
+	return 0;
+}
+static bool CheckAsyncProcessSmsIsComplete(cqueue *queue){
+	int check_period_ms = 100;
+	//等待1s 查询是否删除完毕
+	for(int i = 0; i< 10; i++){
+		usleep(check_period_ms * 1000); //wait 100ms
+		int is_empty = cqueue_is_empty(queue);
+		if(is_empty){
+			SC_LOGI("rtsp server sms async process consumed %d ms", check_period_ms * (i + 1));
+			return true;
+		}
+	}
+	return false;
+}
 
 static int GetSamplingFrequencyIndex(int sampleate)
 {
@@ -106,10 +131,16 @@ bool CRtspServer::Create(portNumBits port)
 		SC_LOGE("CRtspServer is already Create yet");
 		return false;
 	}
-
+	cqueue_init(&m_sms_action_queue);
 	m_scheduler = BasicTaskScheduler::createNew();
 	m_env = BasicUsageEnvironment::createNew(*m_scheduler);
+	m_process_sms = m_env->taskScheduler().createEventTrigger(AsyncProcessSms);
+	if(m_process_sms == 0){
+		SC_LOGE("CRtspServer user event create faield.");
+		return false;
+	}
 
+	SC_LOGI("CRtspServer created, live555 user event id [%x]", m_process_sms);
 	return true;
 }
 
@@ -195,59 +226,191 @@ bool CRtspServer::DynamicAddSms(const char* streamName,
 	int audioChannels, bool videoEnable, int videoType, int videoFrameRate,
 	char *shmId, char *shmName, int streamBufSize, int frameRate)
 {
-	Boolean reuseFirstSource = False;
-	OutPacketBuffer::maxSize = 4*1024*1024; // 此处的配置客户根据码流的分辨率和bitrate调整，避免内存浪费
-	// A H.264 video elementary stream:
-	ServerMediaSession* sms = NULL;
-	if(videoEnable && videoType == RTSPSRV_VIDEO_TYPE_H264)
-	{
-		sms = ServerMediaSession::createNew(*m_env, streamName, streamName, "H.264 video elementary stream", True);
-		sms->addSubsession(H264VideoLiveServerMediaSubsession::createNew(*m_env, reuseFirstSource, shmId, shmName, streamBufSize, frameRate));
-	}else if(videoEnable && videoType == RTSPSRV_VIDEO_TYPE_H265){
-		sms = ServerMediaSession::createNew(*m_env, streamName, streamName, "H.265 video elementary stream", True);
-		sms->addSubsession(H265VideoLiveServerMediaSubsession::createNew(*m_env, reuseFirstSource, shmId, shmName, streamBufSize, frameRate));
-	}else{
-		SC_LOGE("Stream <%s> recv unsupport video type :%d.", streamName, videoType);
+	SC_LOGI("Add sms <%s>.", streamName);
+	bool is_ok = DynamicProcessSmsCommonProcess(1, streamName, 
+		audioEnable, audioType, audioSampleRate, audioBitPerSample,
+		audioChannels, videoEnable, videoType, videoFrameRate,
+		shmId, shmName, streamBufSize, frameRate);
+	if(!is_ok){
+		SC_LOGE("Add sms <%s> failed.", streamName);
 		return false;
 	}
-
-	if(audioEnable)
-	{
-		int index = GetSamplingFrequencyIndex(audioSampleRate);
-		if(audioType == RTSPSRV_AUDIO_TYPE_LPCM)
-		{
-			sms->addSubsession(LPCMAudioLiveServerMediaSubsession::createNew(*m_env, reuseFirstSource, audioBitPerSample, index, audioChannels));
-		}
-		else if(audioType == RTSPSRV_AUDIO_TYPE_PCMA)
-		{
-			sms->addSubsession(PCMAAudioLiveServerMediaSubsession::createNew(*m_env, reuseFirstSource, audioBitPerSample, index, audioChannels));
-		}
-	}
-
-	m_rtspServer->addServerMediaSession(sms);
-
-	char* url = m_rtspServer->rtspURL(sms);
-
-	SC_LOGI("Play <%s> stream using the URL %s", streamName, url);
-	delete[] url;
+	SC_LOGI("Add sms <%s> sucess.", streamName);
 	return true;
 }
 
 bool CRtspServer::DynamicDelSms(const char* streamName)
 {
-	SC_LOGI("Stop <%s> stream.", streamName);
+	SC_LOGI("Del sms <%s>.", streamName);
 	ServerMediaSession* sms = m_rtspServer->lookupServerMediaSession(streamName);
 	Boolean const smsExists = (sms != NULL);
 
 	if (smsExists) {
-		// "sms" was created for a file that no longer exists. Remove it:
-		m_rtspServer->deleteServerMediaSession(sms);
-
-		sms->deleteAllSubsessions();
-		sms = NULL;
+		bool is_ok = DynamicProcessSmsCommonProcess(0, streamName, 
+			false, 0, 0, 0,
+			0, false, 0, 0,
+			NULL, NULL, 0, 0);
+		if(!is_ok){
+			SC_LOGE("Del sms <%s> failed.", streamName);
+			return false;
+		}
 	}else{
-		SC_LOGW("Stop <%s> stream, but not found.", streamName);
+		SC_LOGW("Del sms <%s> failed, not found.", streamName);
+		return false;
 	}
+
+	SC_LOGI("Del sms <%s> sucess.", streamName);
 	return true;
 }
 
+void CRtspServer::DynamicAddSmsInternal(CRtspServer *rtsp_server, struct SmsParam *sms_param){
+
+	Boolean reuseFirstSource = False;
+	OutPacketBuffer::maxSize = 4*1024*1024; // 此处的配置客户根据码流的分辨率和bitrate调整，避免内存浪费
+
+	ServerMediaSession* sms = NULL;
+	if(sms_param->videoEnable && sms_param->videoType == RTSPSRV_VIDEO_TYPE_H264)
+	{
+		sms = ServerMediaSession::createNew(*(rtsp_server->m_env),
+		sms_param->streamName, sms_param->streamName, "H.264 video elementary stream", True);
+
+		sms->addSubsession(H264VideoLiveServerMediaSubsession::createNew(*(rtsp_server->m_env),
+		 reuseFirstSource, sms_param->shmId, sms_param->shmName,
+		 sms_param->streamBufSize, sms_param->frameRate));
+	}else if(sms_param->videoEnable && sms_param->videoType == RTSPSRV_VIDEO_TYPE_H265){
+		sms = ServerMediaSession::createNew(*(rtsp_server->m_env),
+		 sms_param->streamName, sms_param->streamName, "H.265 video elementary stream", True);
+		sms->addSubsession(H265VideoLiveServerMediaSubsession::createNew(*(rtsp_server->m_env),
+		 reuseFirstSource, sms_param->shmId, sms_param->shmName,
+		 sms_param->streamBufSize, sms_param->frameRate));
+	}else{
+		SC_LOGE("Stream <%s> recv unsupport video type :%d.", sms_param->streamName, sms_param->videoType);
+		return;
+	}
+
+	if(sms_param->audioEnable)
+	{
+		int index = GetSamplingFrequencyIndex(sms_param->audioSampleRate);
+		if(sms_param->audioType == RTSPSRV_AUDIO_TYPE_LPCM)
+		{
+			sms->addSubsession(LPCMAudioLiveServerMediaSubsession::createNew(*(rtsp_server->m_env),
+			 reuseFirstSource, sms_param->audioBitPerSample, index, sms_param->audioChannels));
+		}
+		else if(sms_param->audioType == RTSPSRV_AUDIO_TYPE_PCMA)
+		{
+			sms->addSubsession(PCMAAudioLiveServerMediaSubsession::createNew(*(rtsp_server->m_env),
+			 reuseFirstSource, sms_param->audioBitPerSample, index, sms_param->audioChannels));
+		}else{
+			SC_LOGE("Stream <%s> recv unsupport audio type :%d.", sms_param->streamName, sms_param->audioType);
+			return;
+		}
+	}
+
+	rtsp_server->m_rtspServer->addServerMediaSession(sms);
+
+	char* url = rtsp_server->m_rtspServer->rtspURL(sms);
+	SC_LOGI("Play <%s> stream using the URL %s", sms_param->streamName, url);
+	delete[] url;
+
+	return;
+
+}
+void CRtspServer::DynamicDelSmsInternal(CRtspServer *rtsp_server, struct SmsParam *sms_param){
+	SC_LOGI("start delete sms:[%s].", sms_param->streamName);
+	ServerMediaSession* sms = rtsp_server->m_rtspServer->lookupServerMediaSession(sms_param->streamName);
+	if(sms != NULL){
+		rtsp_server->m_rtspServer->deleteServerMediaSession(sms);
+	}else{
+		SC_LOGE("delete sms:[%s] faild: not found.", sms_param->streamName);
+	}
+}
+
+void CRtspServer::AsyncProcessSms(void *param){
+	CRtspServer *rtsp_server = (CRtspServer *)param;
+	if(rtsp_server == NULL){
+		SC_LOGE("rtsp server is null.");
+		return;
+	}
+
+	cqueue* c_queue = &rtsp_server->m_sms_action_queue;
+	SC_LOGI("AsyncProcessSms start.");
+	while(1){
+		//触发一次 会把之前得剩余操作都完成
+		if(cqueue_is_empty(c_queue)){
+			break;
+		}
+		void *queue_node = cqueue_dequeue(c_queue);
+		if(queue_node == NULL){
+			SC_LOGE("smsparam is null.");
+			continue;
+		}
+
+		SmsParam *sms_param = (SmsParam *)queue_node;
+		if(sms_param->actionType == 0){
+			DynamicDelSmsInternal(rtsp_server, sms_param);
+		}else if(sms_param->actionType == 1){
+			DynamicAddSmsInternal(rtsp_server, sms_param);
+		}else{
+			SC_LOGE("unsupport action type %d, so ignore it .", sms_param->actionType);
+		}
+
+		//必须释放
+		free(queue_node);
+	}
+	SC_LOGI("AsyncProcessSms end.");
+}
+
+bool CRtspServer::DynamicProcessSmsCommonProcess(int actionType, const char*streamName,
+	bool audioEnable, int audioType, int audioSampleRate, int audioBitPerSample,
+	int audioChannels, bool videoEnable, int videoType, int videoFrameRate,
+	char *shmId, char *shmName, int streamBufSize, int frameRate){
+
+	//异步得方式：删除sms
+	SmsParam *sms_param = (SmsParam *)malloc(sizeof(SmsParam));
+	if(sms_param == NULL){
+		SC_LOGE("Stop <%s> stream failed, malloc failed, so ignore it.");
+		return false;
+	}
+
+	int is_ok = 0;
+	if(streamName != NULL){
+		is_ok |= StringCopyWithCheck(sms_param->streamName, streamName, sizeof(sms_param->streamName));
+	}
+	if(shmId != NULL){
+		is_ok |= StringCopyWithCheck(sms_param->shmId, shmId, sizeof(sms_param->shmId));
+	}
+	if(shmName != NULL){
+		is_ok |= StringCopyWithCheck(sms_param->shmName, shmName, sizeof(sms_param->shmName));
+	}
+	if(is_ok != 0){
+		free(sms_param);
+		SC_LOGE("string copy is failed:array is too short");
+		return false;
+	}
+	sms_param->actionType = actionType;
+	sms_param->audioEnable = audioEnable;
+	sms_param->audioType = audioType;
+	sms_param->audioSampleRate = audioSampleRate;
+	sms_param->audioBitPerSample = audioBitPerSample;
+	sms_param->audioChannels = audioChannels;
+	sms_param->videoEnable = videoEnable;
+	sms_param->videoType = videoType;
+	sms_param->videoFrameRate = videoFrameRate;
+	sms_param->streamBufSize = streamBufSize;
+	sms_param->frameRate = frameRate;
+
+	int ret = cqueue_enqueue(&m_sms_action_queue, sms_param);
+	if(ret != 0){
+		free(sms_param);
+		SC_LOGE("enqueue faild: %d.", ret);
+		return false;
+	}
+	m_env->taskScheduler().triggerEvent(m_process_sms, this);
+
+	//check for debug
+	bool is_completed = CheckAsyncProcessSmsIsComplete(&m_sms_action_queue);
+	if(!is_completed){
+		SC_LOGW("rtsp server sms async process del sms not completed.");
+	}
+	return true;
+}

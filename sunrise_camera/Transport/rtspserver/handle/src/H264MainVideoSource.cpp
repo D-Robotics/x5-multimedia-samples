@@ -25,7 +25,7 @@ H264MainVideoSource::H264MainVideoSource(UsageEnvironment& env,
 {
 	fPresentationTime.tv_sec = 0;
 	fPresentationTime.tv_usec = 0;
-
+	SC_LOGI("video source created for %s", shmName);
 	fShmSource = shm_stream_create(shmId, shmName, STREAM_MAX_USER,
 		frameRate, streamBufSize,
 		SHM_STREAM_READ, SHM_STREAM_MALLOC);
@@ -35,7 +35,6 @@ H264MainVideoSource::H264MainVideoSource(UsageEnvironment& env,
 		fShmSource, shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
 	fPts = 0;
 	fNaluLen = 0;
-	SC_LOGI("video source created for %s", shmName);
 }
 
 H264MainVideoSource::~H264MainVideoSource()
@@ -156,10 +155,10 @@ void H264MainVideoSource::incomingDataHandler1()
 		}
 		else
 		{
-			printf("other nal_unit_type\n");
+			SC_LOGI("other nal_unit_type \n");
 			fNaluLen = 0;
 			shm_stream_post(fShmSource);
-			fDurationInMicroseconds = 0;
+			fDurationInMicroseconds = 1000 * 30;
 			nextTask() = envir().taskScheduler().scheduleDelayedTask(fDurationInMicroseconds,
 				(TaskFunc*)incomingDataHandler, this);
 		}

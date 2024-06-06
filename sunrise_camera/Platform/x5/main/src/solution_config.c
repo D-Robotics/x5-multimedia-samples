@@ -173,18 +173,39 @@ static int32_t write_json_file(char *filename, char *out)
 
 	return 0;
 }
+//不包含 "\0"
+static int get_first_camera_name_from_camera_list(){
+	int ret = -1;
+
+	char *sensor_list_tmp = (char *)g_solution_config.hardware_capability.sensor_list;
+
+	for(int i = 0; i< sizeof(g_solution_config.hardware_capability.sensor_list); i++){
+		if(sensor_list_tmp[i] == '/'){
+			if(i > 0){
+				ret = i - 1;
+			}
+			break;
+		}else if(sensor_list_tmp[i] == '\0'){
+			if(i > 0){
+				ret = i - 1;
+			}
+			break;
+		}
+	}
+	return ret;
+}
 
 int32_t solution_cfg_load_default_config()
 {
-	memset(&g_solution_config, 0, sizeof(g_solution_config));
+	//只清除静态的配置(运行时获取的参数比如能力列表 不清除)
+	memset(&g_solution_config.solution_name, 0, sizeof(g_solution_config.solution_name));
+	memset(&g_solution_config.cam_solution, 0, sizeof(g_solution_config.cam_solution));
+	memset(&g_solution_config.box_solution, 0, sizeof(g_solution_config.box_solution));
+	memset(&g_solution_config.display_dev, 0, sizeof(g_solution_config.display_dev));
 
-	strcpy(g_solution_config.hardware_capability.chip_type, "");
-	strcpy(g_solution_config.hardware_capability.sensor_list, "");
-	strcpy(g_solution_config.hardware_capability.model_list, "");
-	// strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265/Mjpeg");
-	//strcpy(g_solution_config.hardware_capability.codec_type_list, "H264");
 	strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265");
-
+	// strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265/Mjpeg");
+	
 	// 初始化编码码率列表
 	// 标清视频（480p） 256, 512, 768, 1024, 1536, 2048,
 	// 高清视频（720p） 512, 1024, 2048, 3072, 4096, 6144,
@@ -209,7 +230,25 @@ int32_t solution_cfg_load_default_config()
 	// camera solution
 	g_solution_config.cam_solution.pipeline_count = 1;
 	g_solution_config.cam_solution.max_pipeline_count = STL_MAX_VPP_CAM_NUM;
-	strcpy(g_solution_config.cam_solution.cam_vpp[0].sensor, "sc230ai-10fps");
+
+	int first_camera_end_index = get_first_camera_name_from_camera_list();
+	if(first_camera_end_index == -1){
+		strcpy(g_solution_config.cam_solution.cam_vpp[0].sensor, "Null");
+	}else{
+		int dest_array_size = sizeof(g_solution_config.cam_solution.cam_vpp[0].sensor);
+
+		// first_camera_end_index 不包含 '\0'
+		if( dest_array_size <= (first_camera_end_index + 1)){ 
+			SC_LOGW("sensor name is too short (%d < %d), so rest use NULL.");
+			strcpy(g_solution_config.cam_solution.cam_vpp[0].sensor, "Null");
+		}else{
+			strncpy(g_solution_config.cam_solution.cam_vpp[0].sensor, 
+				g_solution_config.hardware_capability.sensor_list,
+				first_camera_end_index);
+			g_solution_config.cam_solution.cam_vpp[0].sensor[first_camera_end_index + 1] = '\0';
+		}
+	}
+	
 	g_solution_config.cam_solution.cam_vpp[0].encode_type = 0;
 	g_solution_config.cam_solution.cam_vpp[0].encode_bitrate = 8192;
 	strcpy(g_solution_config.cam_solution.cam_vpp[0].model, "yolov5s");

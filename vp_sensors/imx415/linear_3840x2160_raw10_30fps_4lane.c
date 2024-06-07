@@ -102,7 +102,7 @@ static isp_ochn_attr_t imx415_isp_ochn_attr = {
 	.bit_width = 8,
 };
 
-vp_sensor_config_t imx415_linear_3480x2160_raw10_10fps_4lane = {
+vp_sensor_config_t imx415_linear_3480x2160_raw10_30fps_4lane = {
 	.chip_id_reg = 0x4001,
 	.chip_id = 0x03,
 	.sensor_i2c_addr_list = {0x1A, 0x12,0x1C,0x1E},

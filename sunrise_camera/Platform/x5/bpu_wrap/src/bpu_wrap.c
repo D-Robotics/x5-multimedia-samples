@@ -18,6 +18,7 @@
 
 #include "utils/utils_log.h"
 #include "utils/mthread.h"
+#include "utils/time_utils.h"
 
 #include "bpu_wrap.h"
 #include "yolov5_post_process.h"
@@ -160,13 +161,19 @@ static void *post_process_yolov5s(void *ptr)
 	int count = 0;
 	mThreadSetName(privThread, __func__);
 
+	SC_LOGI("thread [post_process_yolov5s] start .");
+	struct TimeStatistics time_statistics;
 	bpu_handle_t *bpu_handle = (bpu_handle_t *)privThread->pvThreadData;
-	while (privThread->eState == E_THREAD_RUNNING) {
-		if (mQueueDequeueTimed(&bpu_handle->m_output_queue, 100, (void**)&post_info) != E_QUEUE_OK)
+	while (privThread->eState == E_THREAD_RUNNING) {		
+		if (mQueueDequeueTimed(&bpu_handle->m_output_queue, 100, (void**)&post_info) != E_QUEUE_OK){
+			SC_LOGI("post_process_yolov5s wait queue time out.");
 			continue;
-			
-		char *results = Yolov5PostProcess(post_info);
+		}
 
+		time_statistics_at_beginning_of_loop(&time_statistics);
+		char *results = Yolov5PostProcess(post_info);
+		time_statistics_at_ending_of_loop(&time_statistics);
+		time_statistics_info_show(&time_statistics, "yolov5 post process", false);
 		if (results) {
 			if (NULL != bpu_handle->callback) {
 
@@ -191,6 +198,7 @@ static void *post_process_yolov5s(void *ptr)
 			post_info = NULL;
 		}
 	}
+	SC_LOGI("thread [post_process_yolov5s] stop .");
 	mThreadFinish(privThread);
 	return NULL;
 }
@@ -273,7 +281,8 @@ static void *inference_yolov5s(void *ptr)
 
 		// 如果后处理队列满的，直接返回
 		if (mQueueIsFull(&bpu_handle->m_output_queue)) {
-			SC_LOGI("post process queue full, skip it");
+			SC_LOGI("post process queue full, skip it, queue length is %d", 
+				bpu_handle->m_output_queue.u32Length);
 			cur_ouput_buf_idx++;
 			cur_ouput_buf_idx %= 5;
 			continue;
@@ -658,10 +667,14 @@ int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *mod
 		SC_LOGE("bpu_handle is NULL");
 		return -1;
 	}
-
-	strcpy(bpu_handle->m_model_name, model_name);
-
-	SC_LOGI("model_file_name:%s\n", model_file_name);
+	
+	SC_LOGI("model_file_name[%s]  model_name [%s] %d\n", model_file_name, model_name, strlen(model_name));
+	if(strlen(model_name) < (sizeof(bpu_handle->m_model_name) - 1)){
+		strcpy(bpu_handle->m_model_name, model_name);
+	}else{
+		SC_LOGE("model_name [%s] is too long :%d\n", strlen(model_name) + 1);
+		exit(-1);
+	}
 
 	// 加载模型
 	HB_CHECK_SUCCESS(
@@ -824,11 +837,15 @@ int32_t bpu_wrap_start(bpu_handle_t *handle)
 
 int32_t bpu_wrap_stop(bpu_handle_t *handle)
 {
-	if (handle == NULL)
+	SC_LOGI("bpu_wrap_stop start .");
+	if (handle == NULL){
+		SC_LOGE("bpu_wrap_stop failed, handle is null.");
 		return 0;
-
+	}
+		
 	mThreadStop(&handle->m_post_process_thread);
 	mThreadStop(&handle->m_run_model_thread);
+	SC_LOGI("bpu_wrap_stop complete .");
 
 	return 0;
 }

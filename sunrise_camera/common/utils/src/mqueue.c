@@ -74,8 +74,8 @@ teQueueStatus mQueueEnqueue(tsQueue *psQueue, void *pvData)
 
 	psQueue->u32Rear = (psQueue->u32Rear+1) % psQueue->u32Length;
 
-	pthread_mutex_unlock(&psQueue->mutex);
 	pthread_cond_broadcast(&psQueue->cond_data_available);
+	pthread_mutex_unlock(&psQueue->mutex);
 	return E_QUEUE_OK;
 }
 
@@ -90,16 +90,16 @@ teQueueStatus mQueueEnqueueEx(tsQueue *psQueue, void *pvData)
 {
 	pthread_mutex_lock(&psQueue->mutex);
 	while (((psQueue->u32Rear + 1)%psQueue->u32Length) == psQueue->u32Front) {
-		pthread_mutex_unlock(&psQueue->mutex);
 		pthread_cond_broadcast(&psQueue->cond_data_available);
+		pthread_mutex_unlock(&psQueue->mutex);
 		return E_QUEUE_ERROR_FULL;
 	}
 	psQueue->apvBuffer[psQueue->u32Rear] = pvData;
 
 	psQueue->u32Rear = (psQueue->u32Rear+1) % psQueue->u32Length;
 
-	pthread_mutex_unlock(&psQueue->mutex);
 	pthread_cond_broadcast(&psQueue->cond_data_available);
+	pthread_mutex_unlock(&psQueue->mutex);
 	return E_QUEUE_OK;
 }
 
@@ -121,8 +121,8 @@ teQueueStatus mQueueDequeue(tsQueue *psQueue, void **ppvData)
 	*ppvData = psQueue->apvBuffer[psQueue->u32Front];
 
 	psQueue->u32Front = (psQueue->u32Front + 1) % psQueue->u32Length;
-	pthread_mutex_unlock(&psQueue->mutex);
 	pthread_cond_broadcast(&psQueue->cond_space_available);
+	pthread_mutex_unlock(&psQueue->mutex);
 	return E_QUEUE_OK;
 }
 
@@ -174,8 +174,8 @@ teQueueStatus mQueueDequeueTimed(tsQueue *psQueue, uint32_t u32WaitTimeMil, void
 	*ppvData = psQueue->apvBuffer[psQueue->u32Front];
 
 	psQueue->u32Front = (psQueue->u32Front + 1) % psQueue->u32Length;
-	pthread_mutex_unlock(&psQueue->mutex);
 	pthread_cond_broadcast(&psQueue->cond_space_available);
+	pthread_mutex_unlock(&psQueue->mutex);
 	return E_QUEUE_OK;
 }
 

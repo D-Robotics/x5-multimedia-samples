@@ -64,7 +64,9 @@ teThreadStatus mThreadStart(tprThreadFunction prThreadFunction, tsThread *psThre
 			iFirstTime = 0;
 		}
 	}
-
+	//要在 create之前设置：如果在函数最后设置 状态，会导致如下bug
+	//线程启动完成并且函数运行起来 while 时 发现状态是STOPed 就直接退出了
+	psThreadInfo->eState = E_THREAD_RUNNING;
 	if (pthread_create(&psThreadInfo->pThread_Id, NULL, prThreadFunction, psThreadInfo))
 	{
 		printf("Could not start thread:%s\n", strerror(errno));
@@ -80,15 +82,30 @@ teThreadStatus mThreadStart(tprThreadFunction prThreadFunction, tsThread *psThre
 			return E_THREAD_ERROR_FAILED;
 		}
 	}
-	psThreadInfo->eState = E_THREAD_RUNNING;
 	printf("Create Thread %p\n", psThreadInfo);
 	return  E_THREAD_OK;
+}
+const char *mThreadStateString(int state){
+	switch (state)
+	{
+	case E_THREAD_STOPPED:
+		return "stoped";
+	case E_THREAD_RUNNING:
+		return "stoped";
+	case E_THREAD_STOPPING:
+		return "stoped";
+	default:
+		return "unknown";
+	}
+
+	return "unknown";
 }
 
 // 在主线程调用，用来结束线程
 teThreadStatus mThreadStop(tsThread *psThreadInfo)
 {
 	if (psThreadInfo->eState == E_THREAD_STOPPED) {
+		printf("Stopping Thread %s, found thread is not runing, so return.\n", psThreadInfo->pThread_Name);
 		return  E_THREAD_OK; // 有可能是重复调用退出线程，也有可能是调用退出一个没有启动的线程
 	}
 	printf("Stopping Thread %s\n", psThreadInfo->pThread_Name);
@@ -126,8 +143,9 @@ teThreadStatus mThreadStop(tsThread *psThreadInfo)
 				break;
 			}
 			if(wait_count % 100 == 0){
-				printf("waited [%d] second for thread [%s:%lu] complete stop.\n", 
-				wait_count/100, psThreadInfo->pThread_Name, psThreadInfo->pThread_Id);
+				printf("waited [%d] second for thread [%s:%lu] complete stop, current state %s.\n", 
+				wait_count/100, psThreadInfo->pThread_Name, psThreadInfo->pThread_Id,
+				mThreadStateString(psThreadInfo->eState));
 			}
 			wait_count++;
 		}

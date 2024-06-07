@@ -160,6 +160,7 @@ static int ws_send_h264_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_s
 			SC_LOGE("[%s][%d] shm_source: %p data: %p length: %u *nalu_len: %d readers:%d",
 					__func__, __LINE__, shm_source, data, length, *nalu_len, shm_stream_readers(shm_source));
 			*nalu_len = 0;
+			shm_stream_post(shm_source);
 			return 0;
 		}
 
@@ -220,6 +221,7 @@ static void *ws_push_stream_thread(void *ptr)
 	unsigned char* data[32] = {NULL};
 	unsigned int nalu_len[32] = {0};
 
+	SC_LOGI("thread [ws_push_stream_thread] start .");
 	// 设置线程名，方便知道退出的是什么线程
 	mThreadSetName(privThread, __func__);
 
@@ -248,6 +250,7 @@ static void *ws_push_stream_thread(void *ptr)
 			ws_clt->shm_source[i] = NULL;
 		}
 	}
+	SC_LOGI("thread [ws_push_stream_thread] end .");
 	mThreadFinish(privThread);
 	return NULL;
 }

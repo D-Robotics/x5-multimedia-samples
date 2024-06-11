@@ -60,7 +60,6 @@ static void vpp_camera_push_stream(vpp_camera_t *vpp_camera, ImageFrame *stream)
 	media_codec_id_t codec_type;
 	media_codec_context_t *codec_context = &vpp_camera->m_encode_context;
 
-	media_codec_output_buffer_info_t *buffer_info = NULL;
 	media_codec_buffer_t *buffer = NULL;
 
 	if(codec_context == NULL || stream == NULL) {
@@ -73,27 +72,6 @@ static void vpp_camera_push_stream(vpp_camera_t *vpp_camera, ImageFrame *stream)
 	frame_rate = vpp_camera->m_encode_context.video_enc_params.rc_params.h264_cbr_params.frame_rate;
 
 	buffer = (media_codec_buffer_t *)(stream->frame_buffer);
-	buffer_info = (media_codec_output_buffer_info_t *)(stream->buffer_info);
-
-	if(vpp_camera->venc_shm == NULL) {
-		char shm_id[32] = {0}, shm_name[32] = {0};
-		sprintf(shm_id, "cam_id_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
-				(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
-				 (codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), venc_ist_id);
-		sprintf(shm_name, "name_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
-				(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
-				 (codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), venc_ist_id);
-		SC_LOGI("venc_ist_id:%d, codec_type: %d, shm_id: %s, shm_name: %s", venc_ist_id, codec_type, shm_id, shm_name);
-		vpp_camera->venc_shm = shm_stream_create(shm_id, shm_name,
-				STREAM_MAX_USER, frame_rate,
-				buffer_info->video_stream_info.frame_size,
-				SHM_STREAM_WRITE, SHM_STREAM_MALLOC);
-		SC_LOGI("shm_stream_create: venc_shm(shm_stream_t): %p, shm_id(id): %s, shm_name(name): %s,"
-				" users: %d, frameRate(infos): %d frame_size(size): %d",
-			vpp_camera->venc_shm, shm_id, shm_name, STREAM_MAX_USER,
-			frame_rate, buffer_info->video_stream_info.frame_size);
-		SC_LOGD("param->stream_buf_size:%d", vpp_camera->m_encode_context.video_enc_params.bitstream_buf_size);
-	}
 
 	frame_info info;
 	info.type		= codec_type;
@@ -486,6 +464,34 @@ int32_t vpp_camera_start(void)
 		ret |= vp_vflow_start(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_start");
 
+		if(g_vpp_camera[i].venc_shm == NULL) {
+			T_SDK_VENC_INFO venc_chn_info;
+
+			media_codec_context_t *codec_context = &g_vpp_camera[i].m_encode_context;
+			media_codec_id_t codec_type = codec_context->codec_id;
+			int32_t venc_ist_id = codec_context->instance_index;
+			venc_chn_info.channel = venc_ist_id;
+			ret = SDK_Cmd_Impl(SDK_CMD_VPP_VENC_CHN_PARAM_GET, (void*)&venc_chn_info);
+
+			char shm_id[32] = {0}, shm_name[32] = {0};
+			sprintf(shm_id, "cam_id_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
+					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
+					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), venc_ist_id);
+			sprintf(shm_name, "name_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
+					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
+					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), venc_ist_id);
+			g_vpp_camera[i].venc_shm = shm_stream_create(shm_id, shm_name,
+					STREAM_MAX_USER, venc_chn_info.framerate,
+					venc_chn_info.stream_buf_size,
+					SHM_STREAM_WRITE, SHM_STREAM_MALLOC);
+
+			SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
+				shm_id, shm_name, STREAM_MAX_USER, venc_chn_info.framerate, venc_chn_info.stream_buf_size);
+		}else{
+			SC_LOGE("channel %d's venc_shm is not null, exit(-1)", i);
+			exit(-1);
+		}
+
 		g_vpp_camera[i].m_venc_thread.pvThreadData = (void*)&g_vpp_camera[i];
 		mThreadStart(venc_get_stream_proc, &g_vpp_camera[i].m_venc_thread, E_THREAD_JOINABLE);
 
@@ -523,15 +529,13 @@ int32_t vpp_camera_stop(void)
 
 		vp_vflow_contex = &g_vpp_camera[i].vp_vflow_contex;
 		mThreadStop(&g_vpp_camera[i].m_venc_thread);
-
-		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) == 0)
-			continue;
-		mThreadStop(&g_vpp_camera[i].m_bpu_thread);
-
 		if(g_vpp_camera[i].venc_shm != NULL){
 			shm_stream_destory(g_vpp_camera[i].venc_shm);
 			g_vpp_camera[i].venc_shm = NULL;
 		}
+		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) == 0)
+			continue;
+		mThreadStop(&g_vpp_camera[i].m_bpu_thread);
 	}
 
 	for (i = 0; i < VPP_CAM_MAX_CHANNELS; i++) {

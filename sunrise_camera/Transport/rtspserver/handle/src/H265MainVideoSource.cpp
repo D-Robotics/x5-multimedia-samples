@@ -30,11 +30,10 @@ H265MainVideoSource::H265MainVideoSource(UsageEnvironment& env,
 		frameRate, streamBufSize,
 		SHM_STREAM_READ, SHM_STREAM_MALLOC);
 
-	SC_LOGI("shm_stream_create: fShmSource(shm_stream_t): %p, shmId(id): %s, shmName(name): %s,"
-			" users: %d, frameRate(infos): %d streamBufSize(size): %d",
-		fShmSource, shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
+	SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
+				shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
 	fPts = 0;
-	fNaluLen = 0;	
+	fNaluLen = 0;
 }
 
 H265MainVideoSource::~H265MainVideoSource()

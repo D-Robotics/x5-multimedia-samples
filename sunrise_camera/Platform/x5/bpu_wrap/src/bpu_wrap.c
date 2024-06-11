@@ -238,10 +238,16 @@ static void *inference_yolov5s(void *ptr)
 
 	hbDNNTaskHandle_t task_handle = NULL;
 
+	struct TimeStatistics time_statistics;
+	char time_sts_tag[32];
+	sprintf(time_sts_tag, "yolov5 infer process:%d", bpu_handle->m_vpp_id);
+	
 	while (privThread->eState == E_THREAD_RUNNING) {
+		
 		if (mQueueDequeueTimed(&bpu_handle->m_input_queue, 100, (void**)&input_tensor) != E_QUEUE_OK)
 			continue;
 
+		time_statistics_at_beginning_of_loop(&time_statistics);
 		// make sure memory data is flushed to DDR before inference
 		hbSysFlushMem(&input_tensor->m_dnn_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
 
@@ -307,7 +313,10 @@ static void *inference_yolov5s(void *ptr)
 		post_info->output_tensor = output_tensors[cur_ouput_buf_idx];
 		mQueueEnqueue(&bpu_handle->m_output_queue, post_info);
 		cur_ouput_buf_idx++;
-		cur_ouput_buf_idx %= 5;
+		cur_ouput_buf_idx %= 5;		
+
+		time_statistics_at_ending_of_loop(&time_statistics);
+		time_statistics_info_show(&time_statistics, time_sts_tag, false);
 	}
 
 	for (i = 0; i < 5; i++)

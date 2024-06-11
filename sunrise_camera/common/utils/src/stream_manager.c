@@ -8,9 +8,11 @@
 
 #include "stream_manager.h"
 #include "utils_log.h"
+#include "lock_utils.h"
 #include "cmap.h"
 
 static cmap* s_shmmap = NULL;
+static CMtx s_shmmap_lock = NULL;
 
 // 如果要多个模块共享同一块内存，id要不一样，name、user、infos参数需要一样
 // mode和type根据具体读写情况配置
@@ -46,8 +48,8 @@ shm_stream_t* shm_stream_create(char* id, const char* name, int users, int infos
 	handle->info_array = handle->user_array + users*sizeof(shm_user_t);
 	handle->base_addr  = handle->info_array + infos*sizeof(shm_info_t);
 	snprintf(handle->name, 20, "%s", name);
-	SC_LOGI("handle: %p, id:%s, handle->name:%s, addr:%p, size: %d, users: %d, infos: %d",
-		handle, id, handle->name, addr, size, users, infos);
+	SC_LOGI("[%s] name:%s handle addr: %p, addr:%p, size: %d, users: %d, infos: %d",
+		handle->name, id, handle, addr, size, users, infos);
 
 	cmtx_enter(handle->mtx);
 	shm_user_t* user = (shm_user_t*)handle->user_array;
@@ -65,13 +67,11 @@ shm_stream_t* shm_stream_create(char* id, const char* name, int users, int infos
 		{
 			if(strlen(user[i].id) != 0)
 			{
-				SC_LOGI("reader user[%d].id:%s", i, user[i].id);
+				SC_LOGI("[CreateWriter]reader user[%d].id:%s", i, user[i].id);
 				user[i].index = user[0].index;
 				user[0].users++;
 			}
-			printf("%d=>%s ", i, user[i].id);
 		}
-		printf("\n");
 	}
 	else
 	{
@@ -96,18 +96,19 @@ shm_stream_t* shm_stream_create(char* id, const char* name, int users, int infos
 				user[i].callback = NULL;
 				user[0].users++;
 				snprintf(user[i].id, 32, "%s", id);
-				SC_LOGI("reader user[%d].id:%s", i, user[i].id);
+				SC_LOGI("[CreateReader]reader user[%d].id:%s", i, user[i].id);
 
 				break;
 			}
 		}
-
-		for(i=1; i<users; i++)	//	初始化其他模式的读下标
-		{
-			printf("%d=>%s ", i, user[i].id);
-		}
-		printf("\n");
 	}
+
+	printf("[%s] show all reader [", handle->name);
+	for(i=1; i<users; i++)	//	初始化其他模式的读下标
+	{
+		printf("%d=>%s, ", i, user[i].id);
+	}
+	printf("]\n");
 
 shm_stream_create_done:
 	cmtx_leave(handle->mtx);
@@ -116,12 +117,15 @@ shm_stream_create_done:
 
 void shm_stream_destory(shm_stream_t* handle)
 {
-	if(handle == NULL) return;
+	if(handle == NULL){
+		SC_LOGE("handle is null.");
+		return;
+	}
 
 	cmtx_enter(handle->mtx);
 	shm_user_t* user = (shm_user_t *)handle->user_array;
-
-	SC_LOGI("destory shm, handle->index:%d", handle->index);
+	SC_LOGI("[%s] name:%s handle addr: %p, index: %d",
+		user[handle->index].id, handle->name, handle, handle->index);
 
 	if(handle->mode == SHM_STREAM_READ)
 		user[0].users--;
@@ -183,13 +187,10 @@ int shm_stream_put(shm_stream_t* handle, frame_info info, unsigned char* data, u
 {
 	if(handle == NULL) return -1;
 	//如果没有人想要数据 则不put
-	/*SC_LOGI("handle: %p, handle->base_addr:%p", handle, handle->base_addr);*/
 	if(shm_stream_readers(handle) == 0)
 	{
 		return -1;
 	}
-	
-	// printf("put [%d] [%d] [%02x] [%02x]\n", info.seq, length, data[10], data[length - 1]);
 
 	unsigned int head;
 	shm_user_t* users = (shm_user_t*)handle->user_array;
@@ -212,49 +213,11 @@ int shm_stream_put(shm_stream_t* handle, frame_info info, unsigned char* data, u
 		/*handle, handle->base_addr, head, length, handle->size, infos[head].offset, users[0].offset, handle->base_addr+infos[head].offset);*/
 	memcpy(handle->base_addr+infos[head].offset, data, length);
 
-#if 0
-	SC_LOGI("handle: %p, input data: %p, handle->base_addr:%p infos[head].offset:%d", handle,
-		(unsigned char*)(handle->base_addr+infos[head].offset),
-		handle->base_addr, infos[head].offset);
-#endif
-#if 0
-	unsigned char *frame = (unsigned char*)(handle->base_addr+infos[head].offset);
-	int i = 0;
-	SC_LOGI("put frame data:%02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x len:%u",
-			frame[i++], frame[i++], frame[i++], frame[i++],
-			   frame[i++], frame[i++], frame[i++], frame[i++],
-			   frame[i++], frame[i++], frame[i++], frame[i++],
-			   frame[i++], frame[i++], frame[i++], frame[i++],
-			   frame[i++], frame[i++], frame[i++], frame[i++],
-			length);
-#endif
-	#if 0
-	static FILE *enc_data_file = NULL;
-	if(enc_data_file == NULL){
-		char enc_file_name [100];			
-		sprintf(enc_file_name, "/tmp/put_websocker_%s.h265", handle->name);
-
-		enc_data_file = fopen(enc_file_name, "wb");
-		if(enc_data_file == NULL){
-			SC_LOGE("open file %s failed.", (char *)enc_file_name);
-		}
-	}
-	if(enc_data_file != NULL){
-		size_t elementsWritten = fwrite((unsigned char*)data,
-			1, length, enc_data_file);
-		if (elementsWritten != length) {
-			SC_LOGE("write websocker file failed, return %d.", elementsWritten);
-		}
-	}
-	#endif
-
 	//信息分发
 	//shm_stream_readers_callback(handle, info, (unsigned char*)handle->base_addr+infos[head].offset, length);
 
 	users[0].offset += length;
 	users[0].index = (users[0].index + 1 ) % handle->max_frames;
-	/*SC_LOGI("users[0].offset:%d users[0].index:%d", users[0].offset, users[0].index);*/
-	/*SC_LOGI("infos[%d].lenght:%d infos[%d].offset:%d", head, infos[head].lenght, head, infos[head].offset);*/
 
 	cmtx_leave(handle->mtx);
 	return 0;
@@ -408,15 +371,17 @@ void* shm_stream_malloc(shm_stream_t* handle, const char* name, unsigned int siz
 
 	if(s_shmmap == NULL)
 	{
+		SC_LOGI("shmmap fist access, so create it .");
 		s_shmmap = (cmap*)malloc(sizeof(cmap));
 		cmap_init(s_shmmap);
+		s_shmmap_lock = cmtx_create();
 	}
-
+	
+	cmtx_enter(s_shmmap_lock);
 	void* memory = NULL;
 	void* node = cmap_pkey_find(s_shmmap, name);
 	if(node == NULL)
 	{
-		SC_LOGI("[%s] node is null, so create .", name);
 		memory = (void*)malloc(size);
 		memset(memory, 0, size);
 		shmmap_node* n = (shmmap_node*)malloc(sizeof(shmmap_node));
@@ -433,16 +398,17 @@ void* shm_stream_malloc(shm_stream_t* handle, const char* name, unsigned int siz
 			memory = NULL;
 			SC_LOGE("cmap_pkey_insert %s error", name);
 		}
+		SC_LOGI("[%s] node is null, so create, ref:[%d].", name, n->ref_count);
 	}
 	else
 	{
-		SC_LOGI("[%s] node is exit so add ref.", name);
 		shmmap_node* n = (shmmap_node*)node;
 		memory = n->addr;
 		n->ref_count++;
+		SC_LOGI("[%s] node is exit so add, ref:[%d].", name, n->ref_count);
 		/*printf("else node - ref_count: %d\n", n->ref_count);*/
 	}
-
+	cmtx_leave(s_shmmap_lock);
 	return memory;
 }
 
@@ -455,6 +421,8 @@ int  shm_stream_malloc_fix(shm_stream_t* handle, char* id, const char* name, int
 
 	int i;
 	shm_user_t* user = (shm_user_t*)addr;
+
+	cmtx_enter(s_shmmap_lock);
 	for (i=0; i<users; i++)
 	{
 		if (strncmp(user[i].id, id, 32) == 0)
@@ -464,6 +432,7 @@ int  shm_stream_malloc_fix(shm_stream_t* handle, char* id, const char* name, int
 			n->ref_count--;
 		}
 	}
+	cmtx_leave(s_shmmap_lock);
 	return 0;
 }
 
@@ -474,15 +443,19 @@ void shm_stream_unmalloc(shm_stream_t* handle)
 	if(s_shmmap == NULL)
 		return;
 
-	void* node = cmap_pkey_find(s_shmmap, handle->name);
-	if(node == NULL)
+	cmtx_enter(s_shmmap_lock);
+	void* node = cmap_pkey_find(s_shmmap, handle->name);\
+	
+	if(node == NULL){
+		cmtx_leave(s_shmmap_lock);
 		return;
+	}
 
 	shmmap_node* n = (shmmap_node*)node;
 	n->ref_count--;
 	if(n->ref_count == 0)
 	{
-		SC_LOGW("map key:%s ref_count:%d", handle->name, n->ref_count);
+		SC_LOGI("map key:%s ref_count:%d, so destroy shm", handle->name, n->ref_count);
 		free(n->addr);//free(handle->user_array);
 		free(n);
 		cmap_pkey_erase(s_shmmap, handle->name);
@@ -491,6 +464,7 @@ void shm_stream_unmalloc(shm_stream_t* handle)
 	{
 		SC_LOGI("map key:%s current ref_count:%d", handle->name, n->ref_count);
 	}
+	cmtx_leave(s_shmmap_lock);
 }
 
 void* shm_stream_mmap(shm_stream_t* handle, const char* name, unsigned int size)

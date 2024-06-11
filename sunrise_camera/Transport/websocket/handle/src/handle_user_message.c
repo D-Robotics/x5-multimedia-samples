@@ -309,13 +309,15 @@ static int _do_start_stream(ws_client *ws_clt)
 			ws_clt->codec_type = T_SDK_RTSP_VIDEO_TYPE_H264;
 			SC_LOGE("not support codec type [%d], so exit.", type);
 		}
+
+		SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
+			shm_id, shm_name, STREAM_MAX_USER, venc_chn_info.framerate, venc_chn_info.stream_buf_size);
+
 		ws_clt->shm_source[i] = shm_stream_create(shm_id, shm_name,
 			STREAM_MAX_USER, venc_chn_info.framerate,
 			venc_chn_info.stream_buf_size,
 			SHM_STREAM_READ, SHM_STREAM_MALLOC);
 
-		SC_LOGI("shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
-			shm_id, shm_name, STREAM_MAX_USER, venc_chn_info.framerate, venc_chn_info.stream_buf_size);
 
 		if (ws_clt->shm_source[i] != NULL) {
 			printf("shm_source is successfully created\n");
@@ -418,20 +420,22 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			// 1. 先stop、反初始化vin 、isp、vps、 venc 和 rtps 删除sms
 			SC_LOGI("========================== DEL SMS ==========================");
 			SDK_Cmd_Impl(SDK_CMD_RTSP_SERVER_DEL_SMS, NULL);
+
 			SC_LOGI("==================== STOP VPP SOLUTION ======================");
 			SDK_Cmd_Impl(SDK_CMD_VPP_STOP, NULL);
+
 			SC_LOGI("==================== UNINIT VPP SOLUTION ====================");
 			SDK_Cmd_Impl(SDK_CMD_VPP_UNINIT, NULL);
 
-			SC_LOGI("================= START NEW VPP SOLUTION ====================");
-
 			// 2. 更新配置结构体
+			SC_LOGI("================= SET VPP SOLUTION ====================");
 			SDK_Cmd_Impl(SDK_CMD_VPP_SET_SOLUTION_CONFIG, (void *)cmd_context);
 			print_json = cJSON_Parse(cmd_context);
 			SC_LOGD("%s", cJSON_Print(print_json));
 			free(print_json);
 
 			// 3. 开始启动应用
+			SC_LOGI("================= INIT VPP SOLUTION ====================");
 			ret = SDK_Cmd_Impl(SDK_CMD_VPP_INIT, NULL);
 			if(ret < 0)
 			{
@@ -439,7 +443,10 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 				ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"app_status\": \"请检查sensor是否连接正常\"}");
 				return -1;
 			}
+
 			usleep(500*1000);
+
+			SC_LOGI("================= START VPP SOLUTION ====================");
 			ret = SDK_Cmd_Impl(SDK_CMD_VPP_START, NULL);
 			if(ret < 0)
 			{
@@ -447,8 +454,11 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 				ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"app_status\": \"请检查sensor是否连接正常\"}");
 				return -1;
 			}
+
 			usleep(500*1000);
+
 			// 根据编码通道的配置添加推流
+			SC_LOGI("================= ADD SMS ====================");
 			SDK_Cmd_Impl(SDK_CMD_VPP_GET_VENC_CHN_STATUS, (void*)&venc_chns_status);
 			SC_LOGD("venc_chns_status: %u", venc_chns_status);
 			for (i = 0; i < 32; i++) {
@@ -488,6 +498,7 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 
 			SC_LOGI("start ws venc stream for %d channels", stream_chn_count);
 			// 根据编码通道的配置添加推流
+			SC_LOGI("================= START Websocket Video Stream ====================");
 			SDK_Cmd_Impl(SDK_CMD_VPP_GET_VENC_CHN_STATUS, (void*)&venc_chns_status);
 			SC_LOGD("venc_chns_status: %u", venc_chns_status);
 			ws_clt->stream_count = stream_chn_count;
@@ -498,6 +509,7 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			}
 			break;
 		case WS_CMD_STOP_STREAM:
+			SC_LOGI("================= Stop Websocket Video Stream ====================");
 			SC_LOGI("stop ws venc stream for %d channels", cJSON_GetObjectItem(root, "param")->valueint);
 			mThreadStop(&ws_clt->stream_thread);
 			break;

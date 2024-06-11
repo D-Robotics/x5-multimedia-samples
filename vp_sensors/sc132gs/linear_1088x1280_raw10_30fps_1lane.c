@@ -9,7 +9,7 @@ static mipi_config_t mipi_config = {
 	.rx_enable = 1,
 	.rx_attr = {
 		.phy = 0,
-		.lane = 2,
+		.lane = 1,
 		.datatype = RAW10,
 		.fps = SENSOE_FPS,
 		.mclk = 1,
@@ -50,7 +50,43 @@ static vin_node_attr_t vin_node_attr = {
 			.hdr_mode = NOT_HDR,
 			.time_stamp_en = 0,
 		},
-
+	},
+	.lpwm_attr = {
+		.enable = 1,
+		.lpwm_chn_attr = {
+			{	.trigger_source = 0,
+				.trigger_mode = 0,
+				.period = 33333,
+				.offset = 10,
+				.duty_time = 100,
+				.threshold = 0,
+				.adjust_step = 0,
+			},
+			{	.trigger_source = 0,
+				.trigger_mode = 0,
+				.period = 33333,
+				.offset = 10,
+				.duty_time = 100,
+				.threshold = 0,
+				.adjust_step = 0,
+			},
+			{	.trigger_source = 0,
+				.trigger_mode = 0,
+				.period = 33333,
+				.offset = 10,
+				.duty_time = 100,
+				.threshold = 0,
+				.adjust_step = 0,
+			},
+			{	.trigger_source = 0,
+				.trigger_mode = 0,
+				.period = 33333,
+				.offset = 10,
+				.duty_time = 100,
+				.threshold = 0,
+				.adjust_step = 0,
+			},
+		},
 	},
 };
 
@@ -95,12 +131,12 @@ static isp_ochn_attr_t isp_ochn_attr = {
 	.bit_width = 8,
 };
 
-vp_sensor_config_t sc132gs_linear_1088x1280_raw10_10fps_2lane = {
+vp_sensor_config_t sc132gs_linear_1088x1280_raw10_30fps_1lane = {
 	.chip_id_reg = 0x3107,
 	.chip_id = 0x0132,
 	.sensor_i2c_addr_list = {0x30, 0x33},
 	.sensor_name = "sc132gs-1280p",
-	.config_file = "linear_1088x1280_raw10_10fps_2lane.c",
+	.config_file = "linear_1088x1280_raw10_30fps_1lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,
 	.vin_node_attr = &vin_node_attr,

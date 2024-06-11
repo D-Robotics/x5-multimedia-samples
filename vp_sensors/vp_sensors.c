@@ -333,12 +333,13 @@ static int32_t check_sensor_reg_value(vcon_propertie_t vcon_props,
 }
 
 // Function to write frequency to MIPI host
-static void write_mipi_host_freq(int freq, int host_id) {
+static void write_mipi_host_freq(int mipi_host, int freq)
+{
 	char path[256];
 	FILE *file;
 
 	// Construct path to the file
-	snprintf(path, 256, "/sys/class/vps/mipi_host%d/param/snrclk_freq", host_id);
+	snprintf(path, 256, "/sys/class/vps/mipi_host%d/param/snrclk_freq", mipi_host);
 
 	// Open the file for writing
 	file = fopen(path, "w");
@@ -350,12 +351,13 @@ static void write_mipi_host_freq(int freq, int host_id) {
 }
 
 // Function to enable MIPI host clock
-static void enable_mipi_host_clock(int enable, int host_id) {
+static void enable_mipi_host_clock(int mipi_host, int enable)
+{
 	char path[256];
 	FILE *file;
 
 	// Construct path to the file
-	snprintf(path, 256, "/sys/class/vps/mipi_host%d/param/snrclk_en", host_id);
+	snprintf(path, 256, "/sys/class/vps/mipi_host%d/param/snrclk_en", mipi_host);
 
 	// Open the file for writing
 	file = fopen(path, "w");
@@ -363,6 +365,35 @@ static void enable_mipi_host_clock(int enable, int host_id) {
 		// Write enable value to the file
 		fprintf(file, "%d", enable);
 		fclose(file);
+	}
+}
+
+static int check_mipi_host_status(int mipi_host) {
+	char file_path[100];
+	snprintf(file_path, sizeof(file_path), "/sys/class/vps/mipi_host%d/status/cfg", mipi_host);
+
+	FILE *file = fopen(file_path, "r");
+	if (file == NULL) {
+		perror("Failed to open file");
+		return 0;
+	}
+
+	char first_line[256];
+	if (fgets(first_line, sizeof(first_line), file) == NULL) {
+		perror("Failed to read file");
+		fclose(file);
+		return 0;
+	}
+
+	fclose(file);
+
+	first_line[strcspn(first_line, "\n")] = '\0';
+
+	// 判断第一行内容是否为 "not inited"
+	if (strcmp(first_line, "not inited") == 0) {
+		return 1;
+	} else {
+		return 0;
 	}
 }
 
@@ -386,8 +417,8 @@ int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
 		// 如果该vcon使能了，检测该vcon上是否有连接 sensor
 		if (vcon_props_array[i].status[0] == 'o') { // okay
 			/* enable mclk */
-			write_mipi_host_freq(frequency, i);
-			enable_mipi_host_clock(1, i);
+			write_mipi_host_freq(i, frequency);
+			enable_mipi_host_clock(i, 1);
 
 			for (j = 0; j < vp_get_sensors_list_number(); j++) {
 				// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
@@ -420,9 +451,6 @@ int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
 					strcat(sensor_list, sensor_name_with_prefix);
 				}
 			}
-
-			// Disable frequency
-			enable_mipi_host_clock(0, i);
 		}
 	}
 
@@ -443,6 +471,9 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
 		// 跳过使用使用的mipi csi控制器，支持同时接入相同的摄像头
 		if (used_mipi_host & (1 << i))
+			continue;
+
+		if (check_mipi_host_status(i) == 0)
 			continue;
 
 		read_device_tree(i, &vcon_props_array[i]);
@@ -466,13 +497,11 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 			}
 
 			/* enable mclk */
-			write_mipi_host_freq(frequency, i);
-			enable_mipi_host_clock(1, i);
+			write_mipi_host_freq(i, frequency);
+			enable_mipi_host_clock(i, 1);
 
 			// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
 			ret = check_sensor_reg_value(vcon_props_array[i], sensor_config);
-			// Disable frequency
-			enable_mipi_host_clock(0, i);
 			if (ret == 0) {
 				// 检测到 sensor，保存 sensor 信息
 				printf("INFO: Found sensor_name:%s on mipi rx csi %d, i2c addr 0x%x, config_file:%s\n",
@@ -495,6 +524,9 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 
 	// Iterate over vcon@0 - 3
 	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
+		if (check_mipi_host_status(i) == 0)
+			continue;
+
 		read_device_tree(i, &vcon_props_array[i]);
 
 		printf("Searching camera sensor on device: %s ", vcon_props_array[i].device_path);
@@ -516,8 +548,8 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 			}
 
 			/* enable mclk */
-			write_mipi_host_freq(frequency, i);
-			enable_mipi_host_clock(1, i);
+			write_mipi_host_freq(i, frequency);
+			enable_mipi_host_clock(i, 1);
 
 			// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
 			ret = check_sensor_reg_value(vcon_props_array[i], sensor_config);
@@ -528,9 +560,6 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 					sensor_config->camera_config->addr, sensor_config->config_file);
 				break;
 			}
-
-			// Disable frequency
-			enable_mipi_host_clock(0, i);
 		}
 	}
 

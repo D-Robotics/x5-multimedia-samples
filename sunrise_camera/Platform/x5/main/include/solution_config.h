@@ -6,9 +6,9 @@
 
 typedef struct {
 	char chip_type[16];
-	char sensor_list[128];
-	char model_list[256];
-	char codec_type_list[32];
+	char sensor_list[512];
+	char model_list[512];
+	char codec_type_list[64];
 	int32_t encode_bit_rate_list[16];
 	char display_dev_list[64];
 } solution_hard_capability_t; // 硬件能力

@@ -22,6 +22,7 @@
 
 typedef struct {
 	int select_sensor_id;
+	uint32_t sensor_mode;
 	pipe_contex_t pipe_contexts;
 	int active_mipi_host; // 根据实际的硬件连接情况确定使用对应的mipi host
 	int vse_bind_codec_chn;
@@ -53,6 +54,7 @@ static void print_help(void) {
 	printf("-c, --config=\"sensor=id channel=vse_chn type=TYPE output=FILE\"\n");
 	printf("\t\tConfigure parameters for each video pipeline, can be repeated up to %d times.\n", MAX_PIPE_NUM);
 	printf("\t\tsensor   --  Sensor index,can have multiple parameters, reference sensor list.\n");
+	printf("\t\tmode     --  Sensor mode of camera_config_t\n");
 	printf("\t\tchannel  --  Vse channel index bind to encode, default 0, can be set to [0-5].\n");
 	printf("\t\ttype     --  Encode type, default is h264, can be set to [h264, h265].\n");
 	printf("\t\toutput   --  Save codec stream data to file, defaule is 'pipeline[xx]_[width]x[height]_[xxx]fps.[type]'.\n");
@@ -367,6 +369,12 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 				continue;
 			}
 			pipeline_info->vse_bind_codec_chn = atoi(key_value[1]);
+		} else if (strcmp(key_value[0], "mode") == 0) {
+			if (!is_number(key_value[1])) {
+				fprintf(stderr, "Invalid sensor mode number: %s\n", key_value[1]);
+				continue;
+			}
+			pipeline_info->sensor_mode = atoi(key_value[1]);
 		} else if (strcmp(key_value[0], "type") == 0) {
 			strncpy(pipeline_info->encode_type, key_value[1], sizeof(pipeline_info->encode_type) - 1);
 			pipeline_info->encode_type[sizeof(pipeline_info->encode_type) - 1] = '\0';
@@ -397,14 +405,18 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 	}
 }
 
-static int create_camera_node(pipe_contex_t *pipe_contex) {
-
+static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
+{
 	camera_config_t *camera_config = NULL;
 	vp_sensor_config_t *sensor_config = NULL;
 	int32_t ret = 0;
 
 	sensor_config = pipe_contex->sensor_config;
 	camera_config = sensor_config->camera_config;
+	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
+		camera_config->sensor_mode = sensor_mode;
+		sensor_config->vin_node_attr->lpwm_attr.enable = 1;
+	}
 	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 
@@ -549,12 +561,13 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	return 0;
 }
 
-static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host, int vse_bind_index)
+static int create_and_run_vflow(pipe_contex_t *pipe_contex,
+	int active_mipi_host, int vse_bind_index, uint32_t sensor_mode)
 {
 	int32_t ret = 0;
 
 	// 创建pipeline中的每个node
-	ret = create_camera_node(pipe_contex);
+	ret = create_camera_node(pipe_contex, sensor_mode);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vin_node(pipe_contex, active_mipi_host);
 	ERR_CON_EQ(ret, 0);
@@ -730,7 +743,9 @@ int main(int argc, char** argv) {
 	hb_mem_module_open();
 	for (index = 0; index < total_pipeline_num; index++) {
 		ret = create_and_run_vflow(&pipeline_info[index].pipe_contexts,
-			pipeline_info[index].active_mipi_host, pipeline_info[index].vse_bind_codec_chn);
+			pipeline_info[index].active_mipi_host,
+			pipeline_info[index].vse_bind_codec_chn,
+			pipeline_info[index].sensor_mode);
 		if (ret != 0) {
 			for (int j = 0; j < index; j++) {
 				hbn_vflow_stop(pipeline_info[j].pipe_contexts.vflow_fd);

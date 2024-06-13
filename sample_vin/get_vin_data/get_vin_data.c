@@ -17,6 +17,8 @@
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
+	{"settle", optional_argument, NULL, 't'},
+	{"mode", optional_argument, NULL, 'm'},
 	{NULL, 0, NULL, 0}
 };
 
@@ -28,6 +30,7 @@ static void print_help() {
 	printf("Options:\n");
 	printf("  -s <sensor_index>      Specify sensor index\n");
 	printf("  -t <settle_value>      Specify settle time for debug\n");
+	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
 }
@@ -42,6 +45,7 @@ static void command_help() {
 }
 
 static int settle = -1;
+static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 
 int main(int argc, char** argv) {
 	int ret = 0;
@@ -50,7 +54,7 @@ int main(int argc, char** argv) {
 	int c = 0;
 	int index = -1;
 
-	while((c = getopt_long(argc, argv, "s:t:h",
+	while((c = getopt_long(argc, argv, "s:t:m:h",
 							long_options, &opt_index)) != -1) {
 		switch (c)
 		{
@@ -59,6 +63,9 @@ int main(int argc, char** argv) {
 			break;
 		case 't':
 			settle = atoi(optarg);
+			break;
+		case 'm':
+			sensor_mode = atoi(optarg);
 			break;
 		case 'h':
 		default:
@@ -106,6 +113,10 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 	/* Debug settle */
 	if (settle >= 0 && settle <= 127) {
 		camera_config->mipi_cfg->rx_attr.settle = settle;
+	}
+	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
+		camera_config->sensor_mode = sensor_mode;
+		sensor_config->vin_node_attr->lpwm_attr.enable = 1;
 	}
 	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
@@ -210,15 +221,18 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 	}
 
 	// 将帧数据写入文件
-	snprintf(dst_file, sizeof(dst_file), "vin_chn%d_%dx%d_stride_%d_sframeid_%d.raw",
+	snprintf(dst_file, sizeof(dst_file),
+		"vin_chn%d_%dx%d_stride_%d_sframeid_%d.raw",
 		chn_id,
 		out_img.buffer.width, out_img.buffer.height, out_img.buffer.stride,
 		out_img.info.frame_id);
-	printf("vin dump raw %dx%d(stride:%d), buffer size: %ld frame id: %d\n",
+	printf("vin dump raw %dx%d(stride:%d), buffer size: %ld frame id: %d,"
+			" timestamp: %ld\n",
 			out_img.buffer.width, out_img.buffer.height,
 			out_img.buffer.stride,
 			out_img.buffer.size[0],
-			out_img.info.frame_id);
+			out_img.info.frame_id,
+			out_img.info.timestamps);
 	dump_image_to_file(dst_file, out_img.buffer.virt_addr[0], out_img.buffer.size[0]);
 	// 释放帧数据
 	hbn_vnode_releaseframe(vin_node_handle, chn_id, &out_img);

@@ -29,7 +29,7 @@ static mipi_config_t irs2875_mipi_config = {
 	},
 	.rx_ex_mask = 0x1, // 使能 hs nocheck 扩展参数的掩码，只有设置了掩码，对应的参数才能生效
 	.rx_attr_ex = {
-		.nocheck = 1, // ToF 做slave模式，初始化的时候不需要检查是否进入 hs reception, 做master时则必须要做做这个检查
+		.nocheck = 1, // ToF 做slave模式，初始化的时候不需要检查是否进入 hs reception, 做master时则必须要做这个检查
 	}
 };
 

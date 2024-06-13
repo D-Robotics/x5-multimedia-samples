@@ -1,5 +1,11 @@
 CROSS_COMPILE ?= /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
 
+ifeq ($(BUILD_VERBOSE),1)
+	Q =
+else
+	Q = @
+endif
+
 CC = ${CROSS_COMPILE}gcc
 CXX = ${CROSS_COMPILE}g++
 AR = ${CROSS_COMPILE}ar
@@ -26,6 +32,12 @@ HR_TOP_DIR = $(shell realpath ${PLATFORM_SAMPLES_DIR}/../../../)
 ifeq ($(HR_BUILD_OUTPUT_DIR),)
 HR_BUILD_OUTPUT_DIR = ${HR_TOP_DIR}/out
 endif
+
+ifeq ($(APP_DEPLOY_DIR),)
+APP_DEPLOY_DIR = ${HR_BUILD_OUTPUT_DIR}/deploy/app
+endif
+
+PLATFORM_SAMPLES_DEPLOY_DIR = ${APP_DEPLOY_DIR}/platform_samples
 
 INCS += -I . \
 	-I ${HR_BUILD_OUTPUT_DIR}/build/hbre_deps/include/ \

@@ -1,11 +1,13 @@
 include ../../Makefile.in
+CUR_DIR := $(shell pwd)
+RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DIR))
 
 TARGET = gdc_static_valid
 
 SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
 OBJS :=  $(SRCS:.c=.o)
 
-.PHONY: all clean
+.PHONY: all clean install
 
 
 %.o:%.c
@@ -19,12 +21,12 @@ $(TARGET):$(OBJS)
 
 all: ${TARGET}
 
-install: ${TARGET}
-	@echo "Generate deployment package"
-	@mkdir -p install
-	@cp -arf ${TARGET} install/
-	@cp -arf config install/
-	@cp -arf generate_custom_config/ install/
-
 clean:
-	rm -rf ${OBJS} ${TARGET} install 
+	rm -rf ${OBJS} ${TARGET} install
+
+install: ${TARGET}
+	$(Q)install -d ${PLATFORM_SAMPLES_DEPLOY_DIR}/${RELATIVE_PATH}
+	$(Q)install -m 0775 ${TARGET} \
+		${PLATFORM_SAMPLES_DEPLOY_DIR}/${RELATIVE_PATH}/
+	cp -raf ${CUR_DIR}/test_res \
+		${PLATFORM_SAMPLES_DEPLOY_DIR}/${RELATIVE_PATH}/

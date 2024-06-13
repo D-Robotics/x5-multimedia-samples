@@ -408,6 +408,7 @@ int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
 
 	// Iterate over vcon@0 - 3
 	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
+		if (i == 1) continue;
 		read_device_tree(i, &vcon_props_array[i]);
 
 		printf("Searching camera sensor on device: %s ", vcon_props_array[i].device_path);
@@ -469,6 +470,7 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 
 	// Iterate over vcon@0 - 3
 	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
+		if (i == 1) continue;
 		// 跳过使用使用的mipi csi控制器，支持同时接入相同的摄像头
 		if (used_mipi_host & (1 << i))
 			continue;
@@ -524,6 +526,7 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 
 	// Iterate over vcon@0 - 3
 	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
+		if (i == 1) continue;
 		if (check_mipi_host_status(i) == 0)
 			continue;
 

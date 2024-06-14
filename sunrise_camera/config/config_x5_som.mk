@@ -1,6 +1,7 @@
 
 GLOBAL_INSTALL_DIR := $(PRO_ROOT)sunrise_camera
-COMPILE_PREFIX := /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+CROSS_COMPILE ?= /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+COMPILE_PREFIX := $(CROSS_COMPILE)
 CFLAGS_EX  := -Wall -g -O2 -fstack-protector
 
 BUILD_OUT_DIR ?= $(PRO_ROOT)../../../../out/build

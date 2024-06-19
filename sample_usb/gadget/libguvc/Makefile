@@ -1,4 +1,4 @@
-include  ${SRC_BUILD_DIR}/core/Makefile
+include ../../../Makefile.in
 
 ifeq (${BUILD_OUTPUT_PATH},)
 export BUILD_OUTPUT_PATH=$(shell pwd)

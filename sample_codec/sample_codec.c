@@ -71,6 +71,64 @@ static void print_decode_params(DecodeParams *params) {
 	printf("Decode params...\n codec_type: %d, width: %d, height: %d, input_file: %s, output_file: %s\n",
 			params->codec_type, params->width, params->height, params->input, params->output);
 }
+// Define JPEG start and end markers
+#define JPEG_START_MARKER 0xFFD8
+#define JPEG_END_MARKER 0xFFD9
+
+// Macro to combine two bytes into a 16-bit value
+#define MAKEWORD(a, b) ((uint16_t)(((a) << 8) | (b)))
+
+// Function to read the next JPEG image from the file and return its data and size
+int extract_jpeg(FILE *file, uint8_t **image_data, size_t *image_size) {
+	uint8_t buffer[1024];
+	size_t bytes_read;
+	int in_jpeg = 0;
+	size_t jpeg_size = 0;
+	size_t jpeg_capacity = 1024;
+	uint8_t *jpeg_data = (uint8_t *)malloc(jpeg_capacity);
+	if (!jpeg_data) {
+		perror("Unable to allocate memory");
+		return -1;
+	}
+
+	while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0 || !feof(file)) {
+		if (feof(file)) {
+			if (jpeg_data)
+				free(jpeg_data);
+			return -1;
+		}
+		for (size_t i = 0; i < bytes_read; i++) {
+			// Check for JPEG start marker
+			if (i < bytes_read - 1 && MAKEWORD(buffer[i], buffer[i + 1]) == JPEG_START_MARKER) {
+				in_jpeg = 1;
+				jpeg_size = 0; // Reset JPEG size for new image
+			}
+
+			// Write data to the current JPEG buffer
+			if (in_jpeg) {
+				if (jpeg_size >= jpeg_capacity) {
+					jpeg_capacity *= 2;
+					jpeg_data = (uint8_t *)realloc(jpeg_data, jpeg_capacity);
+					if (!jpeg_data) {
+						perror("Unable to reallocate memory");
+						return -1;
+					}
+				}
+				jpeg_data[jpeg_size++] = buffer[i];
+			}
+
+			// Check for JPEG end marker
+			if (i > 0 && MAKEWORD(buffer[i - 1], buffer[i]) == JPEG_END_MARKER && in_jpeg) {
+				*image_data = jpeg_data;
+				*image_size = jpeg_size;
+				return 0;
+			}
+		}
+	}
+
+	free(jpeg_data);
+	return -1;
+}
 
 
 // av_open_stream: 打开视频流并找到最佳视频流索引
@@ -659,7 +717,7 @@ int32_t vp_codec_init(media_codec_context_t *context)
 		return -1;
 	}
 
-	printf("%s idx: %d, successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+	printf("%s idx: %d, init successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
 	return 0;
 }
 
@@ -674,7 +732,7 @@ int32_t vp_codec_deinit(media_codec_context_t *context)
 		return -1;
 	}
 
-	printf("%s idx: %d, successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+	printf("%s idx: %d, deinit successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
 	return 0;
 }
 
@@ -690,7 +748,7 @@ int32_t vp_codec_start(media_codec_context_t *context)
 		return -1;
 	}
 
-	printf("%s idx: %d, successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+	printf("%s idx: %d, start successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
 	return ret;
 }
 
@@ -704,7 +762,7 @@ int32_t vp_codec_stop(media_codec_context_t *context)
 		return -1;
 	}
 
-	printf("%s idx: %d, successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+	printf("%s idx: %d, stop successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
 	return ret;
 }
 int32_t vp_codec_restart(media_codec_context_t *context)
@@ -718,7 +776,7 @@ int32_t vp_codec_restart(media_codec_context_t *context)
 				__FUNCTION__, __LINE__, ret);
 		return -1;
 	}
-	printf("%s idx: %d, successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+	printf("%s idx: %d, restart successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
 	return 0;
 }
 
@@ -744,36 +802,7 @@ int32_t vp_codec_set_input(media_codec_context_t *context, media_codec_buffer_t 
 		return -1;
 	}
 
-	if (context->encoder == true)
-	{
-		// buffer->type = MC_VIDEO_FRAME_BUFFER;
-		// buffer->vframe_buf.width = context->video_enc_params.width;
-		// buffer->vframe_buf.height = context->video_enc_params.height;
-		// buffer->vframe_buf.pix_fmt = MC_PIXEL_FORMAT_NV12;
-		// buffer->vframe_buf.size = frame->data_size;
-		// buffer->vframe_buf.pts = frame->image_timestamp;
-		// // SC_LOGW("Buffer Type: %d", buffer->type);
-		// // SC_LOGW("Width: %d", buffer->vframe_buf.width);
-		// // SC_LOGW("Height: %d", buffer->vframe_buf.height);
-		// // SC_LOGW("Pixel Format: %d", buffer->vframe_buf.pix_fmt);
-		// // SC_LOGW("Size: %d", buffer->vframe_buf.size);
-		// // SC_LOGW("plane_count: %d", frame->plane_count);
-		// // SC_LOGW("pts: %llu", buffer->vframe_buf.pts);
-
-		// if (buffer->vframe_buf.size != 0) {
-		// 	memcpy(buffer->vframe_buf.vir_ptr[0], frame->data[0], buffer->vframe_buf.size);
-		// } else {
-		// 	memcpy(buffer->vframe_buf.vir_ptr[0], frame->data[0], frame->data_size[0]);
-		// 	// char file_name[128];
-		// 	// hbn_vnode_image_t *hbn_vnode_image = (hbn_vnode_image_t *)frame->hbn_vnode_image;
-		// 	// sprintf(file_name, "/tmp/codec_%ux%u_%03d.yuv",
-		// 	// 					hbn_vnode_image->buffer.width,
-		// 	// 					hbn_vnode_image->buffer.height,
-		// 	// 					hbn_vnode_image->info.frame_id);
-		// 	// vp_dump_yuv_to_file(file_name, frame->data[0], frame->data_size[0]);
-		// }
-	}
-	else
+	if (context->encoder == false)
 	{
 		if (buffer->vstream_buf.size < data_size)
 		{
@@ -793,8 +822,10 @@ int32_t vp_codec_set_input(media_codec_context_t *context, media_codec_buffer_t 
 			buffer->vstream_buf.size = 0;
 			buffer->vstream_buf.stream_end = 1;
 		}
-		printf("buffer->vstream_buf.size: %d\n", buffer->vstream_buf.size);
-		printf("buffer->vstream_buf.vir_ptr: %p\n", buffer->vstream_buf.vir_ptr);
+		if (verbose) {
+			printf("buffer->vstream_buf.size: %d\n", buffer->vstream_buf.size);
+			printf("buffer->vstream_buf.vir_ptr: %p\n", buffer->vstream_buf.vir_ptr);
+		}
 
 		memcpy(buffer->vstream_buf.vir_ptr, data, data_size);
 	}
@@ -806,7 +837,8 @@ int32_t vp_codec_set_input(media_codec_context_t *context, media_codec_buffer_t 
 		return -1;
 	}
 
-	printf("%s idx: %d, successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+	if (verbose)
+		printf("%s idx: %d, set input successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
 	return ret;
 }
 
@@ -864,8 +896,10 @@ int32_t vp_codec_get_output(media_codec_context_t *context, media_codec_buffer_t
 				return -1;
 			}
 
-			printf("Decodec idx: %d type:%d get frame size:%d\n",
-				context->instance_index, context->codec_id, buffer->vframe_buf.size);
+			if (verbose) {
+				printf("Decodec idx: %d type:%d get frame size:%d\n",
+					context->instance_index, context->codec_id, buffer->vframe_buf.size);
+			}
 		}
 	}
 
@@ -884,8 +918,10 @@ int32_t vp_codec_release_output(media_codec_context_t *context, media_codec_buff
 	}
 	buffer = frame_buffer;
 
-	printf("%s idx: %d type:%d, buffer:%p\n",
-		context->encoder ? "Encode" : "Decode", context->instance_index, context->codec_id, buffer);
+	if (verbose) {
+		printf("%s idx: %d type:%d, buffer:%p\n",
+			context->encoder ? "Encode" : "Decode", context->instance_index, context->codec_id, buffer);
+	}
 
 	if (buffer != NULL)
 	{
@@ -897,7 +933,6 @@ int32_t vp_codec_release_output(media_codec_context_t *context, media_codec_buff
 		}
 	}
 
-	printf("%s idx: %d, successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
 	return ret;
 }
 
@@ -1052,6 +1087,7 @@ int32_t decode_output_video(media_codec_context_t *context, DecodeParams *params
 	int32_t ret = 0;
 	media_codec_buffer_t ouput_buffer = {0};
 	media_codec_output_buffer_info_t info;
+	int32_t frame_count = 0;
 
 	FILE *fp_output = fopen(params->output, "w+b");
 	if (NULL == fp_output) {
@@ -1068,10 +1104,28 @@ int32_t decode_output_video(media_codec_context_t *context, DecodeParams *params
 			continue;
 		}
 		if (fp_output) {
-			fwrite(ouput_buffer.vframe_buf.vir_ptr[0],
-				ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height,1, fp_output);
-			fwrite(ouput_buffer.vframe_buf.vir_ptr[1],
-				ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height / 2, 1, fp_output);
+			if (verbose) {
+				frame_count++;
+				printf("[%s][%d] frame_count:%d, size: %d, exp size: %d stride: %d vstride: %d\n",
+					__func__, __LINE__,
+					frame_count, ouput_buffer.vframe_buf.size,
+					ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height * 3 / 2,
+					ouput_buffer.vframe_buf.stride, ouput_buffer.vframe_buf.vstride);
+				printf("ouput_buffer.vframe_buf.vir_ptr[0]: %p ouput_buffer.vframe_buf.vir_ptr[1]: %p\n",
+					ouput_buffer.vframe_buf.vir_ptr[0], ouput_buffer.vframe_buf.vir_ptr[1]);
+			}
+			fwrite(
+				ouput_buffer.vframe_buf.vir_ptr[0],
+				ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height,
+				1,
+				fp_output
+			);
+			fwrite(
+				ouput_buffer.vframe_buf.vir_ptr[1],
+				ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height / 2,
+				1,
+				fp_output
+			);
 		}
 		vp_codec_release_output(context, &ouput_buffer);
 	}
@@ -1083,7 +1137,7 @@ int32_t decode_output_video(media_codec_context_t *context, DecodeParams *params
 }
 
 // 视频解码函数
-int32_t decode_video(media_codec_context_t *context, DecodeParams *params)
+int32_t decode_h264_h265_mjpeg_video(media_codec_context_t *context, DecodeParams *params)
 {
 	int32_t ret = 0;
 	media_codec_buffer_t input_buffer = {0};
@@ -1228,6 +1282,48 @@ err_av_open:
 	return 0;
 }
 
+
+// 解码一连串的jpeg图像
+int32_t decode_jpeg_sequence(media_codec_context_t *context, DecodeParams *params)
+{
+	media_codec_buffer_t input_buffer = {0};
+	uint8_t *image_data;
+	size_t image_size;
+
+	printf("%s idx: %d, start successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+
+	FILE *fp_input = fopen(params->input, "rb");
+	if (NULL == fp_input) {
+		printf("Failed to open input file: %s\n", params->input);
+		return -1;
+	}
+
+	FILE *fp_output = fopen(params->output, "w+b");
+	if (NULL == fp_output) {
+		printf("Failed to open output file: %s\n", params->output);
+		return -1;
+	}
+
+	while (1) {
+		if (extract_jpeg(fp_input, &image_data, &image_size) == 0) {
+			vp_codec_set_input(context, &input_buffer, image_data, image_size, 0);
+			free(image_data);
+		} else {
+			break;
+		}
+	}
+
+	if (fp_output) {
+		fclose(fp_output);
+	}
+
+	if (fp_input) {
+		fclose(fp_input);
+	}
+
+	return 0;
+}
+
 // 编码线程函数
 void *encode_thread(void *arg) {
 	int32_t ret = 0;
@@ -1268,7 +1364,11 @@ void *decode_thread(void *arg) {
 	DecodeParams *params = (DecodeParams *)arg;
 
 	printf("Decoding video...\n");
-	decode_video(&params->decode_context, params);
+	if (params->codec_type == MEDIA_CODEC_ID_JPEG) {
+		decode_jpeg_sequence(&params->decode_context, params);
+	} else {
+		decode_h264_h265_mjpeg_video(&params->decode_context, params);
+	}
 	pthread_exit(NULL);
 }
 

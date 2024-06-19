@@ -11,7 +11,6 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#include "utils/utils_log.h"
 #include <stdbool.h>
 
 extern vp_sensor_config_t sc1330t_linear_1280x960_raw10_30fps_1lane;
@@ -405,14 +404,14 @@ int get_board_id(char *data, size_t size){
 	const char *board_id_file = "/sys/class/socinfo/board_id";
 	FILE *fp = fopen(board_id_file, "r");
 	if(fp == NULL){
-		SC_LOGE("open file %s failed.", board_id_file);
+		printf("[ERROR] open file %s failed.", board_id_file);
 		return -1;
 	}
 	int ret = fread(data, sizeof(char), size -1, fp);
 	if(ret > 0){
 		data[ret] = '\0';
 	}else{
-		SC_LOGE("read file %s failed.", board_id_file);
+		printf("[ERROR] read file %s failed.", board_id_file);
 		return -1;
 	}
 	fclose(fp);
@@ -424,17 +423,17 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 	char board_id[10];
 	bool is_need_skip_sci1 = false;
 	int ret = get_board_id(board_id, sizeof(board_id));
-	if(ret == 0){
+	if(ret == 0) {
 		ret = strncmp(board_id, "201", 3);
-		if(ret == 0){
-			SC_LOGI("board_id is 201, so skip sci1.");
+		if(ret == 0) {
+			printf("[INFO] board_id is 201, so skip sci1.");
 			is_need_skip_sci1 = true;
-		}else{
-			SC_LOGI("board_id is %s, not need skip sci1.");
+		} else {
+			printf("[INFO] board_id is %s, not need skip sci1.", board_id);
 			is_need_skip_sci1 = false;
 		}
 	}else{
-		SC_LOGW("read board_id file failed, so skip sci1.");
+		printf("read board_id file failed, so skip sci1.");
 		is_need_skip_sci1 = true;
 	}
 	csi_list_info->valid_count = 0;

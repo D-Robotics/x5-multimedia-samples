@@ -65,7 +65,12 @@ int main(int argc, char** argv) {
 				index,
 				vp_sensor_config_list[index]->sensor_name,
 				vp_sensor_config_list[index]->config_file);
-		vp_sensor_fixed_mipi_host(pipe_contex.sensor_config);
+		ret = vp_sensor_fixed_mipi_host(pipe_contex.sensor_config);
+		if (ret != 0) {
+			printf("No Camera Sensor found. Please check if the specified "
+				"sensor is connected to the Camera interface.\n");
+			return ret;
+		}
 	} else {
 		printf("Unsupport sensor index:%d\n", index);
 		print_help();

@@ -356,7 +356,9 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 			}
 			ret = vp_sensor_multi_fixed_mipi_host(pipeline_info->pipe_contexts.sensor_config, used_mipi_host);
 			if (ret < 0) {
-				printf("vp sensor fixed mipi host fail, sensor id %d\n", sensor_idx);
+				printf("vp sensor fixed mipi host fail, sensor id %d."
+					"Maybe No Camera Sensor found. Please check if the specified "
+					"sensor is connected to the Camera interface.\n\n", sensor_idx);
 				exit(0);
 			}
 			pipeline_info->select_sensor_id = sensor_idx;

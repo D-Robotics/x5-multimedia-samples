@@ -599,5 +599,5 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 		}
 	}
 
-	return -1;
+	return ret;
 }

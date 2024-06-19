@@ -98,19 +98,11 @@ static int32_t vp_get_chip_type(char *chip_type)
 
 int32_t vp_get_hard_capability(solution_cfg_t *solution_config)
 {
-	int32_t num_sensors = 0;
 	solution_hard_capability_t *capability = &solution_config->hardware_capability;
 
 	vp_get_chip_type(capability->chip_type);
 	SC_LOGI("chip_type: %s", capability->chip_type);
-
-	// 将字符数组的第一个字符设置为 null 终止符，防止内容叠加
-	capability->sensor_list[0] = '\0';
-	vp_sensor_detect(capability->sensor_list, &num_sensors);
-
-	// TODO: 需要继续优化为确认硬件上实际接了多少路camera sensor
-	solution_config->cam_solution.max_pipeline_count = num_sensors;
-
+	vp_sensor_detect_structed(&capability->csi_list_info);
 	return 0;
 }
 

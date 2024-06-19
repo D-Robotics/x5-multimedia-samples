@@ -3,10 +3,12 @@
 
 #define STL_MAX_VPP_CAM_NUM 4
 #define STL_MAX_VPP_BOX_NUM 6
+#include "vp_sensors.h"
 
 typedef struct {
 	char chip_type[16];
-	char sensor_list[512];
+	int32_t sensor_info_valid_count;
+	csi_list_info_t csi_list_info;
 	char model_list[512];
 	char codec_type_list[64];
 	int32_t encode_bit_rate_list[16];
@@ -14,6 +16,9 @@ typedef struct {
 } solution_hard_capability_t; // 硬件能力
 
 typedef struct {
+	int32_t is_valid;
+	int32_t is_enable;
+	int32_t csi_index;
 	char sensor[32]; // camera sensor型号
 	int32_t encode_type; // 编码类型
 	int32_t encode_bitrate; // 编码码率
@@ -62,6 +67,7 @@ int32_t solution_cfg_load();
 int32_t solution_cfg_save();
 char* solution_cfg_obj2string();
 void solution_cfg_string2obj(char *in);
+int32_t solution_cfg_update_camera_config();
 
 extern int32_t g_solution_cfg_is_load;
 extern solution_cfg_t g_solution_config;

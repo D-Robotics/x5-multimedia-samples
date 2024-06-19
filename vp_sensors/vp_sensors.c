@@ -11,6 +11,9 @@
 #include <sys/types.h>
 #include <dirent.h>
 
+#include "utils/utils_log.h"
+#include <stdbool.h>
+
 extern vp_sensor_config_t sc1330t_linear_1280x960_raw10_30fps_1lane;
 extern vp_sensor_config_t irs2875_linear_208x1413_raw12_15fps_2lane;
 extern vp_sensor_config_t sc230ai_linear_1920x1080_raw10_10fps_1lane;
@@ -398,67 +401,97 @@ static int check_mipi_host_status(int mipi_host) {
 	}
 }
 
-
-int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors)
+int get_board_id(char *data, size_t size){
+	const char *board_id_file = "/sys/class/socinfo/board_id";
+	FILE *fp = fopen(board_id_file, "r");
+	if(fp == NULL){
+		SC_LOGE("open file %s failed.", board_id_file);
+		return -1;
+	}
+	int ret = fread(data, sizeof(char), size -1, fp);
+	if(ret > 0){
+		data[ret] = '\0';
+	}else{
+		SC_LOGE("read file %s failed.", board_id_file);
+		return -1;
+	}
+	fclose(fp);
+	return 0;
+}
+void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 {
-	int32_t ret = 0, i = 0, j = 0, k = 0, index = 0;
-	uint32_t frequency = 24000000;
-	char sensor_name_with_prefix[256] = {0};
-
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
-
+	char board_id[10];
+	bool is_need_skip_sci1 = false;
+	int ret = get_board_id(board_id, sizeof(board_id));
+	if(ret == 0){
+		ret = strncmp(board_id, "201", 3);
+		if(ret == 0){
+			SC_LOGI("board_id is 201, so skip sci1.");
+			is_need_skip_sci1 = true;
+		}else{
+			SC_LOGI("board_id is %s, not need skip sci1.");
+			is_need_skip_sci1 = false;
+		}
+	}else{
+		SC_LOGW("read board_id file failed, so skip sci1.");
+		is_need_skip_sci1 = true;
+	}
+	csi_list_info->valid_count = 0;
+	csi_list_info->max_count = VP_MAX_VCON_NUM;
 	// Iterate over vcon@0 - 3
-	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
-		if (i == 1) continue;
+	for (int i = 0; i < VP_MAX_VCON_NUM; ++i) {
+		csi_info_t csi_info_tmp = {.index = i, .is_valid = 0};
 		read_device_tree(i, &vcon_props_array[i]);
 
+		if((i == 1) && (is_need_skip_sci1)){
+			csi_list_info->csi_info[i] = csi_info_tmp;
+			continue;
+		}
 		printf("Searching camera sensor on device: %s ", vcon_props_array[i].device_path);
 		printf("i2c bus: %d ", vcon_props_array[i].bus);
 		printf("mipi rx phy: %d\n", vcon_props_array[i].rx_phy[1]);
 
-		// 如果该vcon使能了，检测该vcon上是否有连接 sensor
-		if (vcon_props_array[i].status[0] == 'o') { // okay
-			/* enable mclk */
-			write_mipi_host_freq(i, frequency);
+		memset(csi_info_tmp.sensor_config_list, 0, sizeof(csi_info_tmp.sensor_config_list));
+		if (vcon_props_array[i].status[0] == 'o') {
+			write_mipi_host_freq(i, 24000000);
 			enable_mipi_host_clock(i, 1);
 
-			for (j = 0; j < vp_get_sensors_list_number(); j++) {
-				// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
-				/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
-				for (k = 0; k < 8; ++k) {
+			for (int j = 0; j < vp_get_sensors_list_number(); j++) {
+				for (int k = 0; k < 8; ++k) {
 					if (vcon_props_array[i].gpio_oth[k] != 0) {
 						if ((vp_sensor_config_list[j]->camera_config->gpio_enable_bit & (1 << k)) != 0) {
-							// gpio_level should be from sensor config and sensor spec
 							enable_sensor_pin(vcon_props_array[i].gpio_oth[k],
 								(1 - vp_sensor_config_list[j]->camera_config->gpio_level_bit));
 						}
 					}
 				}
 
-				ret = check_sensor_reg_value(vcon_props_array[i], vp_sensor_config_list[j]);
+				int ret = check_sensor_reg_value(vcon_props_array[i], vp_sensor_config_list[j]);
 				if (ret == 0) {
-					// 检测到 sensor，保存 sensor 信息
-					printf("INFO: Support sensor index:%d, sensor_name:%s on mipi rx csi %d, "
+
+					printf("INFO: Support sensor name:%s on mipi rx csi %d, "
 							"i2c addr 0x%x, config_file:%s\n",
-						index++, vp_sensor_config_list[j]->sensor_name,
+						vp_sensor_config_list[j]->sensor_name,
 						vcon_props_array[i].rx_phy[1],
 						vp_sensor_config_list[j]->camera_config->addr,
 						vp_sensor_config_list[j]->config_file);
-					if (strlen(sensor_list) > 1) {
-						strcat(sensor_list, "/");
+
+					csi_info_tmp.index = i;
+					csi_info_tmp.is_valid = 1;
+
+					if (strlen(csi_info_tmp.sensor_config_list) > 1) {
+						strcat(csi_info_tmp.sensor_config_list, "/");
 					}
-					// 添加 CSI_%d- 前缀
-					memset(sensor_name_with_prefix, 0, sizeof(sensor_name_with_prefix));
-					sprintf(sensor_name_with_prefix, "CSI_%d-%s", i, vp_sensor_config_list[j]->sensor_name);
-					strcat(sensor_list, sensor_name_with_prefix);
+					strcat(csi_info_tmp.sensor_config_list, vp_sensor_config_list[j]->sensor_name);
 				}
+			}
+			csi_list_info->csi_info[i] = csi_info_tmp;
+			if(csi_info_tmp.is_valid){
+				csi_list_info->valid_count++;
 			}
 		}
 	}
-
-	*num_sensors = index;
-
-	return -1;
 }
 
 int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int used_mipi_host)

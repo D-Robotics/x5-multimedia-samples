@@ -345,7 +345,10 @@ function adjust_layout(num_videos) {
 		layout.style.display = 'none';
 	});
 
-	if (num_videos === 1) {
+	if(num_videos === 0){
+		//do nothing
+		return;
+	}else if (num_videos === 1) {
 		document.getElementById('layout1').style.display = 'block';
 	} else if (num_videos === 2) {
 		document.getElementById('layout2').style.display = 'flex';
@@ -435,39 +438,105 @@ function render_json_to_html(solutions_config) {
 
 	if (solution_name === 'cam_solution') {
 		const cam_solution = solutions_config["cam_solution"];
-		g_current_layout = cam_solution["pipeline_count"];
-
 		// 渲染 cam_vpp
 		html += `<div><strong>智能摄像机</strong><ul>`;
 
-		// 渲染 pipeline_count 下拉选择框
-		const field = g_solution_fields["pipeline_count"];
-		const label = field ? `${field.chinese_name}（pipeline_count）` : "pipeline_count";
-		html += `<div"><span>${label}</span>：<select id="item_cam_pipeline_count" class="form-control-sm">`;
-		for (let option = 1; option <= cam_solution[field.options]; option++) {
-			html += `<option value="${option}" ${cam_solution["pipeline_count"] === option ? 'selected' : ''}>${option}</option>`;
+		// 渲染 通道开关 复选框
+		if(cam_solution.pipeline_count > 0){
+			html += '<div><strong>使能Camera接口:</strong><div class="camera_channel_control">';
 		}
-		html += `</select></div>`;
+		const cam_vpp_list = cam_solution.cam_vpp
+		const csi_list_info = hardware_capability.csi_list_info;
+		// let valid_index = 0; //保证html 相关元素的id从0开始，并且连续
+		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
+			const cam_vpp = cam_vpp_list[i];
+			if(cam_vpp.is_valid === 0){
+				continue;
+			}
 
-		for (let i = 0; i < cam_solution["pipeline_count"]; i++) {
-			html += `<li style="display: inline-block;"><strong>第 ${i+1} 路配置：</strong><ul>`;
-			for (const itemKey in cam_solution["cam_vpp"][i]) {
+			const checkboxName = 'CSI_' + cam_vpp.csi_index;
+			html += '<div class="checkbox-item">';
+			html += '  <input type="checkbox" id="checkbox' + i + '" name="' + checkboxName + '"';
+			if (cam_vpp.is_enable) {
+				html += ' checked';
+			}
+			html += '>';
+			html += '  <label for="checkbox' + i + '">' + checkboxName + '</label>';
+			html += '</div>';
+		}
+		html += '</div></div>';
+		html += '<br>';
+
+		//已经打开的通道的参数
+		g_current_layout = 0;
+		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
+			const csi_info = csi_list_info.csi_info[i];
+			const cam_vpp = cam_vpp_list[i];
+			if (cam_vpp.is_enable === 0) {
+				continue;
+			}
+			if(cam_vpp.is_valid === 0){
+				console.error('channel:' + i + "is not valid, but cam app is enable:" + cam_vpp.sensor);
+				continue;
+			}
+			g_current_layout += 1;
+			html += `<li style="display: inline-block;"><strong>Camera接口(CSI${cam_vpp.csi_index}):</strong><ul>`;
+			for (const itemKey in cam_vpp) {
 				const uniqueId = `item_${i}_${itemKey}`;
-				html += render_label_name(solutions_config, itemKey, uniqueId, cam_solution["cam_vpp"][i]);
+				if(itemKey == "sensor"){
+					//sensor 的配置在 hardware_capability.csi_list_info[i].sensor_config_list
+					//所以与函数 render_label_name 处理过程不兼容,所以此处复制 一份处理
+					const field = g_solution_fields[itemKey];
+					const label = field ? `${field.chinese_name}（${itemKey}）` : itemKey;
+					html += `<li><span>${label}</span>：`;
+
+					html += `<select id="${uniqueId}" class="form-control-sm">`;
+					const options = csi_info.sensor_config_list.split('/');
+					options.forEach(option => {
+						html += `<option value="${option}" ${cam_vpp["sensor"] === option ? 'selected' : ''}>${option}</option>`;
+					});
+					html += `</select>`;
+					html += `</li>`;
+				}else if((itemKey === "csi_index") || (itemKey === "is_enable") || (itemKey === "is_valid") ){
+					continue; //不显示
+				}else{
+				html += render_label_name(solutions_config, itemKey, uniqueId, cam_vpp);
+				}
+
 			}
 			html += `</ul></li>`;
 		}
 		html += `</ul></div>`;
 
+		//为每个复选框添加事件处理函数
 		container.innerHTML = html;
+		function createCheckboxChangeHandler(checkboxNumber) {
+			return function(event) {
+			  const cam_solution = g_solution_configs["cam_solution"];
+			  const cam_vpp_list = cam_solution.cam_vpp
+			  const cam_vpp = cam_vpp_list[checkboxNumber];
+			  if(cam_vpp.is_valid === 0){
+				console.error("csi_" + cam_vpp.csi_index + " is not valid, but set checkbox." );
+				return;
+			  }
+			  const isChecked = event.target.checked;
+			  if (isChecked) {
+				cam_vpp.is_enable = 1;
+			  } else {
+				cam_vpp.is_enable = 0;
+			  }
+			  render_json_to_html(g_solution_configs);
+			};
+		}
+		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
+			const cam_vpp = cam_vpp_list[i];
+			if(cam_vpp.is_valid === 0){
+				continue;
+			}
 
-		// 添加事件监听器到 pipeline_count 下拉选择框
-		document.getElementById("item_cam_pipeline_count").addEventListener("change", function () {
-			const selectedPipelineCount = parseInt(this.value);
-			// 根据选中的 pipeline_count 更新 cam_vpp 的显示
-			g_solution_configs["cam_solution"]["pipeline_count"] = selectedPipelineCount;
-			render_json_to_html(g_solution_configs);
-		});
+			const checkboxName = 'checkbox' + i;
+			document.getElementById(checkboxName).addEventListener("change", createCheckboxChangeHandler(i));
+		}
 	} else if (solution_name === 'box_solution') {
 		const box_solution = solutions_config["box_solution"];
 		g_current_layout = box_solution["pipeline_count"];
@@ -559,6 +628,10 @@ function draw_detection_result(pipeline, detection_result) {
 	// 获取真实视频的分辨率
 	// 获取与canvas关联的video对象，并且把  canvas 的 width 和 height 设置为 video 的 width 和 height
 	var video = document.getElementById(`video${g_current_layout}_${pipeline}`);
+	if(!video){
+		console.log("not found video" + g_current_layout +"_" + pipeline);
+		return
+	}
 
 	var canvas = document.getElementById(`canvas${g_current_layout}_${pipeline}`);
 	canvas.width = video.videoWidth;
@@ -728,13 +801,29 @@ function update_json_from_html() {
 	// 更新 cam_solution 或 box_solution 的内容
 	if (solution_name === 'cam_solution') {
 		const cam_solution = g_solution_configs["cam_solution"];
-		// 更新 pipeline_count
-		const pipelineCountSelect = document.getElementById("item_cam_pipeline_count");
-		cam_solution["pipeline_count"] = parseInt(pipelineCountSelect.value);
-
+		// 更新 复选框导致的更新
+		// 忽略,在复选框的事件处理函数中已经更新
 		// 更新 cam_vpp
-		for (let i = 0; i < cam_solution["pipeline_count"]; i++) {
+		const cam_vpp_list = cam_solution.cam_vpp
+		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
+			const cam_vpp = cam_vpp_list[i];
+			if(cam_vpp.is_valid === 0){
+				continue;
+			}
+			if (cam_vpp.is_enable === 0) {
+				console.log("ignore ->index:" + i);
+				continue;
+			}
+			// console.log("index:" + i);
+
 			for (const itemKey in cam_solution["cam_vpp"][i]) {
+				if(itemKey === "csi_index")
+					continue;
+				if(itemKey === "is_enable")
+					continue;
+				if(itemKey === "is_valid")
+					continue;
+
 				const uniqueId = `item_${i}_${itemKey}`;
 				const element = document.getElementById(uniqueId);
 				if (element.tagName === "INPUT") {

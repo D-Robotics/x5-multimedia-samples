@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <stdbool.h>
 
 #include "utils/common_utils.h"
 #include "utils/cJSON.h"
@@ -26,9 +27,22 @@
 int32_t g_solution_cfg_is_load = 0;
 solution_cfg_t g_solution_config;
 
+static key_info_t csi_info_key[] = {
+	MAKE_KEY_INFO(csi_info_t, KEY_TYPE_S32, index, NULL),
+	MAKE_KEY_INFO(csi_info_t, KEY_TYPE_S32, is_valid, NULL),
+	MAKE_KEY_INFO(csi_info_t, KEY_TYPE_STRING, sensor_config_list, NULL),
+	MAKE_END_INFO()
+};
+
+static key_info_t csi_list_info_key[] = {
+	MAKE_KEY_INFO(csi_list_info_t, KEY_TYPE_S32, valid_count, NULL),
+	MAKE_KEY_INFO(csi_list_info_t, KEY_TYPE_S32, max_count, NULL),
+	MAKE_ARRAY_INFO(csi_list_info_t, KEY_TYPE_ARRAY, csi_info, csi_info_key, VP_MAX_VCON_NUM, KEY_TYPE_OBJECT),
+	MAKE_END_INFO()
+};
 key_info_t hard_capability_key[] = {
 	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_STRING, chip_type, NULL),
-	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_STRING, sensor_list, NULL),
+	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_OBJECT, csi_list_info, csi_list_info_key),
 	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_STRING, model_list, NULL),
 	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_STRING, codec_type_list, NULL),
 	MAKE_ARRAY_INFO(solution_hard_capability_t, KEY_TYPE_ARRAY, encode_bit_rate_list, NULL, 16, KEY_TYPE_S32),
@@ -36,6 +50,9 @@ key_info_t hard_capability_key[] = {
 	MAKE_END_INFO()};
 
 static key_info_t cfg_cam_vpp_key[] = {
+	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, is_valid, NULL),
+	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, is_enable, NULL),
+	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, csi_index, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_STRING, sensor, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, encode_type, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, encode_bitrate, NULL),
@@ -83,7 +100,15 @@ void print_solution_cfg(const solution_cfg_t *config)
 	printf("Version: %s\n", config->version);
 	printf("Hardware Capability:\n");
 	printf("  Chip Type: %s\n", config->hardware_capability.chip_type);
-	printf("  Sensor List: %s\n", config->hardware_capability.sensor_list);
+
+	printf("  Sensor List: \n");
+	const csi_list_info_t *csi_list_info = &config->hardware_capability.csi_list_info;
+	for(int i = 0; i< csi_list_info->max_count; i++){
+		printf("  	CSI_%d: [%s]", csi_list_info->csi_info[i].index,
+			csi_list_info->csi_info[i].sensor_config_list);
+	}
+	printf("\n");
+
 	printf("  Model List: %s\n", config->hardware_capability.model_list);
 	printf("  Codec Type List: %s\n", config->hardware_capability.codec_type_list);
 	printf("  Encode Bit Rate List: ");
@@ -97,9 +122,12 @@ void print_solution_cfg(const solution_cfg_t *config)
 	printf("Camera Solution:\n");
 	printf("  Pipeline Count: %d\n", config->cam_solution.pipeline_count);
 	printf("  Max Pipeline Count: %d\n", config->cam_solution.max_pipeline_count);
-	for (int i = 0; i < config->cam_solution.pipeline_count; i++)
+	for (int i = 0; i < config->cam_solution.max_pipeline_count; i++)
 	{
 		printf("  Camera VPP %d:\n", i + 1);
+		printf("    Valid: %d\n", config->cam_solution.cam_vpp[i].is_valid);
+		printf("    Enable: %d\n", config->cam_solution.cam_vpp[i].is_enable);
+		printf("    CSI: %d\n", config->cam_solution.cam_vpp[i].csi_index);
 		printf("    Sensor: %s\n", config->cam_solution.cam_vpp[i].sensor);
 		printf("    Encode Type: %d\n", config->cam_solution.cam_vpp[i].encode_type);
 		printf("    Encode Bitrate: %d\n", config->cam_solution.cam_vpp[i].encode_bitrate);
@@ -174,27 +202,92 @@ static int32_t write_json_file(char *filename, char *out)
 	return 0;
 }
 //不包含 "\0"
-static int get_first_camera_name_from_camera_list(){
+static int get_first_camera_name_from_camera_list(const char *sensor_list, size_t size){
 	int ret = -1;
 
-	char *sensor_list_tmp = (char *)g_solution_config.hardware_capability.sensor_list;
-
-	for(int i = 0; i< sizeof(g_solution_config.hardware_capability.sensor_list); i++){
-		if(sensor_list_tmp[i] == '/'){
+	for(int i = 0; i< size; i++){
+		if(sensor_list[i] == '/'){
 			if(i > 0){
-				ret = i - 1;
+				ret = i;
 			}
 			break;
-		}else if(sensor_list_tmp[i] == '\0'){
+		}else if(sensor_list[i] == '\0'){
 			if(i > 0){
-				ret = i - 1;
+				ret = i;
 			}
 			break;
 		}
 	}
 	return ret;
 }
+int32_t solution_cfg_update_camera_config(){
+	const csi_list_info_t *csi_list_info = &g_solution_config.hardware_capability.csi_list_info;
 
+	g_solution_config.cam_solution.pipeline_count = csi_list_info->valid_count;
+	g_solution_config.cam_solution.max_pipeline_count = STL_MAX_VPP_CAM_NUM;
+
+	for(int i = 0; i < csi_list_info->max_count; i++){
+		solution_cfg_cam_vpp_t* cam_vpp = &g_solution_config.cam_solution.cam_vpp[i];
+		const char *sensor_list_str = csi_list_info->csi_info[i].sensor_config_list;
+		//本次启动: CSI_${i} 没有接摄像头
+		if(!csi_list_info->csi_info[i].is_valid){
+			if(cam_vpp->is_valid == 1){
+				SC_LOGI("[%d] camera vpp config is [%s], but no camera connect, so remove it.",
+					i, cam_vpp->sensor);
+				cam_vpp->is_valid = 0;
+				cam_vpp->is_enable = 0;
+				cam_vpp->csi_index = i;
+				cam_vpp->encode_type = 0;
+				cam_vpp->encode_bitrate = 0;
+				memset(cam_vpp->sensor, 0, sizeof(cam_vpp->sensor));
+				memset(cam_vpp->model, 0, sizeof(cam_vpp->model));
+			}
+			continue;
+		}
+
+		//本次启动: CSI_${i} 接了摄像头
+		bool cam_vpp_config_is_valid = false;
+		if(cam_vpp->is_valid == 1){ //配置文件中有摄像头
+			char* result = strstr(sensor_list_str, cam_vpp->sensor);
+			if(result == NULL){
+				SC_LOGI("[%d] camera vpp config is [%s], but new camera [%s] so update it.",
+					i, cam_vpp->sensor, sensor_list_str);
+				cam_vpp_config_is_valid = false;
+			}else{
+				SC_LOGI("[%d] camera vpp config is [%s], and camera [%s] is not change, so use file config.",
+					i, cam_vpp->sensor, sensor_list_str);
+				cam_vpp_config_is_valid = true;
+			}
+		}else{ //配置文件中没有摄像头
+			cam_vpp_config_is_valid = false;
+			SC_LOGI("[%d] camera vpp config is null, but new connect camera [%s], so add it.", i, sensor_list_str);
+		}
+
+		//本次启动接入的摄像头 == 配置文件中对应的摄像头一致
+		if(cam_vpp_config_is_valid){
+			continue;
+		}
+
+		size_t sensor_config_list_size = sizeof(csi_list_info->csi_info[i].sensor_config_list);
+		int first_camera_end_index = get_first_camera_name_from_camera_list(sensor_list_str, sensor_config_list_size);
+		if(first_camera_end_index == -1){
+			SC_LOGW("parse sensor list failed :%s, so exit.", sensor_list_str);
+			exit(-1);
+		}
+
+		strncpy(cam_vpp->sensor, sensor_list_str, first_camera_end_index);
+		cam_vpp->sensor[first_camera_end_index] = '\0';
+
+		cam_vpp->is_valid = 1;
+		cam_vpp->is_enable = 0; //新增相机默认关闭
+		cam_vpp->csi_index = csi_list_info->csi_info[i].index;
+		cam_vpp->encode_type = 0;
+		cam_vpp->encode_bitrate = 8192;
+		strcpy(cam_vpp->model, "null");
+	}
+
+	return 0;
+}
 int32_t solution_cfg_load_default_config()
 {
 	//只清除静态的配置(运行时获取的参数比如能力列表 不清除)
@@ -205,7 +298,7 @@ int32_t solution_cfg_load_default_config()
 
 	strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265");
 	// strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265/Mjpeg");
-	
+
 	// 初始化编码码率列表
 	// 标清视频（480p） 256, 512, 768, 1024, 1536, 2048,
 	// 高清视频（720p） 512, 1024, 2048, 3072, 4096, 6144,
@@ -228,30 +321,48 @@ int32_t solution_cfg_load_default_config()
 	strcpy(g_solution_config.solution_name, "box_solution");
 
 	// camera solution
-	g_solution_config.cam_solution.pipeline_count = 1;
+	//没接摄像头的情况下，for 循环内部不会执行，pipeline_count = 0， 可以保证 web 页面时空的。
+	memset(&g_solution_config.cam_solution, 0, sizeof(g_solution_config.cam_solution));
+	const csi_list_info_t *csi_list_info = &g_solution_config.hardware_capability.csi_list_info;
+	g_solution_config.cam_solution.pipeline_count = csi_list_info->valid_count;
 	g_solution_config.cam_solution.max_pipeline_count = STL_MAX_VPP_CAM_NUM;
+	for(int i = 0; i < csi_list_info->max_count; i++){
+		solution_cfg_cam_vpp_t* cam_vpp = &g_solution_config.cam_solution.cam_vpp[i];
 
-	int first_camera_end_index = get_first_camera_name_from_camera_list();
-	if(first_camera_end_index == -1){
-		strcpy(g_solution_config.cam_solution.cam_vpp[0].sensor, "Null");
-	}else{
-		int dest_array_size = sizeof(g_solution_config.cam_solution.cam_vpp[0].sensor);
+		if(csi_list_info->csi_info[i].is_valid){
+			size_t sensor_config_list_size = sizeof(csi_list_info->csi_info[i].sensor_config_list);
+			const char *sensor_list_str = csi_list_info->csi_info[i].sensor_config_list;
+			int first_camera_end_index = get_first_camera_name_from_camera_list(sensor_list_str, sensor_config_list_size);
+			if(first_camera_end_index == -1){
+				SC_LOGW("parse sensor list failed :%s, so exit.", sensor_list_str);
+				exit(-1);
+			}
 
-		// first_camera_end_index 不包含 '\0'
-		if( dest_array_size <= (first_camera_end_index + 1)){ 
-			SC_LOGW("sensor name is too short (%d < %d), so rest use NULL.");
-			strcpy(g_solution_config.cam_solution.cam_vpp[0].sensor, "Null");
+			strncpy(cam_vpp->sensor, sensor_list_str, first_camera_end_index);
+			cam_vpp->sensor[first_camera_end_index] = '\0';
+
+			cam_vpp->is_valid = 1;
+			//开机只打开一路相机
+			if(i == 0){
+				cam_vpp->is_enable = 1;
+				strcpy(cam_vpp->model, "yolov5s");
+			}else{
+				cam_vpp->is_enable = 0;
+				strcpy(cam_vpp->model, "null");
+			}
+			cam_vpp->csi_index = csi_list_info->csi_info[i].index;
+			cam_vpp->encode_type = 0;
+			cam_vpp->encode_bitrate = 8192;
 		}else{
-			strncpy(g_solution_config.cam_solution.cam_vpp[0].sensor, 
-				g_solution_config.hardware_capability.sensor_list,
-				first_camera_end_index);
-			g_solution_config.cam_solution.cam_vpp[0].sensor[first_camera_end_index + 1] = '\0';
+			cam_vpp->is_valid = 0;
+			cam_vpp->is_enable = 0;
+			cam_vpp->csi_index = i;
+			cam_vpp->encode_type = 0;
+			cam_vpp->encode_bitrate = 0;
+			memset(cam_vpp->sensor, 0, sizeof(cam_vpp->sensor));
+			memset(cam_vpp->model, 0, sizeof(cam_vpp->model));
 		}
 	}
-	
-	g_solution_config.cam_solution.cam_vpp[0].encode_type = 0;
-	g_solution_config.cam_solution.cam_vpp[0].encode_bitrate = 8192;
-	strcpy(g_solution_config.cam_solution.cam_vpp[0].model, "yolov5s");
 
 	// video box
 	g_solution_config.box_solution.pipeline_count = 1;
@@ -282,12 +393,17 @@ int32_t solution_cfg_load()
 	{
 		return 0;
 	}
+	sprintf(g_solution_config.version,
+		"sunrise camera version: v3.0.1, build time:%s %s", __DATE__, __TIME__);
+	// 获取芯片型号、接入的sensor型号、支持的算法模型清单
+	vp_get_hard_capability(&g_solution_config);
 
 	if (is_file_exist(SOLUTION_CONFIG_FILE) != 0)
 	{
 		printf("config file %s not exist\n", SOLUTION_CONFIG_FILE);
 		// 使用默认配置
 		solution_cfg_load_default_config();
+		print_solution_cfg(&g_solution_config);
 	}
 	else
 	{
@@ -306,10 +422,16 @@ int32_t solution_cfg_load()
 				fclose(fd);
 
 				SC_LOGI("read config from config file: [%s]\n", str_json);
+				csi_list_info_t csi_info_tmp = g_solution_config.hardware_capability.csi_list_info;
 				if (cjson_string2object(solution_cfg_key, str_json, &g_solution_config) == NULL)
 				{
+					g_solution_config.hardware_capability.csi_list_info = csi_info_tmp;
 					SC_LOGW("config file parser failed, so use default config .");
 					solution_cfg_load_default_config();
+				}else{
+					SC_LOGI("update camera info.");
+					g_solution_config.hardware_capability.csi_list_info = csi_info_tmp;
+					solution_cfg_update_camera_config();
 				}
 				print_solution_cfg(&g_solution_config);
 
@@ -326,11 +448,6 @@ int32_t solution_cfg_load()
 			solution_cfg_load_default_config();
 		}
 	}
-
-	sprintf(g_solution_config.version,
-		"sunrise camera version: v3.0.1, build time:%s %s", __DATE__, __TIME__);
-	// 获取芯片型号、接入的sensor型号、支持的算法模型清单
-	vp_get_hard_capability(&g_solution_config);
 
 	g_solution_cfg_is_load = 1;
 

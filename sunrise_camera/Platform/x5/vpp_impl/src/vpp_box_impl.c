@@ -705,6 +705,9 @@ int32_t vpp_box_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 						param->type = 265;
 						param->bitrate = enc_params->rc_params.h265_cbr_params.bit_rate;
 						param->framerate = enc_params->rc_params.h265_cbr_params.frame_rate;
+					} else {
+						SC_LOGE("unsupport codec_id %d, so exit.", g_vpp_box[i].m_encode_context.codec_id);
+						exit(-1);
 					}
 					SC_LOGT("g_vpp_box[i].m_encode_context.codec_id: %d", g_vpp_box[i].m_encode_context.codec_id);
 					SC_LOGT("Instance Index: %d", g_vpp_box[i].m_encode_context.instance_index);

@@ -15,6 +15,18 @@
 #define VP_MAX_BUF_SIZE 256
 #define VP_MAX_VCON_NUM 4
 
+typedef struct {
+	int index;
+	int is_valid;
+	char sensor_config_list[128];
+} csi_info_t;
+//保证 0-3 的信息分别存储到 csi_info中，即使这个CSI下没有摄像头
+typedef struct{
+	int valid_count;
+	int max_count;
+	csi_info_t csi_info[VP_MAX_VCON_NUM];
+} csi_list_info_t;
+
 typedef struct vcon_properties {
 	char device_path[VP_MAX_BUF_SIZE];
 	char compatible[VP_MAX_BUF_SIZE];
@@ -48,7 +60,8 @@ extern vp_sensor_config_t *vp_sensor_config_list[];
 uint32_t vp_get_sensors_list_number();
 void vp_show_sensors_list();
 vp_sensor_config_t *vp_get_sensor_config_by_name(char *sensor_name);
-int32_t vp_sensor_detect(char *sensor_list, int32_t *num_sensors);
+void vp_sensor_detect_structed(csi_list_info_t *csi_list_info);
+
 int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config);
 int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int used_mipi_host);
 

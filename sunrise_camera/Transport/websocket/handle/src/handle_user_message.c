@@ -157,11 +157,11 @@ static int ws_send_h264_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_s
 
 		int ret = get_annexb_nalu(data + *nalu_len, frame_size - *nalu_len, &nalu, 0);
 		if (ret < 0) {
-			SC_LOGE("[%s][%d] shm_source: %p data: %p length: %u *nalu_len: %d readers:%d",
-					__func__, __LINE__, shm_source, data, length, *nalu_len, shm_stream_readers(shm_source));
+			SC_LOGE("shm_source [%s] data: %p length: %u *nalu_len: %d readers:%d",
+					 shm_source->name, data, length, *nalu_len, shm_stream_readers(shm_source));
 			*nalu_len = 0;
 			shm_stream_post(shm_source);
-			return 0;
+			return -1;
 		}
 
 		if (ret > 0){ //记录nalu偏移总长
@@ -185,8 +185,8 @@ static int ws_send_h264_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_s
 				*nalu_len = 0;
 				int remains = shm_stream_remains(shm_source);
 				if(remains > 10)
-					SC_LOGI("shm_source:%p, framer video pts:%llu length:%d frame_size:%d remains:%d",
-						shm_source, info.pts, length, frame_size, remains);
+					SC_LOGI("shm_source [%s], framer video pts:%llu length:%d frame_size:%d remains:%d",
+						shm_source->name, info.pts, length, frame_size, remains);
 
 				//该帧发送完毕，包括sps pps等nalu拆分完毕，可以释放
 				shm_stream_post(shm_source);
@@ -307,7 +307,7 @@ static int _do_start_stream(ws_client *ws_clt)
 		}else{
 			ws_clt->codec_type_string = "h264";
 			ws_clt->codec_type = T_SDK_RTSP_VIDEO_TYPE_H264;
-			SC_LOGE("not support codec type [%d], so exit.", type);
+			SC_LOGE("not support codec type [%d], so use default type :h264.", type);
 		}
 
 		SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
@@ -431,7 +431,7 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			SC_LOGI("================= SET VPP SOLUTION ====================");
 			SDK_Cmd_Impl(SDK_CMD_VPP_SET_SOLUTION_CONFIG, (void *)cmd_context);
 			print_json = cJSON_Parse(cmd_context);
-			SC_LOGD("%s", cJSON_Print(print_json));
+			SC_LOGI("%s", cJSON_Print(print_json));
 			free(print_json);
 
 			// 3. 开始启动应用
@@ -460,7 +460,7 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			// 根据编码通道的配置添加推流
 			SC_LOGI("================= ADD SMS ====================");
 			SDK_Cmd_Impl(SDK_CMD_VPP_GET_VENC_CHN_STATUS, (void*)&venc_chns_status);
-			SC_LOGD("venc_chns_status: %u", venc_chns_status);
+			SC_LOGI("venc_chns_status: 0x%x, ", venc_chns_status);
 			for (i = 0; i < 32; i++) {
 				if (venc_chns_status & (1 << i))
 					_do_add_sms(i); // 给对应的编码数据建立rtsp推流sms
@@ -527,11 +527,12 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 		case WS_CMD_GET_CONFIG:
 		{
 			// 获取场景配置
+			SC_LOGI("================= GetConfig ====================");
 			memset(ws_msg, '\0', sizeof(ws_msg));
 			char config_str[WS_MAX_BUFFER] = {0};
 			SDK_Cmd_Impl(SDK_CMD_VPP_GET_SOLUTION_CONFIG, (void *)config_str);
 			sprintf(ws_msg, "{\"kind\":%d,\"solution_configs\": %s}", WS_CMD_GET_CONFIG, config_str);
-			SC_LOGD("ws_msg: %s", ws_msg);
+			SC_LOGI("Send Config: %s", ws_msg);
 			ws_send_respose(ws_lst, ws_clt, ws_msg);
 
 			break;

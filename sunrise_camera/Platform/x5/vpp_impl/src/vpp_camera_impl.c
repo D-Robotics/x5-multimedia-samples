@@ -156,7 +156,7 @@ static void* venc_get_stream_proc(void *ptr)
 		}
 
 
-		//for debug 
+		//for debug
 		{
 			#if 0
 			if(enc_data_file == NULL){
@@ -172,7 +172,7 @@ static void* venc_get_stream_proc(void *ptr)
 				size_t elementsWritten = fwrite((unsigned char*)encode_stream.frame_buffer->vstream_buf.vir_ptr,
 					1, encode_stream.frame_buffer->vstream_buf.size, enc_data_file);
 				if (elementsWritten != encode_stream.frame_buffer->vstream_buf.size) {
-					SC_LOGE("write file %s failed, size %d, return %d.", 
+					SC_LOGE("write file %s failed, size %d, return %d.",
 						(char *)enc_file_name, encode_stream.frame_buffer->vstream_buf.size, elementsWritten);
 				}
 			}
@@ -252,7 +252,6 @@ static void *send_yuv_to_bpu(void *ptr) {
 int32_t vpp_camera_init_param(void)
 {
 	int32_t i = 0, ret = 0;
-	char sensor_name[32] = {0};
 
 	camera_config_t *camera_config = NULL;
 	isp_ichn_attr_t *isp_ichn_attr = NULL;
@@ -265,31 +264,36 @@ int32_t vpp_camera_init_param(void)
 	for (i = 0; i < VPP_CAM_MAX_CHANNELS; i++) {
 		g_vpp_camera[i].m_encode_context.codec_id = MEDIA_CODEC_ID_NONE;
 	}
-
+	int vpp_camera_index = 0;
+	int pipeline_count = g_solution_config.cam_solution.pipeline_count;
 	// 根据camera solution的配置设置vin、vse、venc、bpu模块的使能和参数
-	for (i = 0; i < g_solution_config.cam_solution.pipeline_count; i++) {
+	for (i = 0; i < g_solution_config.cam_solution.max_pipeline_count; i++) {
 		// 1. 配置 vin
-		memset(sensor_name, 0, sizeof(sensor_name));
-		strcpy(sensor_name, g_solution_config.cam_solution.cam_vpp[i].sensor);
+		if(g_solution_config.cam_solution.cam_vpp[i].is_valid == 0){
+			continue;
+		}
+		char* sensor_name = g_solution_config.cam_solution.cam_vpp[i].sensor;
+		if(g_solution_config.cam_solution.cam_vpp[i].is_enable == 0){
+			SC_LOGI("Ignore camera sensor [%s] [%d/%d].", sensor_name, i, pipeline_count);
+			continue;
+		}
 
-		// 提取 sensor 名称
-		char sensor_name_only[256]; // 适当地调整数组大小以适应 sensor 名称的最大长度
-		// 关键： 设置vin的mipi_rx，使sensor能够使用正确的 mipi-rx
-		// 兼容相同型号的sensor同时接入系统
-		// 在vp_vin.c 的 vp_vin_init 中将 mipi_csi_rx_index 号码赋值给 mipi_rx
-		sscanf(sensor_name, "CSI_%d-%s", &g_vpp_camera[i].vp_vflow_contex.mipi_csi_rx_index, sensor_name_only);
-
-		SC_LOGI("Enable %s camera sensor", sensor_name_only);
-		g_vpp_camera[i].vp_vflow_contex.sensor_config = vp_get_sensor_config_by_name(sensor_name_only);
+		SC_LOGI("Enable camera sensor [%s] [%d/%d]", sensor_name, i, pipeline_count);
+		g_vpp_camera[i].vp_vflow_contex.mipi_csi_rx_index = g_solution_config.cam_solution.cam_vpp[i].csi_index;
+		g_vpp_camera[i].vp_vflow_contex.sensor_config = vp_get_sensor_config_by_name(sensor_name);
 		if (g_vpp_camera[i].vp_vflow_contex.sensor_config == NULL) {
-			SC_LOGE("sensor name not found(%s)", sensor_name_only);
+			SC_LOGE("sensor name not found(%s)", sensor_name);
 			return -1;
 		}
 
 		// 2. 配置算法模型
 		if (strlen(g_solution_config.cam_solution.cam_vpp[i].model) > 1
 			&& strcmp(g_solution_config.cam_solution.cam_vpp[i].model, "null") != 0) {
-			g_vpp_camera[i].m_bpu_handle.m_vpp_id = i;
+			//g_vpp_camera 与插入的摄像头的顺序一一对应
+			//m_vpp_id 与使能的摄像头一一对应
+			//比如插入了两个摄像头,只使能第二个: g_vpp_camera[0] 是空 g_vpp_camera[1]是有效的
+			// 					  			  m_vpp_id 为0 (决定了算法上报结果的通道号)
+			g_vpp_camera[i].m_bpu_handle.m_vpp_id = vpp_camera_index;
 			strncpy(g_vpp_camera[i].m_bpu_handle.m_model_name,
 				g_solution_config.cam_solution.cam_vpp[i].model,
 				sizeof(g_vpp_camera[i].m_bpu_handle.m_model_name) - 1);
@@ -350,6 +354,7 @@ int32_t vpp_camera_init_param(void)
 		{
 			SC_LOGE("Encode config param error");
 		}
+		vpp_camera_index++;
 	}
 
 	return ret;
@@ -612,9 +617,11 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			// 注： 64bit的值位与会有异常，待查
 			unsigned int *status = (unsigned int *)val;
 			*status = 0;
+			int valid_index = 0;
 			for (i = 0; i < VPP_CAM_MAX_CHANNELS; i++) {
-				if (g_vpp_camera[i].m_encode_context.instance_index != -1) {
-					*status |= (1 << g_vpp_camera[i].m_encode_context.instance_index);
+				if (g_vpp_camera[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
+					*status |= (1 << valid_index);
+					valid_index++;
 				}
 			}
 			SC_LOGI("venc status: 0x%x", *status);

@@ -56,10 +56,10 @@
 #define UVC_LOG_DEBUG 1
 #define UVC_LOG_TRACE 0
 
-static int g_log_level = UVC_LOG_TRACE;		/* Note: every module has a definition by me */
+#define G_LOG_LEVEL UVC_LOG_TRACE
 
 #define UVC_PRINTF(level, format, arg...)	\
-	({ if (level >= g_log_level) 	\
+	({ if (level >= G_LOG_LEVEL) 	\
 		printf("" format, \
 			 ## arg); 0; })
 

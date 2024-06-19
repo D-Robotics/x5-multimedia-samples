@@ -118,10 +118,8 @@ int main(int argc, char *argv[])
 
 	video_stream = r;
 
-	/* initialize packet, set data to NULL, let the demuxer fill it */
-	av_init_packet(&pkt);
-	pkt.data = NULL;
-	pkt.size = 0;
+	/* av_init_packet api is deprecated, use av_packet_unref instead to init packet */
+	av_packet_unref(&pkt);
 
 	/* prepare dump file */
 #ifdef DEBUG_DUMP

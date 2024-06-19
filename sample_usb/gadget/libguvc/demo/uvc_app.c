@@ -348,10 +348,8 @@ static int stream_load(struct media_info *info, const char *stream_file)
 	/* dump input information to stderr */
 	av_dump_format(info->fmt_ctx, 0, stream_file, 0);
 
-	/* initialize packet, set data to NULL, let the demuxer fill it */
-	av_init_packet(&info->pkt);
-	info->pkt.data = NULL;
-	info->pkt.size = 0;
+	/* av_init_packet api is deprecated, use av_packet_unref instead to init packet */
+	av_packet_unref(&info->pkt);
 
 #ifdef UVC_DUMP_EARLY
 	printf("uvc_dump_early!!\n");

@@ -126,6 +126,7 @@ static struct uvc_frame_info uvc_frames_h264[] = {
 	{ 0, 0, { 0, }, },
 };
 
+#if 0
 static struct uvc_frame_info uvc_frames_h265[] = {
 	{ 640, 360, { 333333, 666666, 1000000, 0 }, 3072 }, /* Note: 360p */
 	{ 800, 600, { 333333, 666666, 1000000, 0 }, 3072 }, /* Note: 600p */
@@ -136,6 +137,7 @@ static struct uvc_frame_info uvc_frames_h265[] = {
 	{ 3840, 2160, { 333333, 666666, 1000000, 0 }, 3072 }, /* Note: 2160p */
 	{ 0, 0, { 0, }, },
 };
+#endif
 
 static struct uvc_format_info uvc_formats[] = {
 	{V4L2_PIX_FMT_NV12, uvc_frames_nv12},

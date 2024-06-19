@@ -222,10 +222,10 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 
 	// 将帧数据写入文件
 	snprintf(dst_file, sizeof(dst_file),
-		"vin_chn%d_%dx%d_stride_%d_sframeid_%d.raw",
+		"vin_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld.raw",
 		chn_id,
 		out_img.buffer.width, out_img.buffer.height, out_img.buffer.stride,
-		out_img.info.frame_id);
+		out_img.info.frame_id, out_img.info.timestamps);
 	printf("vin dump raw %dx%d(stride:%d), buffer size: %ld frame id: %d,"
 			" timestamp: %ld\n",
 			out_img.buffer.width, out_img.buffer.height,

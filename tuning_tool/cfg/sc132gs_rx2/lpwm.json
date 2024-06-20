@@ -1,0 +1,38 @@
+{
+        "lpwm_chn0": {
+                "trigger_source": 0,
+                "trigger_mode": 0,
+                "period": 33333,
+                "offset": 10,
+                "duty_time": 10,
+                "threshold": 0,
+                "adjust_step": 0
+        },
+	"lpwm_chn1": {
+                "trigger_source": 0,
+                "trigger_mode": 0,
+                "period": 33333,
+                "offset": 10,
+                "duty_time": 10,
+                "threshold": 0,
+                "adjust_step": 0
+        },
+	 "lpwm_chn2": {
+                "trigger_source": 0,
+                "trigger_mode": 0,
+                "period": 33333,
+                "offset": 10,
+                "duty_time": 10,
+                "threshold": 0,
+                "adjust_step": 0
+        },
+	"lpwm_chn3": {
+                "trigger_source": 0,
+                "trigger_mode": 0,
+                "period": 33333,
+                "offset": 10,
+                "duty_time": 10,
+                "threshold": 0,
+                "adjust_step": 0
+        }
+}

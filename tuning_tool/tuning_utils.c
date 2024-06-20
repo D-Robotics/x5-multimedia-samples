@@ -1,0 +1,146 @@
+/***************************************************************************
+ *                      COPYRIGHT NOTICE
+ *             Copyright(C) 2024, D-Robotics Co., Ltd.
+ *                     All rights reserved.
+ ***************************************************************************/
+
+#include <time.h>
+#include "tuning_utils.h"
+
+
+static char *module_name[] = DEF_MODULE_NAME;
+
+static char *get_module_name(df_nmi_t mni)
+{
+	if (mni >= SIF_MNI && mni <= N2D_MNI)
+		return module_name[mni];
+	else
+		return module_name[COM_MNI];
+}
+
+static inline int32_t is_buf_format_raw(hbn_vnode_image_t *out_img)
+{
+	return out_img->buffer.size[1] == 0;
+}
+
+void tuning_get_filename(char *name, char *path, hbn_vnode_image_t *out_img, df_nmi_t mni)
+{
+	struct tm *t;
+	time_t tt;
+	char *suffix = "yuv";
+	char *df_name = get_module_name(mni);
+	static uint32_t file_cnt = 0;
+
+	time(&tt);
+	t = localtime(&tt);
+
+	if (is_buf_format_raw(out_img))
+		suffix = "raw";
+
+	snprintf(name, TUNING_PRINT_SIZE_MAX, "%s/%s_%d_b%d_f%d_%02d%02d%02d.%s", path, df_name, file_cnt++,
+		out_img->info.bufferindex, out_img->info.frame_id, t->tm_hour, t->tm_min, t->tm_sec, suffix);
+}
+
+int32_t tuning_send_raw_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf,
+				enum RAW_BIT format, int32_t pipe_id)
+{
+	void *raw_addr = NULL;
+	pic_info_t hbplayer_info;
+	uint32_t size;
+
+	if (normal_buf == NULL) {
+		pr_tuning("NULL param set, err.\n");
+		return -1;
+	}
+
+	hbplayer_info.format = format;
+	hbplayer_info.type = RAW_DATA;
+	hbplayer_info.frame_id = normal_buf->info.frame_id;
+	hbplayer_info.width = normal_buf->buffer.width;
+	hbplayer_info.height = normal_buf->buffer.height;
+	hbplayer_info.stride = normal_buf->buffer.stride;
+	hbplayer_info.chn_id = 0;
+	hbplayer_info.pipe_id = pipe_id;
+
+	raw_addr = normal_buf->buffer.virt_addr[0];
+	size = normal_buf->buffer.size[0];
+
+	if (size == 0 || raw_addr == NULL) {
+		pr_tuning("invaild frame %d size w x h = %d x %d stride %d, skip send hbplayer\n",
+				hbplayer_info.frame_id,	hbplayer_info.width,
+				hbplayer_info.height, hbplayer_info.stride);
+		return -1;
+	}
+
+	return hb_tool_send_raw_pic(event, &hbplayer_info, raw_addr, size, 0, 0);
+}
+
+int32_t tuning_send_yuv_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf, int32_t pipe_id)
+{
+	void *plane0_addr = NULL;
+	void *plane1_addr = NULL;
+	pic_info_t hbplayer_info;
+	uint32_t size;
+
+	if(normal_buf == NULL) {
+		pr_tuning("NULL param set, err.\n");
+		return -1;
+	}
+
+	hbplayer_info.pipe_id = pipe_id;
+	hbplayer_info.format = YUVNV12;
+	hbplayer_info.frame_id = normal_buf->info.frame_id;
+	hbplayer_info.width = normal_buf->buffer.width;
+	hbplayer_info.height = normal_buf->buffer.height;
+	hbplayer_info.stride = normal_buf->buffer.stride;
+
+	plane0_addr = normal_buf->buffer.virt_addr[0];
+	plane1_addr = normal_buf->buffer.virt_addr[1];
+	size = hbplayer_info.height * hbplayer_info.stride;
+
+	if (size == 0 || plane0_addr == NULL || plane1_addr == NULL) {
+		pr_tuning("invaild frame %d size w x h = %d x %d stride %d, skip send\n",
+				hbplayer_info.frame_id,	hbplayer_info.width,
+				hbplayer_info.height, hbplayer_info.stride);
+		return -1;
+	}
+
+	return hb_tool_send_yuv_pic(event, &hbplayer_info, plane0_addr, size, plane1_addr, size / 2, 0, 0);
+}
+
+int32_t tuning_dump_file(char *filename, hbn_vnode_image_t *out_img)
+{
+	FILE *Fd = NULL;
+	char *buffer = NULL;
+	int32_t size;
+
+	Fd = fopen(filename, "a");
+
+	if (Fd == NULL) {
+		pr_tuning("open %s fail", filename);
+		return -1;
+	}
+
+	fflush(stdout);
+	if (is_buf_format_raw(out_img)) {
+		size = out_img->buffer.size[0];
+		buffer = (char *)malloc(size);
+		memcpy(buffer, (char *)out_img->buffer.virt_addr[0], size);
+	} else {
+		size = out_img->buffer.size[0] + out_img->buffer.size[1];
+		buffer = (char *)malloc(size);
+		memcpy(buffer, (char *)out_img->buffer.virt_addr[0], out_img->buffer.size[0]);
+		memcpy(buffer + out_img->buffer.size[0], (char *)out_img->buffer.virt_addr[1], out_img->buffer.size[1]);
+	}
+	fwrite(buffer, 1, size, Fd);
+	fflush(Fd);
+
+	if (Fd)
+		fclose(Fd);
+	if (buffer)
+		free(buffer);
+
+	pr_tuning("filedump %s done\n", filename);
+
+	return 0;
+}

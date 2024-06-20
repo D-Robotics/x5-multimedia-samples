@@ -53,6 +53,7 @@
 #define PU_BRIGHTNESS_DEFAULT_VAL 127
 
 #define UVC_MAX_TRB_SIZE	0x400000 /* check dwc3/gadget.c */
+#define UVC_BRINGUP
 
 /* ---------------------------------------------------------------------------
  * UVC specific stuff
@@ -82,6 +83,27 @@ static u16 isoc_max_packet_size[MAX_ALTSETTING_NUM] =
 	/* {192, 384, 512, 640, 800, 944, 1280, 1600, 1984, 2880, 3072} */
 #endif
 
+#ifdef UVC_BRINGUP
+static struct uvc_frame_info uvc_frames_yuyv[] = {
+	{ 1280, 720, { 333333, 0 }, 3072 }, /* Note: 720p */
+	{ 0, 0, { 0, }, 0},
+};
+
+static struct uvc_frame_info uvc_frames_mjpeg[] = {
+	{ 1280, 720, { 333333, 0 }, 384 }, /* Note: 720p, 80KB */
+	{ 1920, 1080, { 333333, 0 }, 800 }, /* Note: 1080p, 200KB */
+	{ 0, 0, { 0, }, },
+};
+
+static struct uvc_format_info uvc_formats[] = {
+	// {V4L2_PIX_FMT_NV12, uvc_frames_nv12},
+	{V4L2_PIX_FMT_YUYV, uvc_frames_yuyv},
+	{V4L2_PIX_FMT_MJPEG, uvc_frames_mjpeg},
+	// {V4L2_PIX_FMT_H264, uvc_frames_h264},
+	// {V4L2_PIX_FMT_H265, uvc_frames_h265},
+};
+
+#else
 static struct uvc_frame_info uvc_frames_yuyv[] = {
 	{ 640, 360, { 333333, 666666, 1000000, 0 }, 1984 }, /* Note: 360p */
 	{ 800, 600, { 333333, 666666, 1000000, 0 }, 3072 }, /* Note: 600p */
@@ -126,7 +148,6 @@ static struct uvc_frame_info uvc_frames_h264[] = {
 	{ 0, 0, { 0, }, },
 };
 
-#if 0
 static struct uvc_frame_info uvc_frames_h265[] = {
 	{ 640, 360, { 333333, 666666, 1000000, 0 }, 3072 }, /* Note: 360p */
 	{ 800, 600, { 333333, 666666, 1000000, 0 }, 3072 }, /* Note: 600p */
@@ -137,7 +158,6 @@ static struct uvc_frame_info uvc_frames_h265[] = {
 	{ 3840, 2160, { 333333, 666666, 1000000, 0 }, 3072 }, /* Note: 2160p */
 	{ 0, 0, { 0, }, },
 };
-#endif
 
 static struct uvc_format_info uvc_formats[] = {
 	{V4L2_PIX_FMT_NV12, uvc_frames_nv12},
@@ -146,6 +166,7 @@ static struct uvc_format_info uvc_formats[] = {
 	{V4L2_PIX_FMT_H264, uvc_frames_h264},
 	// {V4L2_PIX_FMT_H265, uvc_frames_h265},
 };
+#endif
 
 NATIVE_ATTR_ int uvc_set_maxpkt_quirk(struct uvc_device *dev)
 {

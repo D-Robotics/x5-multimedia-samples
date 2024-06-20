@@ -285,33 +285,23 @@ static const struct uvc_function_config g_webcam_config = {
 		.ep = {
 			.bInterval = 1,
 			.bMaxBurst = 0,
-			.wMaxPacketSize = 1024,
+			.wMaxPacketSize = 3072,
 		},
-		.num_formats = 2,
+		.num_formats = 1,
 		.formats = (struct uvc_function_config_format[]) {
 			{
 				.index = 1,
 				.guid = UVC_GUID_FORMAT_YUY2,
 				.fcc = V4L2_PIX_FMT_YUYV,
-				.num_frames = 2,
+				.num_frames = 1,
 				.frames = (struct uvc_function_config_frame[]) {
 					{
-						.index = 1,
-						.width = 640,
-						.height = 360,
-						.num_intervals = 3,
-						.intervals = (unsigned int[]) {
-							666666,
-							10000000,
-							50000000,
-						},
-					}, {
 						.index = 2,
 						.width = 1280,
 						.height = 720,
 						.num_intervals = 1,
 						.intervals = (unsigned int[]) {
-							50000000,
+							333333,
 						},
 					},
 				},
@@ -323,21 +313,19 @@ static const struct uvc_function_config g_webcam_config = {
 				.frames = (struct uvc_function_config_frame[]) {
 					{
 						.index = 1,
-						.width = 640,
-						.height = 360,
-						.num_intervals = 3,
-						.intervals = (unsigned int[]) {
-							666666,
-							10000000,
-							50000000,
-						},
-					}, {
-						.index = 2,
 						.width = 1280,
 						.height = 720,
 						.num_intervals = 1,
 						.intervals = (unsigned int[]) {
-							50000000,
+							333333,
+						},
+					}, {
+						.index = 2,
+						.width = 1920,
+						.height = 1080,
+						.num_intervals = 1,
+						.intervals = (unsigned int[]) {
+							333333,
 						},
 					},
 				},

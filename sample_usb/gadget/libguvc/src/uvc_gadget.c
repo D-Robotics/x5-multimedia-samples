@@ -95,11 +95,17 @@ static struct uvc_frame_info uvc_frames_mjpeg[] = {
 	{ 0, 0, { 0, }, },
 };
 
+static struct uvc_frame_info uvc_frames_h264[] = {
+	{ 1280, 720, { 333333, 0 }, 3072 }, /* Note: 720p */
+	{ 1920, 1080, { 333333, 0 }, 3072 }, /* Note: 1080p */
+	{ 0, 0, { 0, }, },
+};
+
 static struct uvc_format_info uvc_formats[] = {
 	// {V4L2_PIX_FMT_NV12, uvc_frames_nv12},
 	{V4L2_PIX_FMT_YUYV, uvc_frames_yuyv},
+	{V4L2_PIX_FMT_H264, uvc_frames_h264},
 	{V4L2_PIX_FMT_MJPEG, uvc_frames_mjpeg},
-	// {V4L2_PIX_FMT_H264, uvc_frames_h264},
 	// {V4L2_PIX_FMT_H265, uvc_frames_h265},
 };
 

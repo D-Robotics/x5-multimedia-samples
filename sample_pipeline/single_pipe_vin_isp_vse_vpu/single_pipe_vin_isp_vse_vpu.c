@@ -527,7 +527,6 @@ void *read_vse_data(void *context) {
 		}
 
 		count++;
-		usleep(1000 * 20);
 	}
 	fclose(fp_output);
 

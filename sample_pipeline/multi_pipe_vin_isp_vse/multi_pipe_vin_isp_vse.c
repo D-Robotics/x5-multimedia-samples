@@ -686,7 +686,6 @@ void *encode_vse_chn_data(void *context)
 		hbn_vnode_releaseframe(vse_node_handle, pipeline_info->vse_bind_codec_chn, &vse_chn_frame);
 
 		count++;
-		usleep(1000 * 20);
 	}
 
 	return NULL;

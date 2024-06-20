@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #include "stream_manager.h"
 #include "utils_log.h"
@@ -13,6 +14,15 @@
 
 static cmap* s_shmmap = NULL;
 static CMtx s_shmmap_lock = NULL;
+/**
+ * 1. 读写锁 只保护了 关键结构体(shm_info_t 和 shm_user_t), 防止读端访问了 错误的地址
+ * 2. 读写锁 并没有保护数据，因为只有在异常情况(读端被卡住)才会出现写端覆盖读端数据的问题
+ * 		并且数据被覆盖不会导致程序奔溃，并且读端被卡住 无论如何 数据都会丢弃，所以可以对数据加锁
+ * 		如果对数据加锁，会有两种情况
+ * 		a. 内存拷贝后，交给其他模块，比如 rtsp 发送： 增加了内存拷贝
+ * 		b. 直接使用数据，等待数据使用完成， 比如等待 rtsp发送完成，增加了锁的保护时间
+*/
+static pthread_rwlock_t s_shm_rwlock;
 
 // 如果要多个模块共享同一块内存，id要不一样，name、user、infos参数需要一样
 // mode和type根据具体读写情况配置
@@ -187,38 +197,31 @@ int shm_stream_put(shm_stream_t* handle, frame_info info, unsigned char* data, u
 {
 	if(handle == NULL) return -1;
 	//如果没有人想要数据 则不put
-	if(shm_stream_readers(handle) == 0)
-	{
+	if(shm_stream_readers(handle) == 0){
 		return -1;
 	}
-
+	cmtx_enter(handle->mtx);
 	unsigned int head;
 	shm_user_t* users = (shm_user_t*)handle->user_array;
 	shm_info_t* infos = (shm_info_t*)handle->info_array;
 
-	cmtx_enter(handle->mtx);
+	pthread_rwlock_wrlock(&s_shm_rwlock);
 	head = users[0].index % handle->max_frames;
 	memcpy(&infos[head].info, &info, sizeof(frame_info));
 	infos[head].lenght = length;
-	if(length + users[0].offset > handle->size) 	//addr不够存储了， 从头存储
-	{
+	if(length + users[0].offset > handle->size){ 	//addr不够存储了， 从头存储
 		infos[head].offset = 0;
 		users[0].offset = 0;
 	}
-	else
-	{
+	else{
 		infos[head].offset = users[0].offset;
 	}
-	/*SC_LOGI("handle: %p, handle->base_addr:%p head: %d infos[head].lenght: %d handle->size:%d infos[head].offset: 0x%x users[0].offset:%d, dest:%p",*/
-		/*handle, handle->base_addr, head, length, handle->size, infos[head].offset, users[0].offset, handle->base_addr+infos[head].offset);*/
-	memcpy(handle->base_addr+infos[head].offset, data, length);
-
-	//信息分发
-	//shm_stream_readers_callback(handle, info, (unsigned char*)handle->base_addr+infos[head].offset, length);
-
+	char* dst_data_addr = handle->base_addr+infos[head].offset;
 	users[0].offset += length;
 	users[0].index = (users[0].index + 1 ) % handle->max_frames;
+	pthread_rwlock_unlock(&s_shm_rwlock);
 
+	memcpy(dst_data_addr, data, length);
 	cmtx_leave(handle->mtx);
 	return 0;
 }
@@ -230,6 +233,8 @@ int shm_stream_get(shm_stream_t* handle, frame_info* info, unsigned char** data,
 	unsigned int tail, head;
 
 	cmtx_enter(handle->mtx);
+
+	pthread_rwlock_rdlock(&s_shm_rwlock);
 	shm_user_t* users = (shm_user_t*)handle->user_array;
 	head = users[0].index % handle->max_frames;
 	tail = users[handle->index].index % handle->max_frames;
@@ -243,13 +248,14 @@ int shm_stream_get(shm_stream_t* handle, frame_info* info, unsigned char** data,
 		*length = infos[tail].lenght;
 
 		users[handle->index].index = (tail + 1 ) % handle->max_frames;
+		pthread_rwlock_unlock(&s_shm_rwlock);
 		cmtx_leave(handle->mtx);
 		return 0;
 	}
 	else
 	{
 		*length = 0;
-
+		pthread_rwlock_unlock(&s_shm_rwlock);
 		cmtx_leave(handle->mtx);
 		return -1;
 	}
@@ -262,6 +268,7 @@ int shm_stream_front(shm_stream_t* handle, frame_info* info, unsigned char** dat
 	unsigned int tail, head;
 
 	cmtx_enter(handle->mtx);
+	pthread_rwlock_rdlock(&s_shm_rwlock);
 	shm_user_t* users = (shm_user_t*)handle->user_array;
 	head = users[0].index % handle->max_frames;
 	tail = users[handle->index].index % handle->max_frames;
@@ -275,9 +282,7 @@ int shm_stream_front(shm_stream_t* handle, frame_info* info, unsigned char** dat
 		/*SC_LOGI("handle->base_addr: %p, infos[tail].offset: %d", handle->base_addr, infos[tail].offset);*/
 		*length = infos[tail].lenght;
 
-
-		// unsigned char *data_tmp = (unsigned char*)(handle->base_addr + infos[tail].offset);
-		// printf("front [%d] [%d] [%02x] [%02x]\n", info->seq, infos[tail].lenght, data_tmp[10], data_tmp[infos[tail].lenght - 1]);
+		pthread_rwlock_unlock(&s_shm_rwlock);
 		cmtx_leave(handle->mtx);
 		return 0;
 	}
@@ -285,9 +290,11 @@ int shm_stream_front(shm_stream_t* handle, frame_info* info, unsigned char** dat
 	{
 		*length = 0;
 
+		pthread_rwlock_unlock(&s_shm_rwlock);
 		cmtx_leave(handle->mtx);
 		return -1;
 	}
+	return 0;
 }
 
 int shm_stream_post(shm_stream_t* handle)
@@ -297,6 +304,7 @@ int shm_stream_post(shm_stream_t* handle)
 	unsigned int tail, head;
 
 	cmtx_enter(handle->mtx);
+	pthread_rwlock_rdlock(&s_shm_rwlock);
 	shm_user_t* users = (shm_user_t*)handle->user_array;
 	head = users[0].index % handle->max_frames;
 	tail = users[handle->index].index % handle->max_frames;
@@ -305,6 +313,7 @@ int shm_stream_post(shm_stream_t* handle)
 	{
 		users[handle->index].index = (tail + 1 ) % handle->max_frames;
 	}
+	pthread_rwlock_unlock(&s_shm_rwlock);
 	cmtx_leave(handle->mtx);
 
 	return 0;
@@ -375,8 +384,9 @@ void* shm_stream_malloc(shm_stream_t* handle, const char* name, unsigned int siz
 		s_shmmap = (cmap*)malloc(sizeof(cmap));
 		cmap_init(s_shmmap);
 		s_shmmap_lock = cmtx_create();
+		pthread_rwlock_init(&s_shm_rwlock, NULL);
 	}
-	
+
 	cmtx_enter(s_shmmap_lock);
 	void* memory = NULL;
 	void* node = cmap_pkey_find(s_shmmap, name);
@@ -445,7 +455,7 @@ void shm_stream_unmalloc(shm_stream_t* handle)
 
 	cmtx_enter(s_shmmap_lock);
 	void* node = cmap_pkey_find(s_shmmap, handle->name);\
-	
+
 	if(node == NULL){
 		cmtx_leave(s_shmmap_lock);
 		return;

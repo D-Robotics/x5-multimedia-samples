@@ -107,20 +107,34 @@ function update_solution_status(solutions_config) {
 		// 获取摄像机方案的信息
 		const cam_solution = solutions_config["cam_solution"];
 		const pipeline_count = cam_solution["pipeline_count"];
+		const max_pipeline_count = cam_solution["max_pipeline_count"];
 
+		let enable_count = 0;
+		for (let i = 0; i < max_pipeline_count; i++) {
+			if(cam_solution["cam_vpp"][i]["is_enable"] === 0){
+				continue;
+			}
+			enable_count++;
+		}
 		// 更新状态文本，显示启用的视频路数
-		status_txt += `- 启用 ${pipeline_count} 路视频</br>`;
+		status_txt += `- 接入 ${pipeline_count} 路Sensor</br>`;
+		status_txt += `- 启用 ${enable_count} 路Sensor</br>`;
 
 		// 列出启用的传感器型号和算法模型
 		status_txt += "<strong>启用的Sensor型号和算法模型：</strong></br>";
-		for (let i = 0; i < pipeline_count; i++) {
+		let valid_index = 0;
+		for (let i = 0; i < max_pipeline_count; i++) {
+			if(cam_solution["cam_vpp"][i]["is_enable"] === 0){
+				continue;
+			}
 			const sensor_model = cam_solution["cam_vpp"][i]["sensor"];
 			const algorithm_model = cam_solution["cam_vpp"][i]["model"];
-			status_txt += `- 第 ${i+1} 路:`;
+			status_txt += `- 第 ${valid_index+1} 路:`;
 			status_txt += `<ul>`;
 			status_txt += `<li>Sensor型号：${sensor_model}</li>`;
 			status_txt += `<li>算法：${algorithm_model}</li>`;
 			status_txt += `</ul>`;
+			valid_index++;
 		}
 		status_txt += "<strong>方案框图（点击放大）</strong></br>";
 		status_txt += `<img id="solution_image" src="image/camera-slt.jpg" style="display: block;max-width:100%; max-height:100%" />`;

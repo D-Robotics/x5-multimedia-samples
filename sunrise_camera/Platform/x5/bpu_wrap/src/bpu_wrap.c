@@ -164,7 +164,7 @@ static void *post_process_yolov5s(void *ptr)
 	SC_LOGI("thread [post_process_yolov5s] start .");
 	struct TimeStatistics time_statistics;
 	bpu_handle_t *bpu_handle = (bpu_handle_t *)privThread->pvThreadData;
-	while (privThread->eState == E_THREAD_RUNNING) {		
+	while (privThread->eState == E_THREAD_RUNNING) {
 		if (mQueueDequeueTimed(&bpu_handle->m_output_queue, 100, (void**)&post_info) != E_QUEUE_OK){
 			SC_LOGI("post_process_yolov5s wait queue time out.");
 			continue;
@@ -241,9 +241,9 @@ static void *inference_yolov5s(void *ptr)
 	struct TimeStatistics time_statistics;
 	char time_sts_tag[32];
 	sprintf(time_sts_tag, "yolov5 infer process:%d", bpu_handle->m_vpp_id);
-	
+
 	while (privThread->eState == E_THREAD_RUNNING) {
-		
+
 		if (mQueueDequeueTimed(&bpu_handle->m_input_queue, 100, (void**)&input_tensor) != E_QUEUE_OK)
 			continue;
 
@@ -284,10 +284,12 @@ static void *inference_yolov5s(void *ptr)
 			break;
 		}
 		task_handle = NULL;
+		time_statistics_at_ending_of_loop(&time_statistics);
+		time_statistics_info_show(&time_statistics, time_sts_tag, false);
 
 		// 如果后处理队列满的，直接返回
 		if (mQueueIsFull(&bpu_handle->m_output_queue)) {
-			SC_LOGI("post process queue full, skip it, queue length is %d", 
+			SC_LOGI("post process queue full, skip it, queue length is %d",
 				bpu_handle->m_output_queue.u32Length);
 			cur_ouput_buf_idx++;
 			cur_ouput_buf_idx %= 5;
@@ -313,10 +315,9 @@ static void *inference_yolov5s(void *ptr)
 		post_info->output_tensor = output_tensors[cur_ouput_buf_idx];
 		mQueueEnqueue(&bpu_handle->m_output_queue, post_info);
 		cur_ouput_buf_idx++;
-		cur_ouput_buf_idx %= 5;		
+		cur_ouput_buf_idx %= 5;
 
-		time_statistics_at_ending_of_loop(&time_statistics);
-		time_statistics_info_show(&time_statistics, time_sts_tag, false);
+
 	}
 
 	for (i = 0; i < 5; i++)
@@ -624,6 +625,7 @@ int32_t bpu_wrap_get_model_list(char *model_list)
 			strcat(model_list, "/");
 		}
 	}
+	SC_LOGI("model list [%s]", model_list);
 	return 0;
 }
 
@@ -676,7 +678,7 @@ int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *mod
 		SC_LOGE("bpu_handle is NULL");
 		return -1;
 	}
-	
+
 	SC_LOGI("model_file_name[%s]  model_name [%s] %d\n", model_file_name, model_name, strlen(model_name));
 	if(strlen(model_name) < (sizeof(bpu_handle->m_model_name) - 1)){
 		strcpy(bpu_handle->m_model_name, model_name);
@@ -851,7 +853,7 @@ int32_t bpu_wrap_stop(bpu_handle_t *handle)
 		SC_LOGE("bpu_wrap_stop failed, handle is null.");
 		return 0;
 	}
-		
+
 	mThreadStop(&handle->m_post_process_thread);
 	mThreadStop(&handle->m_run_model_thread);
 	SC_LOGI("bpu_wrap_stop complete .");

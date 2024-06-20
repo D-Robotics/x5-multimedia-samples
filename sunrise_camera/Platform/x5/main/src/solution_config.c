@@ -295,6 +295,7 @@ int32_t solution_cfg_load_default_config()
 	memset(&g_solution_config.cam_solution, 0, sizeof(g_solution_config.cam_solution));
 	memset(&g_solution_config.box_solution, 0, sizeof(g_solution_config.box_solution));
 	memset(&g_solution_config.display_dev, 0, sizeof(g_solution_config.display_dev));
+	memset(&g_solution_config.hardware_capability.model_list, 0, sizeof(g_solution_config.hardware_capability.model_list));
 
 	strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265");
 	// strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265/Mjpeg");

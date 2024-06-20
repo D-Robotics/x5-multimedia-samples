@@ -29,7 +29,10 @@ H264MainVideoSource::H264MainVideoSource(UsageEnvironment& env,
 	fShmSource = shm_stream_create(shmId, shmName, STREAM_MAX_USER,
 		frameRate, streamBufSize,
 		SHM_STREAM_READ, SHM_STREAM_MALLOC);
-	
+
+	strncpy(fShmName, shmName, sizeof(fShmName));
+	strncpy(fShmId, shmId, sizeof(fShmId));
+
 	SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
 				shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
 	fPts = 0;
@@ -143,9 +146,10 @@ void H264MainVideoSource::incomingDataHandler1()
 				fDurationInMicroseconds = 1000 * 1; //1ms
 
 				int remains = shm_stream_remains(fShmSource);
-				if(remains > 3)
-					SC_LOGI("fShmSource:%p, framer video pts:%llu length:%d fFrameSize:%d remains:%d", fShmSource, info.pts, length, fFrameSize, remains);
-
+				if(remains > 10){
+					SC_LOGI("shm_id: %s, shm_name: %s, fShmSource:%p, framer video pts:%llu length:%d fFrameSize:%d remains:%d",
+						fShmId, fShmName, fShmSource, info.pts, length, fFrameSize, remains);
+				}
 				//该帧发送完毕，包括sps pps等nalu拆分完毕，可以释放
 				shm_stream_post(fShmSource);
 			}
@@ -154,10 +158,10 @@ void H264MainVideoSource::incomingDataHandler1()
 		}
 		else
 		{
-			SC_LOGI("other nal_unit_type \n");
+			SC_LOGI("shm_id: %s, shm_name: %s, other nal_unit_type %d\n", fShmId, fShmName, nalu.nal_unit_type);
 			fNaluLen = 0;
 			shm_stream_post(fShmSource);
-			fDurationInMicroseconds = 1000 * 30;
+			fDurationInMicroseconds = 1000 * 10;
 			nextTask() = envir().taskScheduler().scheduleDelayedTask(fDurationInMicroseconds,
 				(TaskFunc*)incomingDataHandler, this);
 		}
@@ -168,7 +172,7 @@ void H264MainVideoSource::incomingDataHandler1()
 		nextTask() = envir().taskScheduler().scheduleDelayedTask(10 * 1000,
 			(TaskFunc*)incomingDataHandler, this);
 	}
-	
+
 	time_statistics_at_ending_of_loop(&fTimeStatistics);
 	time_statistics_info_show(&fTimeStatistics, "rtsp-h264", false);
 }

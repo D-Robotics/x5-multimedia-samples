@@ -390,7 +390,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	 */
 
 	params->gop_params.decoding_refresh_type = 2;
-	params->gop_params.gop_preset_idx = 1;
+	params->gop_params.gop_preset_idx = 9;
 
 	params->rot_degree = MC_CCW_0;
 	params->mir_direction = MC_DIRECTION_NONE;

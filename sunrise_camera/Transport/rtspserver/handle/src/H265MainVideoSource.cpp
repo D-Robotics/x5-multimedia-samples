@@ -32,6 +32,10 @@ H265MainVideoSource::H265MainVideoSource(UsageEnvironment& env,
 
 	SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
 				shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
+
+	strncpy(fShmName, shmName, sizeof(fShmName));
+	strncpy(fShmId, shmId, sizeof(fShmId));
+
 	fPts = 0;
 	fNaluLen = 0;
 }
@@ -86,7 +90,7 @@ void H265MainVideoSource::incomingDataHandler1()
 	frame_info info;
 	unsigned int length;
 	unsigned char* data = NULL;
-	
+
 	time_statistics_at_beginning_of_loop(&fTimeStatistics);
 	if (shm_stream_front(fShmSource, &info, &data, &length) == 0)
 	{
@@ -108,7 +112,7 @@ void H265MainVideoSource::incomingDataHandler1()
 		static FILE *enc_data_file = NULL;
 		if(enc_data_file == NULL){
 			if(nalu.nal_unit_type == 32){
-					char enc_file_name [100];			
+					char enc_file_name [100];
 					sprintf(enc_file_name, "/tmp/front_rtsp_%s.h265", fShmSource->name);
 
 					enc_data_file = fopen(enc_file_name, "wb");
@@ -129,7 +133,7 @@ void H265MainVideoSource::incomingDataHandler1()
 		#endif
 
 		//只发送sps pps i p nalu, 其他抛弃
-		if ( nalu.nal_unit_type == 1 || nalu.nal_unit_type == 32 
+		if ( nalu.nal_unit_type == 1 || nalu.nal_unit_type == 32
 			|| nalu.nal_unit_type == 33 || nalu.nal_unit_type == 34 || nalu.nal_unit_type == 19)
 		{
 			fFrameSize = nalu.len;
@@ -156,9 +160,10 @@ void H265MainVideoSource::incomingDataHandler1()
 				fDurationInMicroseconds = 1000 * 1; //1ms
 
 				int remains = shm_stream_remains(fShmSource);
-				if(remains > 10)
-					SC_LOGI("fShmSource:%p, framer video pts:%llu length:%d fFrameSize:%d remains:%d", fShmSource, info.pts, length, fFrameSize, remains);
-
+				if(remains > 10){
+					SC_LOGI("shm_id: %s, shm_name: %s, fShmSource:%p, framer video pts:%llu length:%d fFrameSize:%d remains:%d",
+						fShmId, fShmName, fShmSource, info.pts, length, fFrameSize, remains);
+				}
 				//该帧发送完毕，包括sps pps等nalu拆分完毕，可以释放
 				shm_stream_post(fShmSource);
 			}else{
@@ -169,10 +174,10 @@ void H265MainVideoSource::incomingDataHandler1()
 		}
 		else
 		{
-			SC_LOGW("recv not support nal_unit_type: %d\n", nalu.nal_unit_type);
+			SC_LOGI("shm_id: %s, shm_name: %s, other nal_unit_type %d\n", fShmId, fShmName, nalu.nal_unit_type);
 			fNaluLen = 0;
 			shm_stream_post(fShmSource);
-			fDurationInMicroseconds = 1000 * 30;
+			fDurationInMicroseconds = 1000 * 10;
 			nextTask() = envir().taskScheduler().scheduleDelayedTask(fDurationInMicroseconds,
 				(TaskFunc*)incomingDataHandler, this);
 		}

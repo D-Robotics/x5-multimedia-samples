@@ -46,6 +46,8 @@ private:
 	unsigned int		fNaluLen;
 
 	//for debug
+	char fShmName[32];
+	char fShmId[32];
 	struct TimeStatistics fTimeStatistics;
 };
 

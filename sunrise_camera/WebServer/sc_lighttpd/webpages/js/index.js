@@ -19,12 +19,14 @@ const g_solution_fields = {
 	"sensor": {
 		chinese_name: "Sensor型号",
 		type: "stringlist",
-		options: "sensor_list" // Placeholder for sensor options
+		options: "sensor_list", // Placeholder for sensor options
+		value_is_index: false
 	},
 	"encode_type": {
 		chinese_name: "编码类型",
 		type: "stringlist",
-		options: "codec_type_list"
+		options: "codec_type_list",
+		value_is_index: true
 	},
 	"encode_bitrate": {
 		chinese_name: "编码码率",
@@ -34,7 +36,8 @@ const g_solution_fields = {
 	"model": {
 		chinese_name: "算法模型",
 		type: "stringlist",
-		options: "model_list" // Placeholder for model options
+		options: "model_list", // Placeholder for model options
+		value_is_index: false
 	},
 	"stream": {
 		chinese_name: "视频数据流",
@@ -44,7 +47,8 @@ const g_solution_fields = {
 	"decode_type": {
 		chinese_name: "解码类型",
 		type: "stringlist",
-		options: "codec_type_list"
+		options: "codec_type_list",
+		value_is_index: false
 	},
 	"decode_width": {
 		chinese_name: "解码宽度",
@@ -394,9 +398,28 @@ function render_label_name(solutions_config, itemKey, uniqueId, vpp_config) {
 		if (field.type === 'stringlist') {
 			html += `<select id="${uniqueId}" class="form-control-sm">`;
 			const options = hardware_capability[field.options].split('/');
-			options.forEach(option => {
-				html += `<option value="${option}" ${vpp_config[itemKey] === option ? 'selected' : ''}>${option}</option>`;
-			});
+			if(Array.isArray(options)){ //是否是Array
+				if(field.value_is_index){//设备返回的值是 int 类型的序号，还是字符串
+					let value_index_in_config = vpp_config[itemKey];
+					if(value_index_in_config >= options.length){
+						console.error("itemKey:" + itemKey + " in hardware_capability:" + field.options + " length is :" + options.length + " config index is :" + value_index_in_config);
+						value_index_in_config = 0;
+					}
+					const selected_value = options[value_index_in_config];
+					options.forEach(option => {
+						html += `<option value="${option}" ${selected_value === option ? 'selected' : ''}>${option}</option>`;
+					});
+				}else{
+					options.forEach(option => {
+						html += `<option value="${option}" ${vpp_config[itemKey] === option ? 'selected' : ''}>${option}</option>`;
+					});
+				}
+			}else{
+				console.error("itemKey:" + itemKey + " in hardware_capability:" + field.options + " length is :" + options.length +", and is not a array.");
+				const selected_value = hardware_capability[field.options]
+				html += `<option value="${selected_value}" selected>${selected_value}</option>`;
+			}
+
 			html += `</select>`;
 		} else if (field.type === 'intarray') {
 			html += `<select id="${uniqueId}" class="form-control-sm">`;
@@ -423,6 +446,27 @@ function render_label_name(solutions_config, itemKey, uniqueId, vpp_config) {
 
 // 将 JSON 渲染到 HTML 的函数
 function render_json_to_html(solutions_config) {
+	function getStringDecodeType(decode_type){
+		if( decode_type === 0){
+			return "h264"; //此处用小写， 为了拼接 vlc字符串
+		}else if(decode_type === 1) {
+			return "h265";
+		}else{
+			console.error("recv unsupport decode type:" + decode_type);
+			return "unsupport";
+		}
+	}
+	function getIntDecodeType(decode_type_string){
+		if( decode_type_string === "H264"){
+			return 0;
+		}else if(decode_type_string === "H265") {
+			return 1;
+		}else{
+			console.error("recv unsupport decode type:" + decode_type_string);
+			return -1;
+		}
+	}
+
 	const container = document.getElementById('solutionConfig');
 	let html = '';
 
@@ -434,7 +478,37 @@ function render_json_to_html(solutions_config) {
 	html += `<h2>设备信息</h2>`
 	html += `<span style="white-space: pre-wrap;"><strong>芯片类型 : </strong>${hardware_capability["chip_type"]}  </span>`;
 	html += `<span style="white-space: pre-wrap;"><strong>软件版本 : </strong>${solutions_config["version"]}  </span>`;
-	html += `<span style="white-space: pre-wrap;"><strong>码流链接 : </strong>rtsp://${window.location.host}/stream_chn0.h264</span>`;
+	if (solution_name === 'cam_solution') {
+		let valid_index = 0;
+		const cam_solution = solutions_config["cam_solution"];
+		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
+			const cam_vpp_list = cam_solution.cam_vpp;
+			const cam_vpp = cam_vpp_list[i];
+			if (cam_vpp.is_enable === 0) {
+				continue;
+			}
+			const codec_type_string = getStringDecodeType(cam_vpp["encode_type"]);
+			if(codec_type_string === "unsupport"){
+				continue;
+			}
+			const cameraChannelName = 'CSI_' + cam_vpp.csi_index;
+			html += '<br>';
+			html += `<span style="white-space: pre-wrap;"><strong>	${cameraChannelName}的码流链接 : </strong>rtsp://${window.location.host}/stream_chn${valid_index}.${codec_type_string}</span>`;
+			valid_index++;
+		}
+	} else if (solution_name === 'box_solution') {
+		const box_solution = solutions_config["box_solution"];
+		const pipeline_count = box_solution["pipeline_count"];
+		const box_vpp_list = box_solution["box_vpp"];
+		for (let i = 0; i < pipeline_count; i++) {
+			const codec_type_string = getStringDecodeType(box_vpp_list[i]["encode_type"]);
+			if(codec_type_string === "unsupport"){
+				continue;
+			}
+			html += '<br>';
+			html += `<span style="white-space: pre-wrap;"><strong>	通道${i}的码流链接 : </strong>rtsp://${window.location.host}/stream_chn${i}.${codec_type_string}</span>`;
+		}
+	}
 
 	html += `<h2>选择应用方案</h2>`
 	html += `<form id="solutionForm">`
@@ -467,7 +541,6 @@ function render_json_to_html(solutions_config) {
 			if(cam_vpp.is_valid === 0){
 				continue;
 			}
-
 			const checkboxName = 'CSI_' + cam_vpp.csi_index;
 			html += '<div class="checkbox-item">';
 			html += '  <input type="checkbox" id="checkbox' + i + '" name="' + checkboxName + '"';
@@ -547,9 +620,38 @@ function render_json_to_html(solutions_config) {
 			if(cam_vpp.is_valid === 0){
 				continue;
 			}
-
 			const checkboxName = 'checkbox' + i;
 			document.getElementById(checkboxName).addEventListener("change", createCheckboxChangeHandler(i));
+		}
+
+		//标签为编码类型的可选框添加事件处理函数
+		function encodeTypeChangeHandler(channel_number){
+			return function() {
+				const cam_solution = g_solution_configs["cam_solution"];
+				const cam_vpp_list = cam_solution.cam_vpp
+				const cam_vpp = cam_vpp_list[channel_number];
+				if(cam_vpp.is_enable === 0){
+				  console.error("csi_" + cam_vpp.csi_index + " is not enable, but set encodetype." );
+				  return;
+				}
+				var selectedEncodeType = this.options[this.selectedIndex].text;
+				const encode_type_int = getIntDecodeType(selectedEncodeType);
+				if(encode_type_int == -1){
+					console.error("csi_" + cam_vpp.csi_index + " recv not support encodetype:" + selectedEncodeType);
+					return;
+				}
+
+				cam_vpp["encode_type"] = encode_type_int;
+				render_json_to_html(g_solution_configs);
+			  };
+		}
+		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
+			const cam_vpp = cam_vpp_list[i];
+			if (cam_vpp.is_enable === 0) {
+				continue;
+			}
+			const uniqueId = `item_${i}_encode_type`;
+			document.getElementById(uniqueId).addEventListener("change", encodeTypeChangeHandler(i));
 		}
 	} else if (solution_name === 'box_solution') {
 		const box_solution = solutions_config["box_solution"];
@@ -583,6 +685,28 @@ function render_json_to_html(solutions_config) {
 			g_solution_configs["box_solution"]["pipeline_count"] = selectedPipelineCount;
 			render_json_to_html(g_solution_configs);
 		});
+
+		//标签为编码类型的可选框添加事件处理函数
+		function encodeTypeBoxSolutionChangeHandler(channel_number){
+			return function() {
+				const box_solution = solutions_config["box_solution"];
+				const box_vpp_list = box_solution.box_vpp
+				const box_vpp = box_vpp_list[channel_number];
+
+				var selectedEncodeType = this.options[this.selectedIndex].text;
+				const encode_type_int = getIntDecodeType(selectedEncodeType);
+				if(encode_type_int == -1){
+					console.error("channel:" + channel_number + " recv not support encodetype:" + selectedEncodeType);
+					return;
+				}
+				box_vpp["encode_type"] = encode_type_int;
+				render_json_to_html(g_solution_configs);
+				};
+		}
+		for (let i = 0; i < box_solution["pipeline_count"]; i++) {
+			const uniqueId = `item_${i}_encode_type`;
+			document.getElementById(uniqueId).addEventListener("change", encodeTypeBoxSolutionChangeHandler(i));
+		}
 	}
 
 	// 调整视频显示格

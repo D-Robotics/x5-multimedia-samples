@@ -451,7 +451,7 @@ int32_t vpp_camera_start(void)
 	for (i = 0; i < VPP_CAM_MAX_CHANNELS; i++) {
 		if (g_vpp_camera[i].vp_vflow_contex.sensor_config == NULL)
 			continue;
-
+		g_vpp_camera[i].pipline_id = i;
 		vp_vflow_contex = &g_vpp_camera[i].vp_vflow_contex;
 
 		ret = vp_codec_start(&g_vpp_camera[i].m_encode_context);
@@ -462,7 +462,6 @@ int32_t vpp_camera_start(void)
 		}
 		SC_LOGI("Start video encode instance %d successful", g_vpp_camera[i].m_encode_context.instance_index);
 
-		g_vpp_camera[i].pipline_id = i;
 		ret = vp_vin_start(vp_vflow_contex);
 		ret |= vp_isp_start(vp_vflow_contex);
 		ret |= vp_vse_start(vp_vflow_contex);

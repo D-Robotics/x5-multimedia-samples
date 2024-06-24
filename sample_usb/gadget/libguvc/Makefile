@@ -55,11 +55,11 @@ install:
 	install -p -D -m 755 $(LIB_SO) ${BUILD_OUTPUT_PATH}/_install/lib/$(LIB_SO)
 	install -p -D -m 755 $(BINARY) ${BUILD_OUTPUT_PATH}/_install/bin/$(BINARY)
 	cp -rf inc ${BUILD_OUTPUT_PATH}/_install/
-	
+
 	install -p -D -m 755 $(LIB_SO) ${PLATFORM_SAMPLES_DEPLOY_DIR}/sample_usb/libguvc/$(LIB_SO)
 	install -p -D -m 755 $(BINARY) ${PLATFORM_SAMPLES_DEPLOY_DIR}/sample_usb/libguvc/$(BINARY)
 
-dist-clean:
+distclean:
 	rm -rf $(BINARY) $(BINARY2) $(OBJS) $(LIB_SO) $(LIB_A) $(LIB_OBJS) ${BUILD_OUTPUT_PATH}/_install
 
 clean:

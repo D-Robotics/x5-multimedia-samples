@@ -85,7 +85,7 @@
 					}
 				}
 			},
-			"lpwm": "/app/testcase/S08_VPS/testsuite/res/cfg/tuning_cfg/sc035hgs_rx0/lpwm.json"
+			"lpwm": "/app/platform_samples/tuning_tool/tuning_cfg/sc035hgs_rx0/lpwm.json"
 		},
 		"isp_node0": {
 			"input_mode": 0,

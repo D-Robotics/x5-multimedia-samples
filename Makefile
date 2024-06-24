@@ -20,6 +20,7 @@ clean:
 	$(Q)for dir in ${SUB_FOLDERS}; do \
 		make -C $$dir clean || exit; \
 	done
+	make -C $(PLATFORM_SAMPLES_DIR)/sunrise_camera clean || exit;
 	$(Q)echo clean all samples
 
 install: build
@@ -41,4 +42,5 @@ install: build
 
 distclean:
 	$(Q)rm -rf ${PLATFORM_SAMPLES_DEPLOY_DIR}
+	make -C $(PLATFORM_SAMPLES_DIR)/sunrise_camera distclean || exit;
 	$(Q)echo cleaned up all installed samples

@@ -33,8 +33,8 @@ H265MainVideoSource::H265MainVideoSource(UsageEnvironment& env,
 	SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
 				shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
 
-	strncpy(fShmName, shmName, sizeof(fShmName));
-	strncpy(fShmId, shmId, sizeof(fShmId));
+	strncpy(fShmName, shmName, sizeof(fShmName) - 1);
+	strncpy(fShmId, shmId, sizeof(fShmId) - 1);
 
 	fPts = 0;
 	fNaluLen = 0;
@@ -137,6 +137,19 @@ void H265MainVideoSource::incomingDataHandler1()
 			|| nalu.nal_unit_type == 33 || nalu.nal_unit_type == 34 || nalu.nal_unit_type == 19)
 		{
 			fFrameSize = nalu.len;
+			//在使用 nalu 内存前做如下检测
+			//码流数据在大压力的情况下，可能会被覆盖，所以此处判断web 发送的数据范围是否合法
+			//数据被覆盖后，发送出去也没问题，但是要保证程序不会奔溃
+			ret = nalu_is_beyond_source_data_range(nalu.buf, nalu.len, data, length, fShmId);
+			if((ret != 0) || (nalu.len > fMaxSize)){
+				SC_LOGE("shm_id: %s, shm_name: %s data range is error, so ignore this pkt. nalu len:%d dst max len:%d", fShmId, fShmName, nalu.len, fMaxSize);
+				fNaluLen = 0;
+				shm_stream_post(fShmSource);
+				fDurationInMicroseconds = 1000 * 1;
+				nextTask() = envir().taskScheduler().scheduleDelayedTask(fDurationInMicroseconds,
+					(TaskFunc*)incomingDataHandler, this);
+				return;
+			}
 			memcpy(fTo, nalu.buf, nalu.len);
 
 			if (fPresentationTime.tv_sec == 0 && fPresentationTime.tv_usec == 0)

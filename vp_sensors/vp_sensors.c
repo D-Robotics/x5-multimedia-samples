@@ -431,8 +431,14 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 			printf("[INFO] board_id is 201, so skip sci1.");
 			is_need_skip_sci1 = true;
 		} else {
-			printf("[INFO] board_id is %s, not need skip sci1.", board_id);
-			is_need_skip_sci1 = false;
+			ret = strncmp(board_id, "202", 3);
+			if(ret == 0){
+				printf("[INFO] board_id is 202, so skip sci1.");
+				is_need_skip_sci1 = true;
+			}else{
+				printf("[INFO] board_id is %s, not need skip sci1.", board_id);
+				is_need_skip_sci1 = false;
+			}
 		}
 	}else{
 		printf("read board_id file failed, so skip sci1.");

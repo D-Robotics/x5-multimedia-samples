@@ -30,8 +30,8 @@ H264MainVideoSource::H264MainVideoSource(UsageEnvironment& env,
 		frameRate, streamBufSize,
 		SHM_STREAM_READ, SHM_STREAM_MALLOC);
 
-	strncpy(fShmName, shmName, sizeof(fShmName));
-	strncpy(fShmId, shmId, sizeof(fShmId));
+	strncpy(fShmName, shmName, sizeof(fShmName) - 1);
+	strncpy(fShmId, shmId, sizeof(fShmId) - 1);
 
 	SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
 				shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
@@ -114,6 +114,16 @@ void H264MainVideoSource::incomingDataHandler1()
 				/*SC_LOGI("framer video pts:%llu remains:%d length:%d \n", info.pts,*/
 						   /*shm_stream_remains(fShmSource), length);*/
 			fFrameSize = nalu.len;
+			ret = nalu_is_beyond_source_data_range(nalu.buf, nalu.len, data, length, fShmId);
+			if((ret != 0) || (nalu.len > fMaxSize)){
+				SC_LOGE("shm_id: %s, shm_name: %s data range is error, so ignore this pkt. nalu len:%d dst max len:%d", fShmId, fShmName, nalu.len, fMaxSize);
+				fNaluLen = 0;
+				shm_stream_post(fShmSource);
+				fDurationInMicroseconds = 1000 * 1;
+				nextTask() = envir().taskScheduler().scheduleDelayedTask(fDurationInMicroseconds,
+					(TaskFunc*)incomingDataHandler, this);
+				return;
+			}
 			memcpy(fTo, nalu.buf, nalu.len);
 
 			/*printf("fMaxSize=%d, fFrameSize = %d, fNumTruncatedBytes=%d\n", fMaxSize, fFrameSize, fNumTruncatedBytes);*/

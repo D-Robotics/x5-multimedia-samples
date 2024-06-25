@@ -69,7 +69,7 @@ int get_annexb_nalu(unsigned char *frame, int length, NALU_t *nalu, int is_h265)
 			}else{
 				nalu->nal_unit_type = (nalu->buf[0]) & 0x1f;   // 5 bit--00011111
 			}
-			
+
 			return pos - 1;
 		}
 		pos++;
@@ -98,4 +98,22 @@ int get_annexb_nalu(unsigned char *frame, int length, NALU_t *nalu, int is_h265)
 	}
 
 	return (pos + rewind);                                           //Return the length of bytes from between one NALU and the next NALU
+}
+
+int nalu_is_beyond_source_data_range(unsigned char *nalu_start, int32_t nalu_length,
+	unsigned char *src_start, int32_t src_length, const char* tag_for_debug){
+		if((nalu_length <= 0) || (src_length <= 0)){
+			SC_LOGE("[%s] data len is error, nalu len is %d, src length is %d.", tag_for_debug, nalu_length, src_length);
+			return -1;
+		}
+		if((nalu_start < src_start) ||
+			((nalu_start + nalu_length) > (nalu_start + src_length))){
+
+			SC_LOGE("[%s] is covered, data is [0x%p - 0x%p] data length: %u, but nalu [%p - %p] nalu len: %d",
+				tag_for_debug,
+				src_start, src_start + src_length, src_length,
+				nalu_start, nalu_start + nalu_length, nalu_length);
+			return -1;
+		}
+		return 0;
 }

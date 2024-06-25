@@ -167,7 +167,6 @@ static int ws_send_h264_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_s
 		if (ret > 0){ //记录nalu偏移总长
 			*nalu_len += nalu.len + nalu.startcodeprefix_len;
 		}
-
 		// SC_LOGI("nal_unit_type:%d data:%p buf:%p len:%u, *nalu_len:%d, %d\n", nalu.nal_unit_type, data,
 		// 			nalu.buf, nalu.len, *nalu_len, length);
 
@@ -177,9 +176,21 @@ static int ws_send_h264_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_s
 		{
 			frame_size = nalu.len;
 
+			//在使用 nalu 内存前做如下检测
+			//码流数据在大压力的情况下，可能会被覆盖，所以此处判断web 发送的数据范围是否合法
+			//数据被覆盖后，发送出去也没问题，但是要保证程序不会奔溃
+			unsigned char *encode_data_stream_start = nalu.buf - nalu.startcodeprefix_len;
+			int32_t encode_data_stream_len = nalu.len + nalu.startcodeprefix_len;
+			ret = nalu_is_beyond_source_data_range(encode_data_stream_start, encode_data_stream_len, data, length, shm_source->name);
+			if(ret != 0){
+				SC_LOGE("shm_source [%s] data range is error, so ignore this pkt.", shm_source->name);
+				*nalu_len = 0;
+				shm_stream_post(shm_source);
+				return -1;
+			}
 			// 发送数据, 需要发送带头信息的数据给 wfs
 			ws_send_nalu_to_wfs(ws_clt, ws_get_stream_index(info.key, ws_clt->stream_chn, ws_clt->stream_count), info.pts,
-				nalu.buf - nalu.startcodeprefix_len, nalu.len + nalu.startcodeprefix_len);
+				encode_data_stream_start, encode_data_stream_len);
 			if (nalu.nal_unit_type == 1 || nalu.nal_unit_type == 5)
 			{
 				*nalu_len = 0;

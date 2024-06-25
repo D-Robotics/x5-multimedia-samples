@@ -36,8 +36,8 @@ static struct option const long_options[] = {
 	{"output", required_argument, NULL, 'o'},
 	{"iw", required_argument, NULL, 'w'},
 	{"ih", required_argument, NULL, 'h'},
-	{"ow", optional_argument, NULL, 'x'},
-	{"oh", optional_argument, NULL, 'y'},
+	{"ow", required_argument, NULL, 'x'},
+	{"oh", required_argument, NULL, 'y'},
 	{NULL, 0, NULL, 0}
 };
 
@@ -51,13 +51,13 @@ int create_and_run_vflow(gdc_info_s *gdc_info,
 static void print_help() {
 	printf("Usage: %s [OPTIONS]\n", get_program_name());
 	printf("Options:\n");
-	printf("  --config <gdc_bin_file>     Specify the gdc configuration bin file.\n");
-	printf("  --input <input_file>       Specify the input image file.\n");
-	printf("  --output <output_file>       Specify the output image file.\n");
-	printf("  --iw <input_width>         Specify the width of the input image.\n");
-	printf("  --ih <input_height>        Specify the height of the input image.\n");
-	printf("  --ow [output_width]        Specify the width of the output image (optional).\n");
-    printf("  --oh [output_height]       Specify the height of the output image (optional).\n");
+	printf("  c, --config <gdc_bin_file>    Specify the gdc configuration bin file.\n");
+	printf("  i, --input <input_file>       Specify the input image file.\n");
+	printf("  o, --output <output_file>     Specify the output image file.\n");
+	printf("  w, --iw <input_width>         Specify the width of the input image.\n");
+	printf("  h, --ih <input_height>        Specify the height of the input image.\n");
+	printf("  x, --ow [output_width]        Specify the width of the output image (optional).\n");
+	printf("  y, --oh [output_height]       Specify the height of the output image (optional).\n");
 	printf("\n");
 	printf("If --ow and --oh are not specified, they will default to the input width and height, respectively.\n");
 }

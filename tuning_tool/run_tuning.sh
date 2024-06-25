@@ -10,9 +10,10 @@ CAM_JSON_NAME=cam_x5_config.json
 TUNING_CFG_PATH=${COMMON_DIR}/tuning_cfg
 
 function print_usage() {
-	echo "run_tuning.sh --list : list all case"
-	echo "run_tuning.sh --run [case_index] : run this case"
-	echo "run_tuning.sh --vpm [case_index] : edit this case's vpm json"
+	echo "run_tuning.sh --list: list all case"
+	echo "run_tuning.sh --run [case_index]: run this case"
+	echo "run_tuning.sh --vpm [case_index]: edit this case's vpm json"
+	echo "run_tuning.sh --tune 1: open tuning_server"
 	exit 1
 }
 
@@ -85,6 +86,26 @@ function open_case_json() {
 	fi
 }
 
+function vtuner_control() {
+	if [ -z "$1" ]; then
+		echo "Please input --tune 1 to open the vtuner_server."
+		exit -1
+	fi
+
+	if [ "$1" == "1" ]; then
+		echo 1 > /sys/kernel/debug/isp/tune
+		echo "Open vtuner_server Success! Please connect VtunerClient"
+
+	elif [ "$1" == "0" ]; then
+		echo "Cannot support close vtuner_server"
+		exit -1
+
+	else
+		echo "Please input --tune 1 to open the vtuner_server."
+		exit -1
+	fi
+}
+
 function specify_command() {
 	local _command=$1
 	shift 1
@@ -104,9 +125,14 @@ function specify_command() {
 
 	elif [ "$_command" == "--help" ]; then
 		print_usage
+
+	elif [ "$_command" == "--tune" ]; then
+		vtuner_control "$@"
+
 	else
 		echo "invaild cmd input : $_command "
 		print_usage
+
 	fi
 }
 

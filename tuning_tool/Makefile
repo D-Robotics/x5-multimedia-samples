@@ -11,7 +11,7 @@ OBJS := $(patsubst %.c,${TUNING_BUILD_DIR}/%.o,$(SRCS))
 
 LIBS += -levent_pthreads -lhbplayer -lpthread -levent
 
-.PHONY: all clean
+.PHONY: all clean install
 
 
 ${TUNING_BUILD_DIR}/%.o:%.c

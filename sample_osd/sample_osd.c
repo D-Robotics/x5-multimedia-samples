@@ -158,7 +158,8 @@ static int32_t rgn_draw_word_init(int32_t vse_vnode_fd)
 	draw_word.font_size = FONT_SIZE_MEDIUM;
 	draw_word.font_color = FONT_COLOR_WHITE;
 	draw_word.bg_color = FONT_COLOR_DARKGRAY;
-	draw_word.alpha = 15; // VSE 的通道 4 不支持透明度，不等于15时会显示不出来
+	draw_word.font_alpha = 15; // VSE 的通道 4 不支持透明度，不等于15时会显示不出来
+	draw_word.bg_alpha = 2;
 	draw_word.point.x = 0;
 	draw_word.point.y = 0;
 	draw_word.flush_en = false;

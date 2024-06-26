@@ -13,7 +13,7 @@
 static void print_usage(const char *prog)
 {
 	pr_tuning("Usage: %s ", prog);
-	pr_tuning("-c        camera json path\n"
+	printf("-c        camera json path\n"
 		"-v        vpm json path\n"
 		"-r        send raw to hbplayer\n"
 		"-s        dump stream flag\n"
@@ -23,9 +23,11 @@ static void print_usage(const char *prog)
 static void print_support_list(void)
 {
 	pr_tuning("Support list:\n");
-	pr_tuning("s -> dump 5 frame sif raw\n"
+	printf("s -> dump frame sif raw\n"
+		"y -> dump yuv\n"
 		"e -> set ae attr\n"
 		"E -> get ae attr\n"
+		"b -> get ae statistics\n"
 		"w -> set awb attr\n"
 		"W -> get awb attr\n"
 		"t -> set exp table\n"
@@ -229,6 +231,12 @@ static void tuning_handle_set_expsoure(tuning_context_t *ctx)
 		pr_tuning("temp enable ae auto directly!\n");
 		VIO_ASSERT_FUNC_EQ(hbn_isp_get_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
 		exp_attr.mode = HBN_ISP_MODE_AUTO;
+		read_p("speed_over: ", "%f", &exp_attr.auto_attr.speed_over);
+		read_p("speed_under: ", "%f", &exp_attr.auto_attr.speed_under);
+		read_p("tolerance: ", "%f", &exp_attr.auto_attr.tolerance);
+		read_p("target: ", "%f", &exp_attr.auto_attr.target);
+		read_p("flicker_freq: ", "%f", &exp_attr.auto_attr.flicker_freq);
+		read_p("anti_flicker_status: ", "%d", &exp_attr.auto_attr.anti_flicker_status);
 	}
 
 	VIO_ASSERT_FUNC_EQ(hbn_isp_set_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
@@ -336,6 +344,28 @@ static void tuning_dump_yuv(tuning_context_t *ctx)
 	read_p("typing the number to dump: ", "%d", &ctx->yuv_dump_cnt);
 }
 
+static void tuning_get_ae_statistics(tuning_context_t *ctx)
+{
+	// int32_t chn, col, row;
+	// hbn_isp_ae_statistics_t ae_statistics = {0};
+
+	// VIO_ASSERT_FUNC_EQ(hbn_isp_get_ae_statistics(ctx->vnode_fd[1], &ae_statistics), 0, return);
+
+	// pr_tuning("Ae statistics current frameid: %d, timestamps: %ld\n", ae_statistics.frame_id, ae_statistics.timestamps);
+	// pr_tuning("Datatype: %d\n", ae_statistics.datatype);
+
+	// for (chn = 0; chn < HBN_ISP_PIXEL_CHANNEL; chn++) {
+	// 	printf("channel index: %d\n", chn);
+	// 	for (row = 0; row < HBN_ISP_GRID_NUM; row++) {
+	// 		printf("%d: ", row);
+	// 		for (col = 0; col < HBN_ISP_GRID_NUM; col++) {
+	// 			printf(" %d", ae_statistics.expStat[HBN_ISP_GRID_ITEMS*chn + HBN_ISP_GRID_NUM*row + col]);
+	// 		}
+	// 		printf("\n");
+	// 	}
+	// }
+}
+
 static int32_t tuning_api_func(int32_t cmd, tuning_context_t *ctx)
 {
 	int32_t ret = 0;
@@ -369,6 +399,9 @@ static int32_t tuning_api_func(int32_t cmd, tuning_context_t *ctx)
 	case 'y':
 		tuning_dump_yuv(ctx);
 		return ret;
+	case 'b':
+		tuning_get_ae_statistics(ctx);
+		break;
 	case 'h':
 		print_support_list();
 		break;

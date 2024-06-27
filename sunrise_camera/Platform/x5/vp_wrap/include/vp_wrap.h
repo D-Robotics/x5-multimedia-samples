@@ -16,6 +16,7 @@
 #include "vp_vin.h"
 #include "vp_isp.h"
 #include "vp_vse.h"
+#include "vp_osd.h"
 
 #ifdef __cplusplus
 extern "C" {

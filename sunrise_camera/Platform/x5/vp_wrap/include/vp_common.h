@@ -12,10 +12,11 @@
 
 #include "hb_camera_interface.h"
 #include "hbn_api.h"
+#include "hb_rgn.h"
 #include "vse_cfg.h"
 #include "hb_media_codec.h"
 #include "hb_media_error.h"
-
+#include "hbn_error.h"
 #include "vp_sensors.h"
 
 #define VP_MAX_PATH_LENGTH 128
@@ -80,6 +81,9 @@ typedef struct vse_info_s {
 	vse_ochn_attr_t vse_ochn_attr[6];
 } vse_config_t;
 
+typedef struct osd_info_s{
+	hbn_rgn_bitmap_t bitmap [6];
+} osd_user_info_t;
 typedef struct vp_vflow_contex_s {
 	hbn_vflow_handle_t vflow_fd;
 	camera_handle_t cam_fd;
@@ -88,6 +92,7 @@ typedef struct vp_vflow_contex_s {
 	hbn_vnode_handle_t vin_node_handle;
 	hbn_vnode_handle_t isp_node_handle;
 	vse_config_t vse_config;
+	osd_user_info_t osd_info;
 	hbn_vnode_handle_t vse_node_handle;
 	hbn_vnode_handle_t gdc_node_handle;
 } vp_vflow_contex_t;

@@ -28,3 +28,11 @@ void time_statistics_info_show(struct TimeStatistics *statistics, const char *ta
 
     SC_LOGI("[%s] period %lldms consume %lldms.", tag, period_ms, consume_ms);
 }
+
+void get_world_time_string(char *time_buffer, int time_buffer_size){
+    time_t current_time;
+    struct tm *time_info;
+    time(&current_time);
+    time_info = localtime(&current_time);
+    strftime(time_buffer, time_buffer_size, "%Y-%m-%d %H:%M:%S", time_info);
+}

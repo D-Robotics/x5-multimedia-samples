@@ -87,7 +87,16 @@ static void vpp_camera_push_stream(vpp_camera_t *vpp_camera, ImageFrame *stream)
 	// SC_LOGI("codec put size %lld", buffer->vstream_buf.size);
 	shm_stream_put(vpp_camera->venc_shm, info, (unsigned char*)buffer->vstream_buf.vir_ptr, buffer->vstream_buf.size);
 }
+static void update_osd_info(vp_vflow_contex_t* vp_vflow_contex, uint64_t *next_update_time_ms){
+	uint64_t current_time_ms = get_timestamp_ms();
 
+	if(current_time_ms > *next_update_time_ms){
+		char world_time_string[100];
+		get_world_time_string(world_time_string, sizeof(world_time_string));
+		vp_osd_draw_world(vp_vflow_contex, 0, world_time_string);
+		*next_update_time_ms = ((current_time_ms + 999) / 1000) * 1000 + 1000;
+	}
+}
 /******************************************************************************
  * funciton : get stream from each channels
  ******************************************************************************/
@@ -123,6 +132,7 @@ static void* venc_get_stream_proc(void *ptr)
 	FILE *enc_data_file = NULL;
 #endif
 
+	uint64_t next_update_time_ms = ((get_timestamp_ms() + 999) / 1000) * 1000;
 	struct TimeStatistics time_statistics;
 	while (privThread->eState == E_THREAD_RUNNING)
 	{
@@ -132,7 +142,7 @@ static void* venc_get_stream_proc(void *ptr)
 			SC_LOGE("vp_vse_get_frame failed.");
 			break;
 		}
-
+		update_osd_info(&vpp_camera->vp_vflow_contex, &next_update_time_ms);
 		// vp_vin_print_hbn_vnode_image_t(hbn_vnode_image);
 
 		// 送进编码器
@@ -379,6 +389,7 @@ int32_t vpp_camera_init(void)
 		ret = vp_vin_init(vp_vflow_contex);
 		ret |= vp_isp_init(vp_vflow_contex);
 		ret |= vp_vse_init(vp_vflow_contex);
+		ret |= vp_osd_init(vp_vflow_contex);
 		ret |= vp_vflow_init(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_init");
 
@@ -421,9 +432,10 @@ int32_t vpp_camera_uninit(void)
 
 		ret = vp_codec_deinit(&g_vpp_camera[i].m_encode_context);
 		ret |= vp_vflow_deinit(vp_vflow_contex);
-		ret |= vp_vin_deinit(vp_vflow_contex);
-		ret |= vp_isp_deinit(vp_vflow_contex);
+		ret |= vp_osd_deinit(vp_vflow_contex);
 		ret |= vp_vse_deinit(vp_vflow_contex);
+		ret |= vp_isp_deinit(vp_vflow_contex);
+		ret |= vp_vin_deinit(vp_vflow_contex);
 
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_uninit");
 
@@ -465,6 +477,7 @@ int32_t vpp_camera_start(void)
 		ret = vp_vin_start(vp_vflow_contex);
 		ret |= vp_isp_start(vp_vflow_contex);
 		ret |= vp_vse_start(vp_vflow_contex);
+		ret |= vp_osd_start(vp_vflow_contex);
 		ret |= vp_vflow_start(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_start");
 
@@ -552,6 +565,7 @@ int32_t vpp_camera_stop(void)
 		ret |= vp_vflow_stop(vp_vflow_contex);
 		ret |= vp_vin_stop(vp_vflow_contex);
 		ret |= vp_isp_stop(vp_vflow_contex);
+		ret |= vp_osd_stop(vp_vflow_contex);
 		ret |= vp_vse_stop(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_stop");
 

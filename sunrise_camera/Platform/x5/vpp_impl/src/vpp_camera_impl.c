@@ -94,7 +94,7 @@ static void update_osd_info(vp_vflow_contex_t* vp_vflow_contex, uint64_t *next_u
 		char world_time_string[100];
 		get_world_time_string(world_time_string, sizeof(world_time_string));
 		vp_osd_draw_world(vp_vflow_contex, 0, world_time_string);
-		*next_update_time_ms = ((current_time_ms + 999) / 1000) * 1000 + 1000;
+		*next_update_time_ms = (current_time_ms / 1000) * 1000 + 1000;
 	}
 }
 /******************************************************************************

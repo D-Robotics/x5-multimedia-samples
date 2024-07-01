@@ -576,10 +576,14 @@ static int32_t read_nv12_file(char *addr0, char *addr1, FILE *fd, uint32_t y_siz
 	buffer = (char *)malloc(y_size + y_size / 2);
 
 	if (fread(buffer, 1, y_size, fd) != y_size) {
+		if (buffer)
+			free(buffer);
 		return -1;
 	}
 
 	if (fread(buffer + y_size, 1, y_size / 2, fd) != y_size / 2) {
+		if (buffer)
+			free(buffer);
 		return -1;
 	}
 

@@ -42,7 +42,7 @@ static struct option const long_options[] = {
 int32_t running = 0;
 
 int create_and_run_vflow(pipe_contex_t *pipe_contex);
-int encode_init(void *data);
+int encode_init(void *data, int fps);
 int encode_deinit(void *data);
 void *read_vse_data(void *contex);
 
@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
 	hb_mem_module_open();
 	ret = create_and_run_vflow(&pipe_contex);
 	ERR_CON_EQ(ret, 0);
-	encode_init(&pipe_contex);
+	encode_init(&pipe_contex, pipe_contex.sensor_config->camera_config->fps);
 	ERR_CON_EQ(ret, 0);
 	usleep(1000*1000);
 	running = 1;
@@ -716,12 +716,12 @@ int32_t vp_encode_config_param(media_codec_context_t *context,
 	return 0;
 }
 
-int encode_init(void *data) {
+int encode_init(void *data, int fps) {
 	int ret = 0;
 	pipe_contex_t *pipe_context = NULL;
 	int encode_width = 0;
 	int encode_height = 0;
-	int encode_fps = 30;
+	int encode_fps = fps;
 	vse_ochn_attr_t vse_ochn_attr = {0};
 
 	mc_av_codec_startup_params_t startup_params = {0};

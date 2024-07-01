@@ -10,12 +10,14 @@
 #include "hbn_isp_api.h"
 #include "isp_cfg.h"
 #include "tuning_utils.h"
+#include "tuning_cmd.h"
 
 #define DEF_CAM_PATH "/app/platform_samples/tuning_tool/tuning_cfg/sc1330t_rx0/cam_x5_config.json"
 #define DEF_VPM_PATH "/app/platform_samples/tuning_tool/tuning_cfg/sc1330t_rx0/vpm_x5_config.json"
 #define DEF_DUMP_PATH "/userdata"
 
-#define HBPLAYER_EN		1
+#define HBPLAYER_EN 1
+#define FEEDBACK_MASK 0
 
 typedef struct tuning_context {
 	char cam_json[128];
@@ -23,6 +25,8 @@ typedef struct tuning_context {
 	uint32_t dump_mask;
 	uint32_t send_raw;
 	uint32_t dump_stream_flag;
+	char feedback_path[128];
+	uint32_t work_mode;
 
 	uint32_t yuv_dump_cnt;
 	uint32_t is_offline;
@@ -32,6 +36,9 @@ typedef struct tuning_context {
 	hbn_vflow_handle_t vflow_fd;
 	hbn_vnode_handle_t vnode_fd[2];	// 0-sif, 1-isp
 	tool_event_t *hbplayer_event;
+	uint32_t feedback_width;
+	uint32_t feedback_height;
+	hbn_vnode_image_t src_img;
 } tuning_context_t;
 
 #define main_while_func_run(func, ctx) {	\

@@ -3,6 +3,7 @@ CUR_TEST_SHELL=$(readlink -f $0)
 COMMON_DIR=$(pwd)
 case_list=()
 run_case=
+first_file=
 
 # tuning tool case
 VPM_JSON_NAME=vpm_x5_config.json
@@ -15,6 +16,17 @@ function print_usage() {
 	echo "run_tuning.sh --vpm [case_index]: edit this case's vpm json"
 	echo "run_tuning.sh --tune 1: open tuning_server"
 	exit 1
+}
+
+function get_first_raw_file() {
+	local _files=( $(find . -maxdepth 1 -type f -name "*.raw") )
+
+	if [ ${#_files[@]} -gt 0 ]; then
+		first_file="${_files[0]:2}"
+	else
+		echo "No raw file find in current work path"
+		exit 1
+	fi
 }
 
 function get_case_list() {
@@ -72,6 +84,13 @@ function suit_case_run() {
 	elif test "$run_case" == "evb_f37_rx3"; then
 		echo "Run $run_case"
 		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}"
+
+	elif test "$run_case" == "feedback_case"; then
+		echo "Run $run_case"
+		echo "Notice: this script just support feedback 1080p raw now!!"
+		get_first_raw_file
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -f "${COMMON_DIR}/${first_file}" -c "${cam_json_path}"
+
 	fi
 }
 

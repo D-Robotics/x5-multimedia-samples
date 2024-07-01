@@ -15,7 +15,8 @@
 
 #define osd_fmt(fmt) "[tuning_tool]%s: " fmt
 #define osd_pr_warp(p_func_, fmt, ...) do { p_func_(osd_fmt(fmt), __func__, ##__VA_ARGS__); } while(0)
-#define pr_tuning(fmt, ...)	osd_pr_warp(printf, fmt, ##__VA_ARGS__)
+#define pr_tuning(fmt, ...) osd_pr_warp(printf, fmt, ##__VA_ARGS__)
+#define BIT_ENABLE(val, shift) ((val) & (1 << (shift)))
 
 #define TUNING_PRINT_SIZE_MAX	128
 
@@ -42,9 +43,8 @@ typedef enum df_nmi_e {
 void tuning_get_filename(char *name, char *path, hbn_vnode_image_t *out_img, df_nmi_t mni);
 int32_t tuning_send_raw_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf,
 				enum RAW_BIT format, int32_t pipe_id);
-int32_t tuning_send_yuv_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf,
-				int32_t pipe_id);
+int32_t tuning_send_yuv_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf, int32_t pipe_id);
 int32_t tuning_dump_file(char *filename, hbn_vnode_image_t *out_img);
-
+int32_t tuning_alloc_feedback_buffer(hb_mem_graphic_buf_t *buf, uint32_t width, uint32_t height, uint32_t cached);
 
 #endif // __TUNING_UTILS_H__

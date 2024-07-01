@@ -144,3 +144,28 @@ int32_t tuning_dump_file(char *filename, hbn_vnode_image_t *out_img)
 
 	return 0;
 }
+
+int32_t tuning_alloc_feedback_buffer(hb_mem_graphic_buf_t *buf, uint32_t width, uint32_t height, uint32_t cached)
+{
+	int32_t ret;
+	int64_t alloc_flags = 0;
+
+	ret = hb_mem_module_open();
+	if (ret < 0) {
+		pr_tuning("hb_mem_module_open failed ret %d\n", ret);
+		return ret;
+	}
+
+	alloc_flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD | HB_MEM_USAGE_CPU_READ_OFTEN |
+		      HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
+	if (cached == 1)
+		alloc_flags = alloc_flags | HB_MEM_USAGE_CACHED;
+
+	ret = hb_mem_alloc_graph_buf(width, height, MEM_PIX_FMT_RAW10, alloc_flags, width*2, height, buf);
+	if (ret < 0) {
+		pr_tuning("hb_mem_alloc_graph_buf ret %d failed \n", ret);
+		return ret;
+	}
+
+	return ret;
+}

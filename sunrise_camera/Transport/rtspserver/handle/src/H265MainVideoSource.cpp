@@ -11,14 +11,17 @@
 
 H265MainVideoSource* H265MainVideoSource::createNew(UsageEnvironment& env,
 	char *shmId, char *shmName, int streamBufSize, int frameRate,
+	int buffer_region_size, int buffer_item_count,
 	unsigned preferredFrameSize,
 	unsigned playTimePerFrame)
 {
-	H265MainVideoSource* source = new H265MainVideoSource(env, shmId, shmName, streamBufSize, frameRate, preferredFrameSize, playTimePerFrame);
+	H265MainVideoSource* source = new H265MainVideoSource(env, shmId, shmName, streamBufSize, frameRate,
+		buffer_region_size, buffer_item_count, preferredFrameSize, playTimePerFrame);
 	return source;
 }
 H265MainVideoSource::H265MainVideoSource(UsageEnvironment& env,
 	char *shmId, char *shmName, int streamBufSize, int frameRate,
+	int buffer_region_size, int buffer_item_count,
 	unsigned preferredFrameSize,
 	unsigned playTimePerFrame)
 	: FramedSource(env), fPreferredFrameSize(preferredFrameSize), fPlayTimePerFrame(playTimePerFrame), fLastPlayTime(0)
@@ -27,14 +30,17 @@ H265MainVideoSource::H265MainVideoSource(UsageEnvironment& env,
 	fPresentationTime.tv_usec = 0;
 	SC_LOGI("video source created for %s", shmName);
 	fShmSource = shm_stream_create(shmId, shmName, STREAM_MAX_USER,
-		frameRate, streamBufSize,
+		buffer_item_count, buffer_region_size,
 		SHM_STREAM_READ, SHM_STREAM_MALLOC);
 
-	SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
-				shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize);
+	SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d, region size:%d, item count %d",
+		 shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize, buffer_region_size, buffer_item_count);
 
 	strncpy(fShmName, shmName, sizeof(fShmName) - 1);
 	strncpy(fShmId, shmId, sizeof(fShmId) - 1);
+
+	fBufferRegionSize = buffer_region_size;
+	fBufferItemCount = buffer_item_count;
 
 	fPts = 0;
 	fNaluLen = 0;
@@ -173,9 +179,12 @@ void H265MainVideoSource::incomingDataHandler1()
 				fDurationInMicroseconds = 1000 * 1; //1ms
 
 				int remains = shm_stream_remains(fShmSource);
-				if(remains > 10){
-					SC_LOGI("shm_id: %s, shm_name: %s, fShmSource:%p, framer video pts:%llu length:%d fFrameSize:%d remains:%d",
-						fShmId, fShmName, fShmSource, info.pts, length, fFrameSize, remains);
+				if(remains > fBufferItemCount / 3 * 2){
+					SC_LOGI("shm_id: %s, shm_name: %s, length:%d fFrameSize:%d remains:%d",
+						fShmId, fShmName, length, fFrameSize, remains);
+				}
+				if(remains >= 3){
+					fDurationInMicroseconds = 0;
 				}
 				//该帧发送完毕，包括sps pps等nalu拆分完毕，可以释放
 				shm_stream_post(fShmSource);

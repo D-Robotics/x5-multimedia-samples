@@ -51,10 +51,16 @@ typedef struct
 	shm_stream_info_callback	callback;
 }shm_user_t;
 
+typedef enum{
+	DATA_ACCESS_STATUS_IDEL = 0,
+	DATA_ACCESS_STATUS_ACCESSING,
+}SHM_STREAM_DATA_ACCESS_STATUS_E;
+
 typedef struct
 {
 	unsigned int	offset;		//	数据存储偏移
 	unsigned int	lenght;		//	数据长度
+	SHM_STREAM_DATA_ACCESS_STATUS_E access_status; // 当前是否正在读取
 	frame_info		info;		//	数据info
 }shm_info_t;
 
@@ -72,7 +78,7 @@ typedef struct
 	unsigned int size;
 	SHM_STREAM_MODE_E mode;
 	SHM_STREAM_TYPE_E type;
-
+	unsigned int info_count;
 }shm_stream_t;
 
 

@@ -52,7 +52,7 @@ int32_t vp_codec_restart(media_codec_context_t *context);
 int32_t vp_codec_set_input(media_codec_context_t *context, ImageFrame *frame, int32_t eos);
 int32_t vp_codec_get_output(media_codec_context_t *context, ImageFrame *frame, int32_t timeout);
 int32_t vp_codec_release_output(media_codec_context_t *context, ImageFrame *frame);
-
+void vp_codec_get_user_buffer_param(mc_video_codec_enc_params_t *enc_param, int *buffer_region_size, int *buffer_item_count);
 void *vp_decode_work_func(void *param);
 
 void vp_codec_print_media_codec_output_buffer_info(ImageFrame *frame);

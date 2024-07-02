@@ -34,6 +34,8 @@ typedef struct
 typedef void *(*tprThreadFunction)(void *psThreadInfoVoid);
 
 teThreadStatus mThreadStart(tprThreadFunction prThreadFunction, tsThread *psThreadInfo, teThreadDetachState eDetachState);
+teThreadStatus mThreadStartHighPriority(tprThreadFunction prThreadFunction, tsThread *psThreadInfo, teThreadDetachState eDetachState);
+
 teThreadStatus mThreadStop(tsThread *psThreadInfo);
 teThreadStatus mThreadFinish(tsThread *psThreadInfo);
 teThreadStatus mThreadYield(void);

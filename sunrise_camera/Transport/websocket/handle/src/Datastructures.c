@@ -232,7 +232,9 @@ void list_multicast(ws_list *l, ws_client *n) {
  */
 void list_multicast_one(ws_list *l, ws_client *n, ws_message *m) {
 	ws_client *p;
+	int i = 0;
 	pthread_mutex_lock(&l->lock);
+	uint64_t start = get_timestamp_ms();
 	p = l->first;
 
 	if (p == NULL || n == NULL) {
@@ -243,10 +245,19 @@ void list_multicast_one(ws_list *l, ws_client *n, ws_message *m) {
 	do {
 		if (p == n) {
 			ws_send(p, m);
+			i++;
 			break;
 		}
 		p = p->next;
 	} while (p != NULL);
+
+	//网络异常的情况下，打印日志，方便定位问题
+	uint64_t end = get_timestamp_ms();
+	int diff = end - start;
+	if(diff > 30){
+		SC_LOGW("%d ms, data len:%d, client count: %d", diff, m->len, i);
+	}
+
 	pthread_mutex_unlock(&l->lock);
 }
 

@@ -29,12 +29,13 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 
 H264VideoLiveServerMediaSubsession*
 H264VideoLiveServerMediaSubsession::createNew(UsageEnvironment& env, Boolean reuseFirstSource,
-	char *shmId, char *shmName, int streamBufSize, int frameRate) {
-	return new H264VideoLiveServerMediaSubsession(env, reuseFirstSource, shmId, shmName, streamBufSize, frameRate);
+	char *shmId, char *shmName, int streamBufSize, int frameRate, int buffer_region_size, int buffer_item_count) {
+	return new H264VideoLiveServerMediaSubsession(env, reuseFirstSource, shmId, shmName, streamBufSize, frameRate,
+	buffer_region_size, buffer_item_count);
 }
 
 H264VideoLiveServerMediaSubsession::H264VideoLiveServerMediaSubsession(UsageEnvironment& env, Boolean reuseFirstSource,
-char *shmId, char *shmName, int streamBufSize, int frameRate)
+char *shmId, char *shmName, int streamBufSize, int frameRate, int buffer_region_size, int buffer_item_count)
 	: OnDemandServerMediaSubsession(env, True/*reuse the first source*/, 6970, True),
 	fAuxSDPLine(NULL), fDoneFlag(0), fDummyRTPSink(NULL) {
 	// 外部的shm参数终于传进来了，后面有时间看看怎么传递会更合适吧
@@ -44,11 +45,13 @@ char *shmId, char *shmName, int streamBufSize, int frameRate)
 
 	fStreamBufSize = streamBufSize;
 	fFrameRate = frameRate;
-	SC_LOGI("media subsession created for :%s", shmName);
+	fBufferItemCount = buffer_item_count;
+	fBufferRegionSize = buffer_region_size;
+	SC_LOGI("media subsession created for :%s [%d:%d]", shmName, fBufferRegionSize, fBufferItemCount);
 }
 
 H264VideoLiveServerMediaSubsession::~H264VideoLiveServerMediaSubsession() {
-	
+
 	SC_LOGI("media subsession destroyed for :%s", fShmName);
 	delete[] fAuxSDPLine;
 }
@@ -194,7 +197,8 @@ FramedSource* H264VideoLiveServerMediaSubsession::createNewStreamSource(unsigned
 //	estBitrate = 1500; // kbps, estimate
 	estBitrate = 1024*1024; // kbps, estimate
 	SC_LOGI("fFrameRate: %d", fFrameRate);
-	fVideoSource = H264MainVideoSource::createNew(envir(), fShmId, fShmName, fStreamBufSize, fFrameRate);
+	fVideoSource = H264MainVideoSource::createNew(envir(), fShmId, fShmName, fStreamBufSize, fFrameRate,
+		fBufferRegionSize, fBufferItemCount);
 	if (fVideoSource == NULL) return NULL;
 
 	H264VideoLiveDiscreteFramer* videoSource = H264VideoLiveDiscreteFramer::createNew(envir(), (FramedSource*)fVideoSource);

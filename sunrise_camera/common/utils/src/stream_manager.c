@@ -57,6 +57,7 @@ shm_stream_t* shm_stream_create(char* id, const char* name, int users, int infos
 	handle->user_array = (char*)addr;
 	handle->info_array = handle->user_array + users*sizeof(shm_user_t);
 	handle->base_addr  = handle->info_array + infos*sizeof(shm_info_t);
+	handle->info_count = 0;
 	snprintf(handle->name, 20, "%s", name);
 	SC_LOGI("[%s] name:%s handle addr: %p, addr:%p, size: %d, users: %d, infos: %d",
 		handle->name, id, handle, addr, size, users, infos);
@@ -209,19 +210,77 @@ int shm_stream_put(shm_stream_t* handle, frame_info info, unsigned char* data, u
 	head = users[0].index % handle->max_frames;
 	memcpy(&infos[head].info, &info, sizeof(frame_info));
 	infos[head].lenght = length;
-	if(length + users[0].offset > handle->size){ 	//addr不够存储了， 从头存储
+	if(length + users[0].offset > handle->size){ 	//数据存储区不够存储了， 从头存储
+
 		infos[head].offset = 0;
 		users[0].offset = 0;
+		if(handle->info_count < handle->max_frames){
+			SC_LOGW("[%s] writer:%s data region is overflow, info max count is %d, current info index is %d, count is %d.",
+				handle->name, users[0].id, handle->max_frames, head, handle->info_count);
+		}else{
+			SC_LOGD("[%s] writer:%s data region is normal, info max count is %d, current info index is %d, count is %d.",
+				handle->name, users[0].id, handle->max_frames, head, handle->info_count);
+		}
+		handle->info_count = 0;
 	}
 	else{
 		infos[head].offset = users[0].offset;
 	}
 	char* dst_data_addr = handle->base_addr+infos[head].offset;
+
+	//生产者下次操作的位置
 	users[0].offset += length;
 	users[0].index = (users[0].index + 1 ) % handle->max_frames;
+
+	//检测：消费者正在读取的数据区是否被生产者覆盖掉
+	int checked_user_count = 0;
+	for (int i = 1; i< handle->max_users; i++)
+	{
+		if (strlen(users[i].id) == 0){
+			continue;
+		}
+		int reader_index = users[i].index % handle->max_frames;
+		/*
+			1. 消费者正在访问过程中
+			2. 生成者覆盖了正在访问的位置
+		*/
+
+		// SC_LOGI("r:%d, w:%d", reader_index, users[0].index);
+		if(reader_index == users[0].index){
+			if(infos[reader_index].access_status == DATA_ACCESS_STATUS_ACCESSING){
+				SC_LOGW("[%s] writer:%s covered reader:%s at index:%d, and reader is reading.",
+								handle->name, users[0].id, users[i].id, reader_index);
+			}else{
+				SC_LOGI("[%s] writer:%s covered reader:%s at index:%d.",
+								handle->name, users[0].id, users[i].id, reader_index);
+			}
+		}
+		checked_user_count++;
+		if(users[0].users == checked_user_count){
+			break;
+		}
+	}
+
+	// infos[head].access_status = DATA_ACCESS_STATUS_IDEL; //此处不应该更新访问状态
+	/*
+		数据拷贝要加锁保护场景分析：
+
+		1. 写的过程中，被读走(读线程已经饥饿很久了，马上拷贝数据，但是数据正在拷贝的过程中)
+			a. 触发场景：数据发送快的情况，很快发送完了，等待Info更
+			b. 是否频繁：正常情况也会发生，比较频繁
+			c. 如何处理：加锁，避免发生
+
+		2. 读的过程中，被写覆盖 ：
+			a. 触发场景：数据发送不过来，整个FIFO存满了数据， 新数据覆盖旧数据
+			b. 是否频繁：在大压力的情况下，才会触发(数据发送速度跟不上，产生的速度)
+			c. 如何处理：
+				是否需要加锁：没必要 （代码改动大，且意义不大, 增加日志）
+				处理方法：增加打印信息
+	*/
+	memcpy(dst_data_addr, data, length);
+	handle->info_count++;
 	pthread_rwlock_unlock(&s_shm_rwlock);
 
-	memcpy(dst_data_addr, data, length);
 	cmtx_leave(handle->mtx);
 	return 0;
 }
@@ -282,6 +341,7 @@ int shm_stream_front(shm_stream_t* handle, frame_info* info, unsigned char** dat
 		/*SC_LOGI("handle->base_addr: %p, infos[tail].offset: %d", handle->base_addr, infos[tail].offset);*/
 		*length = infos[tail].lenght;
 
+		infos[tail].access_status = DATA_ACCESS_STATUS_ACCESSING;
 		pthread_rwlock_unlock(&s_shm_rwlock);
 		cmtx_leave(handle->mtx);
 		return 0;
@@ -297,6 +357,18 @@ int shm_stream_front(shm_stream_t* handle, frame_info* info, unsigned char** dat
 	return 0;
 }
 
+/*
+	1. 关于读写下标更新，实际能存储数据包的最大个数 < handle->max_frames 的情况分析：
+		a. 问题：是否会出现 读者 访问 如下区间的数据： [实际存储数据包最大个数 , handle->max_frames]
+		b. 分析：由于 实际能存储数据包的最大个数 < handle->max_frames 的情况 只会在选择 裸数据存储时，
+			会做判断shm_stream_t.info_array 会按照最大个数 handle->max_frames 创建，
+			并且不受 数据区 实际存储数据包最大个数的限制，所以没有问题
+
+	2. 如何保证消费者 不会读到 旧的数据
+		a. 生成者的下标：下一个将要写的位置
+		b. 消费者：读之前 如果 读的位置是 生成者的下标（下一个将要写的位置），就返回
+		c. 保证了 消费者的下标 永远 在 生成者 的前一个
+*/
 int shm_stream_post(shm_stream_t* handle)
 {
 	if(handle == NULL) return -1;
@@ -308,6 +380,10 @@ int shm_stream_post(shm_stream_t* handle)
 	shm_user_t* users = (shm_user_t*)handle->user_array;
 	head = users[0].index % handle->max_frames;
 	tail = users[handle->index].index % handle->max_frames;
+
+	//更新正在读取的数据的状态
+	shm_info_t* infos = (shm_info_t*)handle->info_array;
+	infos[tail].access_status = DATA_ACCESS_STATUS_IDEL;
 
 	if (head != tail)
 	{

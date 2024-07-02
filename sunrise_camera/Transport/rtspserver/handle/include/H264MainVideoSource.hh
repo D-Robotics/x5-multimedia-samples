@@ -11,6 +11,7 @@ class H264MainVideoSource : public FramedSource {
 public:
 	static H264MainVideoSource* createNew(UsageEnvironment& env,
 		char *shmId, char *shmName, int streamBufSize, int frameRate,
+		int buffer_region_size, int buffer_item_count,
 		unsigned preferredFrameSize = 0,
 		unsigned playTimePerFrame = 0);
 	// "preferredFrameSize" == 0 means 'no preference'
@@ -22,6 +23,7 @@ public:
 protected:
 	H264MainVideoSource(UsageEnvironment& env,
 		char *shmId, char *shmName, int streamBufSize, int frameRate,
+		int buffer_region_size, int buffer_item_count,
 		unsigned preferredFrameSize = 0,
 		unsigned playTimePerFrame = 0);
 	// called only by createNew()
@@ -44,6 +46,8 @@ private:
 	u_int64_t 	fNumBytesToStream; // used iff "fLimitNumBytesToStream" is True
 	unsigned long long	fPts;
 	unsigned int		fNaluLen;
+	int fBufferRegionSize;
+	int fBufferItemCount;
 
 	//for debug
 	char fShmName[32];

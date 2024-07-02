@@ -84,6 +84,8 @@ typedef struct
 	char shm_id[32];
 	char shm_name[32];
 	int stream_buf_size;
+	int suggest_buffer_item_count;
+	int suggest_buffer_region_size;
 }T_SDK_RTSP_SRV_PARAM;
 
 
@@ -208,6 +210,9 @@ typedef struct{
 	int			cvbr;		// 码率控制方式 定码率 变码率
 	int			minqp;
 	int			maxqp;
+	int         suggest_buffer_region_size;
+	int 		suggest_buffer_item_count;
+
 }T_SDK_VENC_INFO;
 
 typedef struct

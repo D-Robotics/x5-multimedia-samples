@@ -62,11 +62,9 @@ static vpp_box_t g_vpp_box[VPP_BOX_MAX_CHANNELS];
 static void vpp_box_push_stream(vpp_box_t *vpp_box, ImageFrame *stream, int pipline_id)
 {
 	int32_t frame_rate = 0;
-
 	media_codec_id_t codec_type;
 	media_codec_context_t *codec_context = &vpp_box->m_encode_context;
 
-	media_codec_output_buffer_info_t *buffer_info = NULL;
 	media_codec_buffer_t *buffer = NULL;
 
 	if(codec_context == NULL || stream == NULL) {
@@ -78,27 +76,6 @@ static void vpp_box_push_stream(vpp_box_t *vpp_box, ImageFrame *stream, int pipl
 	frame_rate = vpp_box->m_encode_context.video_enc_params.rc_params.h264_cbr_params.frame_rate;
 
 	buffer = (media_codec_buffer_t *)(stream->frame_buffer);
-	buffer_info = (media_codec_output_buffer_info_t *)(stream->buffer_info);
-
-	if(vpp_box->venc_shm == NULL) {
-		char shm_id[32] = {0}, shm_name[32] = {0};
-		sprintf(shm_id, "cam_id_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
-				(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
-				 (codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), pipline_id);
-		sprintf(shm_name, "name_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
-				(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
-				 (codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), pipline_id);
-		SC_LOGI("pipline_id:%d, codec_type: %d, shm_id: %s, shm_name: %s", pipline_id, codec_type, shm_id, shm_name);
-		vpp_box->venc_shm = shm_stream_create(shm_id, shm_name,
-				STREAM_MAX_USER, frame_rate,
-				buffer_info->video_stream_info.frame_size,
-				SHM_STREAM_WRITE, SHM_STREAM_MALLOC);
-		SC_LOGI("shm_stream_create: venc_shm(shm_stream_t): %p, shm_id(id): %s, shm_name(name): %s,"
-				" users: %d, frameRate(infos): %d frame_size(size): %d",
-			vpp_box->venc_shm, shm_id, shm_name, STREAM_MAX_USER,
-			frame_rate, buffer_info->video_stream_info.frame_size);
-		SC_LOGD("param->stream_buf_size:%d", vpp_box->m_encode_context.video_enc_params.bitstream_buf_size);
-	}
 
 	frame_info info;
 	info.type		= codec_type;
@@ -435,6 +412,7 @@ int32_t vpp_box_init(void)
 	hb_mem_module_open();
 
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
+		g_vpp_box[i].venc_shm = NULL;
 		if (strlen(g_vpp_box[i].m_stream_path) == 0)
 			continue;
 
@@ -491,7 +469,6 @@ int32_t vpp_box_init(void)
 int32_t vpp_box_uninit(void)
 {
 	int32_t i = 0, ret = 0;
-	shm_stream_t* stm = NULL;
 	vp_vflow_contex_t *vp_vflow_contex = NULL;
 
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
@@ -524,12 +501,6 @@ int32_t vpp_box_uninit(void)
 			SC_LOGI("Deinit video decode instance %d successful", g_vpp_box[i].m_decode_context.instance_index);
 		}
 
-		stm = g_vpp_box[i].venc_shm;
-		if (stm != NULL) {
-			shm_stream_destory(stm);
-			g_vpp_box[i].venc_shm = NULL;
-		}
-
 		if (strlen(g_vpp_box[i].m_bpu_handle.m_model_name) == 0)
 			continue;
 		ret = bpu_wrap_deinit(&g_vpp_box[i].m_bpu_handle);
@@ -558,6 +529,37 @@ int32_t vpp_box_start(void)
 		ret = vp_vse_start(vp_vflow_contex);
 		ret |= vp_vflow_start(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vp_vse_start or vp_vflow_start failed");
+
+		if(g_vpp_box[i].venc_shm == NULL) {
+			T_SDK_VENC_INFO venc_chn_info;
+
+			media_codec_context_t *codec_context = &g_vpp_box[i].m_encode_context;
+			media_codec_id_t codec_type = codec_context->codec_id;
+
+			venc_chn_info.channel = i;
+			ret = SDK_Cmd_Impl(SDK_CMD_VPP_VENC_CHN_PARAM_GET, (void*)&venc_chn_info);
+
+			char shm_id[32] = {0}, shm_name[32] = {0};
+			sprintf(shm_id, "cam_id_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
+					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
+					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), i);
+			sprintf(shm_name, "name_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
+					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
+					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), i);
+			g_vpp_box[i].venc_shm = shm_stream_create(shm_id, shm_name,
+					STREAM_MAX_USER, venc_chn_info.suggest_buffer_item_count,
+					venc_chn_info.suggest_buffer_region_size,
+					SHM_STREAM_WRITE, SHM_STREAM_MALLOC);
+
+			SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, max user: %d, framerate: %d, stream_buf_size: %d bitrate:%d region size:%d, item count %d.",
+				shm_id, shm_name, STREAM_MAX_USER,
+				venc_chn_info.framerate, venc_chn_info.stream_buf_size, venc_chn_info.bitrate,
+				venc_chn_info.suggest_buffer_region_size, venc_chn_info.suggest_buffer_item_count);
+		}else{
+			SC_LOGE("channel %d's venc_shm is not null, exit(-1)", i);
+			exit(-1);
+		}
+
 
 		if (g_vpp_box[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
 			ret = vp_codec_start(&g_vpp_box[i].m_encode_context);
@@ -615,6 +617,11 @@ int32_t vpp_box_stop(void)
 		}
 		if (g_vpp_box[i].m_decode_context.codec_id != MEDIA_CODEC_ID_NONE) {
 			mThreadStop(&g_vpp_box[i].m_vdec_thread);
+		}
+
+		if(g_vpp_box[i].venc_shm != NULL){
+			shm_stream_destory(g_vpp_box[i].venc_shm);
+			g_vpp_box[i].venc_shm = NULL;
 		}
 	}
 
@@ -695,38 +702,35 @@ int32_t vpp_box_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 				return -1;
 			}
 
-			for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
-				if (g_vpp_box[i].m_encode_context.codec_id == MEDIA_CODEC_ID_NONE) {
-					continue;
-				}
-				enc_params = &g_vpp_box[i].m_encode_context.video_enc_params;
-				param->enable = 1;
-				param->width = enc_params->width;
-				param->height = enc_params->height;
-				param->stream_buf_size = enc_params->bitstream_buf_size;
-				if (g_vpp_box[i].m_encode_context.codec_id == MEDIA_CODEC_ID_H264) {
-					param->type = 96;
-					param->bitrate = enc_params->rc_params.h264_cbr_params.bit_rate;
-					param->framerate = enc_params->rc_params.h264_cbr_params.frame_rate;
-				} else if (g_vpp_box[i].m_encode_context.codec_id == MEDIA_CODEC_ID_H265) {
-					param->type = 265;
-					param->bitrate = enc_params->rc_params.h265_cbr_params.bit_rate;
-					param->framerate = enc_params->rc_params.h265_cbr_params.frame_rate;
-				} else {
-					SC_LOGE("unsupport codec_id %d, so exit.", g_vpp_box[i].m_encode_context.codec_id);
-					exit(-1);
-				}
-				SC_LOGT("g_vpp_box[i].m_encode_context.codec_id: %d", g_vpp_box[i].m_encode_context.codec_id);
-				SC_LOGT("Instance Index: %d", g_vpp_box[i].m_encode_context.instance_index);
-				SC_LOGT("Param Channel: %d", param->channel);
-				SC_LOGT("Param Enable: %d", param->enable);
-				SC_LOGT("Param Width: %d", param->width);
-				SC_LOGT("Param Height: %d", param->height);
-				SC_LOGT("Param Stream Buffer Size: %d", param->stream_buf_size);
-				SC_LOGT("Param Type: %d", param->type);
-				SC_LOGT("Param Bitrate: %d", param->bitrate);
-				SC_LOGT("Param Framerate: %d", param->framerate);
+			enc_params = &g_vpp_box[param->channel].m_encode_context.video_enc_params;
+			param->enable = 1;
+			param->width = enc_params->width;
+			param->height = enc_params->height;
+			param->stream_buf_size = enc_params->bitstream_buf_size;
+			if (g_vpp_box[param->channel].m_encode_context.codec_id == MEDIA_CODEC_ID_H264) {
+				param->type = 96;
+				param->bitrate = enc_params->rc_params.h264_cbr_params.bit_rate;
+				param->framerate = enc_params->rc_params.h264_cbr_params.frame_rate;
+			} else if (g_vpp_box[param->channel].m_encode_context.codec_id == MEDIA_CODEC_ID_H265) {
+				param->type = 265;
+				param->bitrate = enc_params->rc_params.h265_cbr_params.bit_rate;
+				param->framerate = enc_params->rc_params.h265_cbr_params.frame_rate;
+			} else {
+				SC_LOGE("unsupport codec_id %d, so exit.", g_vpp_box[param->channel].m_encode_context.codec_id);
+				exit(-1);
 			}
+			vp_codec_get_user_buffer_param(enc_params, &param->suggest_buffer_region_size,
+					&param->suggest_buffer_item_count);
+			SC_LOGW("Codec_id: %d", g_vpp_box[param->channel].m_encode_context.codec_id);
+			SC_LOGW("Instance Index: %d", g_vpp_box[param->channel].m_encode_context.instance_index);
+			SC_LOGW("Param Channel: %d", param->channel);
+			SC_LOGW("Param Enable: %d", param->enable);
+			SC_LOGW("Param Width: %d", param->width);
+			SC_LOGW("Param Height: %d", param->height);
+			SC_LOGW("Param Stream Buffer Size: %d", param->stream_buf_size);
+			SC_LOGW("Param Type: %d", param->type);
+			SC_LOGW("Param Bitrate: %d", param->bitrate);
+			SC_LOGW("Param Framerate: %d", param->framerate);
 			break;
 		}
 	case SOLUTION_GET_VENC_CHN_STATUS: // 获取哪些编码通道被使能了

@@ -139,8 +139,16 @@ static int ws_send_h265_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_s
 	}else{
 		usleep(20);
 	}
+#else
+	frame_info info;
+	unsigned int length = 0;
+	unsigned int frame_size = 0;
+	if (shm_stream_front(shm_source, &info, &data, &length) == 0) {
+		frame_size = length;
+		shm_stream_post(shm_source);
+	}
 #endif
-	return 0;
+	return frame_size;
 }
 
 
@@ -154,11 +162,12 @@ static int ws_send_h264_shm_stream_to_wfs(ws_client *ws_clt, shm_stream_t *shm_s
 	if (shm_stream_front(shm_source, &info, &data, &length) == 0) {
 		NALU_t nalu;
 		frame_size = length;
-
 		int ret = get_annexb_nalu(data + *nalu_len, frame_size - *nalu_len, &nalu, 0);
 		if (ret < 0) {
-			SC_LOGE("shm_source [%s] data: %p length: %u *nalu_len: %d readers:%d",
-					 shm_source->name, data, length, *nalu_len, shm_stream_readers(shm_source));
+			int remains = shm_stream_remains(shm_source);
+
+			SC_LOGE("shm_source [%s] data: %p length: %u *nalu_len: %d readers:%d, remains:%d.",
+					 shm_source->name, data, length, *nalu_len, shm_stream_readers(shm_source), remains);
 			*nalu_len = 0;
 			shm_stream_post(shm_source);
 			return -1;
@@ -252,7 +261,7 @@ static void *ws_push_stream_thread(void *ptr)
 		}
 
 		if(ret == 0){ // 没有读取到数据, 延迟10ms 防止线程空转导致CPU 100%
-			usleep(10 * 1000);
+			usleep(1 * 1000);
 		}
 	}
 	for (int i = 0; i < ws_clt->stream_count; i++) {
@@ -321,14 +330,16 @@ static int _do_start_stream(ws_client *ws_clt)
 			SC_LOGE("not support codec type [%d], so use default type :h264.", type);
 		}
 
-		SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
-			shm_id, shm_name, STREAM_MAX_USER, venc_chn_info.framerate, venc_chn_info.stream_buf_size);
-
 		ws_clt->shm_source[i] = shm_stream_create(shm_id, shm_name,
-			STREAM_MAX_USER, venc_chn_info.framerate,
-			venc_chn_info.stream_buf_size,
+			STREAM_MAX_USER, venc_chn_info.suggest_buffer_item_count,
+			venc_chn_info.suggest_buffer_region_size,
 			SHM_STREAM_READ, SHM_STREAM_MALLOC);
 
+		SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, max user: %d, framerate: %d, \
+				stream_buf_size: %d bitrate:%d region size:%d, item count %d.",
+			shm_id, shm_name, STREAM_MAX_USER,
+			venc_chn_info.framerate, venc_chn_info.stream_buf_size, venc_chn_info.bitrate,
+			venc_chn_info.suggest_buffer_region_size, venc_chn_info.suggest_buffer_item_count);
 
 		if (ws_clt->shm_source[i] != NULL) {
 			printf("shm_source is successfully created\n");
@@ -390,10 +401,14 @@ static int _do_add_sms(int channel)
 	sms_param.stream_buf_size = venc_chn_info.stream_buf_size;
 	sms_param.video.framerate = venc_chn_info.framerate;
 
-	SC_LOGI("prefix: %s, port: %d, video_framerate: %d, shm_id: %s, shm_name: %s, stream_buf_size: %d",
+	sms_param.suggest_buffer_item_count = venc_chn_info.suggest_buffer_item_count;
+	sms_param.suggest_buffer_region_size = venc_chn_info.suggest_buffer_region_size;
+
+	SC_LOGI("prefix: %s, port: %d, video_framerate: %d, shm_id: %s, shm_name: %s, stream_buf_size: %d, region size %d, item count %d.",
 		sms_param.prefix, sms_param.port,
 		sms_param.video.framerate,
-		sms_param.shm_id, sms_param.shm_name, sms_param.stream_buf_size);
+		sms_param.shm_id, sms_param.shm_name, sms_param.stream_buf_size,
+		sms_param.suggest_buffer_region_size, sms_param.suggest_buffer_item_count);
 
 	ret = SDK_Cmd_Impl(SDK_CMD_RTSP_SERVER_ADD_SMS, (void*)&sms_param);
 	if(ret < 0)

@@ -24,9 +24,11 @@ SOFTWARE.
 #define _DATASTRUCTURES_H
 
 #include "Includes.h"
+#include "utils/time_utils.h"
 #include "utils/mthread.h"
 #include "utils/stream_define.h"
 #include "utils/stream_manager.h"
+#include "utils/utils_log.h"
 
 typedef enum {
 	CONTINUE,
@@ -98,7 +100,7 @@ typedef struct {
 typedef struct ws_client_n {
 	int socket_id;
 	char *client_ip;
-	char *string;	
+	char *string;
 	pthread_t thread_id;
 	ws_header *headers;
 	ws_message *message;

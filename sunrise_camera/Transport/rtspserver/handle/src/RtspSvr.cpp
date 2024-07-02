@@ -224,13 +224,15 @@ bool CRtspServer::Restart()
 bool CRtspServer::DynamicAddSms(const char* streamName,
 	bool audioEnable, int audioType, int audioSampleRate, int audioBitPerSample,
 	int audioChannels, bool videoEnable, int videoType, int videoFrameRate,
-	char *shmId, char *shmName, int streamBufSize, int frameRate)
+	char *shmId, char *shmName, int streamBufSize, int frameRate,
+	int suggest_buffer_region_size, int suggest_buffer_item_count)
 {
 	SC_LOGI("Add sms <%s>.", streamName);
-	bool is_ok = DynamicProcessSmsCommonProcess(1, streamName, 
+	bool is_ok = DynamicProcessSmsCommonProcess(1, streamName,
 		audioEnable, audioType, audioSampleRate, audioBitPerSample,
 		audioChannels, videoEnable, videoType, videoFrameRate,
-		shmId, shmName, streamBufSize, frameRate);
+		shmId, shmName, streamBufSize, frameRate,
+		suggest_buffer_region_size, suggest_buffer_item_count);
 	if(!is_ok){
 		SC_LOGE("Add sms <%s> failed.", streamName);
 		return false;
@@ -246,10 +248,11 @@ bool CRtspServer::DynamicDelSms(const char* streamName)
 	Boolean const smsExists = (sms != NULL);
 
 	if (smsExists) {
-		bool is_ok = DynamicProcessSmsCommonProcess(0, streamName, 
+		bool is_ok = DynamicProcessSmsCommonProcess(0, streamName,
 			false, 0, 0, 0,
 			0, false, 0, 0,
-			NULL, NULL, 0, 0);
+			NULL, NULL, 0, 0,
+			0, 0);
 		if(!is_ok){
 			SC_LOGE("Del sms <%s> failed.", streamName);
 			return false;
@@ -276,13 +279,15 @@ void CRtspServer::DynamicAddSmsInternal(CRtspServer *rtsp_server, struct SmsPara
 
 		sms->addSubsession(H264VideoLiveServerMediaSubsession::createNew(*(rtsp_server->m_env),
 		 reuseFirstSource, sms_param->shmId, sms_param->shmName,
-		 sms_param->streamBufSize, sms_param->frameRate));
+		 sms_param->streamBufSize, sms_param->frameRate,
+		 sms_param->suggest_buffer_region_size, sms_param->suggest_buffer_item_count));
 	}else if(sms_param->videoEnable && sms_param->videoType == RTSPSRV_VIDEO_TYPE_H265){
 		sms = ServerMediaSession::createNew(*(rtsp_server->m_env),
 		 sms_param->streamName, sms_param->streamName, "H.265 video elementary stream", True);
 		sms->addSubsession(H265VideoLiveServerMediaSubsession::createNew(*(rtsp_server->m_env),
 		 reuseFirstSource, sms_param->shmId, sms_param->shmName,
-		 sms_param->streamBufSize, sms_param->frameRate));
+		 sms_param->streamBufSize, sms_param->frameRate,
+		 sms_param->suggest_buffer_region_size, sms_param->suggest_buffer_item_count));
 	}else{
 		SC_LOGE("Stream <%s> recv unsupport video type :%d.", sms_param->streamName, sms_param->videoType);
 		return;
@@ -363,7 +368,8 @@ void CRtspServer::AsyncProcessSms(void *param){
 bool CRtspServer::DynamicProcessSmsCommonProcess(int actionType, const char*streamName,
 	bool audioEnable, int audioType, int audioSampleRate, int audioBitPerSample,
 	int audioChannels, bool videoEnable, int videoType, int videoFrameRate,
-	char *shmId, char *shmName, int streamBufSize, int frameRate){
+	char *shmId, char *shmName, int streamBufSize, int frameRate,
+	int suggest_buffer_region_size, int suggest_buffer_item_count){
 
 	//异步得方式：删除sms
 	SmsParam *sms_param = (SmsParam *)malloc(sizeof(SmsParam));
@@ -398,6 +404,8 @@ bool CRtspServer::DynamicProcessSmsCommonProcess(int actionType, const char*stre
 	sms_param->videoFrameRate = videoFrameRate;
 	sms_param->streamBufSize = streamBufSize;
 	sms_param->frameRate = frameRate;
+	sms_param->suggest_buffer_item_count = suggest_buffer_item_count;
+	sms_param->suggest_buffer_region_size = suggest_buffer_region_size;
 
 	int ret = cqueue_enqueue(&m_sms_action_queue, sms_param);
 	if(ret != 0){

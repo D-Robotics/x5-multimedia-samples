@@ -46,6 +46,8 @@ typedef struct
 	char shm_id[32];
 	char shm_name[32];
 	int stream_buf_size;
+	int suggest_buffer_item_count;
+	int suggest_buffer_region_size;
 }rtspserver_info_t;
 
 #ifdef __cplusplus

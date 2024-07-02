@@ -579,6 +579,28 @@ int32_t vp_codec_restart(media_codec_context_t *context)
 	SC_LOGD("%s idx: %d, successful", context->encoder ? "Encode" : "Decode", context->instance_index);
 	return 0;
 }
+void vp_codec_get_user_buffer_param(mc_video_codec_enc_params_t *enc_param, int *buffer_region_size, int *buffer_item_count){
+	int bitrate_byte = enc_param->rc_params.h264_cbr_params.bit_rate * 1024 / 8; //bit_rate单位是kbps
+	int frame_rate = enc_param->rc_params.h264_cbr_params.frame_rate;
+	int min_buffer_region_size = enc_param->bitstream_buf_size;
+	int min_buffer_item_count = 5;
+
+	bitrate_byte = bitrate_byte + bitrate_byte / 5; // 添加余量
+	if(bitrate_byte < min_buffer_region_size){
+		*buffer_region_size = min_buffer_region_size;
+		SC_LOGD("bit_rate %d too simal than min buffer region size %d, so use min buffer region size.",
+			bitrate_byte, min_buffer_region_size);
+	}else{
+		*buffer_region_size = bitrate_byte;
+	}
+
+	if(frame_rate < min_buffer_item_count){
+		*buffer_item_count = min_buffer_item_count;
+		SC_LOGW("frame_rate %d too simal than min rate %d, so use min value.", frame_rate, min_buffer_item_count);
+	}else{
+		*buffer_item_count = frame_rate;
+	}
+}
 
 // for debug
 int32_t vp_codec_set_input_single_file(media_codec_context_t *context, ImageFrame *frame, int32_t eos)

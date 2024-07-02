@@ -12,7 +12,8 @@ int rtspsvr_wrap_restart(void* instance);
 int rtspsvr_wrap_add_sms(void* instance, const char* streamName,
 	int audioEnable, int audioType, int audioSampleRate, int audioBitPerSample,
 	int audioChannels, int videoEnable, int videoType, int videoFrameRate,
-	char *shmId, char *shmName, int streamBufSize, int frameRate);
+	char *shmId, char *shmName, int streamBufSize, int frameRate,
+	int suggest_buffer_region_size, int suggest_buffer_item_count);
 int rtspsvr_wrap_del_sms(void* instance, const char* streamName);
 #if 0
 int rtspsvr_wrap_h264_data_put(void* instance, frame_info info, unsigned char* data, unsigned int length);

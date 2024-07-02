@@ -112,13 +112,15 @@ int rtsp_server_add_sms(void* param, unsigned int length)
 		sms_param->audio.bitspersample, sms_param->audio.channels,
 		sms_param->video.enable, sms_param->video.type, sms_param->video.framerate,
 		sms_param->shm_id, sms_param->shm_name, sms_param->stream_buf_size,
-		sms_param->video.framerate);
+		sms_param->video.framerate, sms_param->suggest_buffer_region_size,
+		sms_param->suggest_buffer_item_count);
 	if(ret != 0){
 		SC_LOGE("rtspsvr_wrap_add_sms failed stream_buf_size: %d, framerate:%d\n",
 		sms_param->stream_buf_size, sms_param->video.framerate);
 	}
-	SC_LOGI("rtsp_server_add_sms stream_buf_size: %d, framerate:%d\n",
-		sms_param->stream_buf_size, sms_param->video.framerate);
+	SC_LOGI("rtsp_server_add_sms stream_buf_size: %d, framerate:%d [%d:%d]\n",
+		sms_param->stream_buf_size, sms_param->video.framerate,
+		sms_param->suggest_buffer_region_size, sms_param->suggest_buffer_item_count);
 
 	// 从参数数组中找个空位置把配置保存下来，删除sms的时候可以直接用
 	for (i = 0; i < 8; i++) {

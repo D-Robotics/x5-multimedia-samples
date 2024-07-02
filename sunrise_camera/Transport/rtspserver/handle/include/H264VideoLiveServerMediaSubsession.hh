@@ -31,7 +31,8 @@ class H264VideoLiveServerMediaSubsession : public OnDemandServerMediaSubsession 
 public:
 	static H264VideoLiveServerMediaSubsession*
 		createNew(UsageEnvironment& env, Boolean reuseFirstSource,
-			char *shmId, char *shmName, int streamBufSize, int frameRate);
+			char *shmId, char *shmName, int streamBufSize, int frameRate,
+			int buffer_region_size, int buffer_item_count);
 
 	// Used to implement "getAuxSDPLine()":
 	void checkForAuxSDPLine1();
@@ -39,7 +40,8 @@ public:
 
 protected:
 	H264VideoLiveServerMediaSubsession(UsageEnvironment& env, Boolean reuseFirstSource,
-		char *shmId, char *shmName, int streamBufSize, int frameRate);
+		char *shmId, char *shmName, int streamBufSize, int frameRate,
+		int buffer_region_size, int buffer_item_count);
 	// called only by createNew();
 	virtual ~H264VideoLiveServerMediaSubsession();
 
@@ -76,6 +78,8 @@ private:
 	char fShmName[32];
 	int fStreamBufSize;
 	int fFrameRate;
+	int fBufferRegionSize;
+	int fBufferItemCount;
 };
 
 #endif

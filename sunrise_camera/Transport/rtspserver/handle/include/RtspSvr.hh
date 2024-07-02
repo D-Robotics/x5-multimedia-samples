@@ -25,6 +25,8 @@ struct SmsParam{
 	char shmName[32];
 	int streamBufSize;
 	int frameRate;
+	int suggest_buffer_item_count;
+	int suggest_buffer_region_size;
 };
 
 class CRtspServer
@@ -40,12 +42,14 @@ public:
 	bool DynamicAddSms(const char* streamName,
 		bool audioEnable, int audioType, int audioSampleRate, int audioBitPerSample,
 		int audioChannels, bool videoEnable, int videoType, int videoFrameRate,
-		char *shmId, char *shmName, int streamBufSize, int frameRate);
+		char *shmId, char *shmName, int streamBufSize, int frameRate,
+		int suggest_buffer_region_size, int suggest_buffer_item_count);
 	bool DynamicDelSms(const char* streamName);
 	bool DynamicProcessSmsCommonProcess(int actionType, const char*streamName,
 		bool audioEnable, int audioType, int audioSampleRate, int audioBitPerSample,
 		int audioChannels, bool videoEnable, int videoType, int videoFrameRate,
-		char *shmId, char *shmName, int streamBufSize, int frameRate);
+		char *shmId, char *shmName, int streamBufSize, int frameRate,
+		int suggest_buffer_region_size, int suggest_buffer_item_count);
 	/*H264VideoLiveServerMediaSubsession* m_h264_subsession;*/
 	/*PCMAAudioLiveServerMediaSubsession* m_PCMA_subsession;*/
 

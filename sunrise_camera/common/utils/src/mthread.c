@@ -33,7 +33,70 @@ static void thread_signal_handler(int sig)
 	pthread_t self_id = pthread_self(); // 获取当前线程ID
 	printf("Signal %d received in thread %lu\n", sig, self_id);
 }
+teThreadStatus mThreadStartHighPriority(tprThreadFunction prThreadFunction, tsThread *psThreadInfo, teThreadDetachState eDetachState)
+{
+	psThreadInfo->eState = E_THREAD_STOPPED;
+	psThreadInfo->eThreadDetachState = eDetachState;
 
+	static int iFirstTime = 1;
+	if (iFirstTime)
+	{
+		/* Set up sigmask to receive configured signal in the main thread.
+		* All created threads also get this signal mask, so all threads
+		* get the signal. But we can use pthread_signal to direct it at one.
+		*/
+		struct sigaction sa;
+		sa.sa_handler = thread_signal_handler;
+		sa.sa_flags = 0;
+		sigemptyset(&sa.sa_mask);
+
+		if (sigaction(THREAD_SIGNAL, &sa, NULL) == -1)
+		{
+			printf("sigaction:%s\n", strerror(errno));
+		}
+		else
+		{
+			printf("Signal action registered\n\r");
+			iFirstTime = 0;
+		}
+	}
+
+	pthread_attr_t attr;
+    struct sched_param param;
+
+    pthread_attr_init(&attr);
+
+    // 设置调度策略为 SCHED_FIFO
+    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+
+    // 设置优先级为 1
+    param.sched_priority = 1;
+    pthread_attr_setschedparam(&attr, &param);
+	errno = pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+	if(errno != 0)
+	{
+		perror("setinherit failed\n");
+		return E_THREAD_ERROR_FAILED;
+	}
+	psThreadInfo->eState = E_THREAD_RUNNING;
+	if (pthread_create(&psThreadInfo->pThread_Id, &attr, prThreadFunction, psThreadInfo))
+	{
+		printf("Could not start thread:%s\n", strerror(errno));
+		return E_THREAD_ERROR_FAILED;
+	}
+
+	if (eDetachState == E_THREAD_DETACHED)
+	{
+		printf("Detach Thread %p\n", psThreadInfo);
+		if (pthread_detach(psThreadInfo->pThread_Id))
+		{
+			printf("pthread_detach():%s\n", strerror(errno));
+			return E_THREAD_ERROR_FAILED;
+		}
+	}
+	printf("Create Thread %p\n", psThreadInfo);
+	return  E_THREAD_OK;
+}
 
 // 启动线程
 teThreadStatus mThreadStart(tprThreadFunction prThreadFunction, tsThread *psThreadInfo, teThreadDetachState eDetachState)
@@ -143,7 +206,7 @@ teThreadStatus mThreadStop(tsThread *psThreadInfo)
 				break;
 			}
 			if(wait_count % 100 == 0){
-				printf("waited [%d] second for thread [%s:%lu] complete stop, current state %s.\n", 
+				printf("waited [%d] second for thread [%s:%lu] complete stop, current state %s.\n",
 				wait_count/100, psThreadInfo->pThread_Name, psThreadInfo->pThread_Id,
 				mThreadStateString(psThreadInfo->eState));
 			}

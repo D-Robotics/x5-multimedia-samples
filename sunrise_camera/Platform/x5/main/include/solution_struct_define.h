@@ -98,6 +98,8 @@ typedef struct{
 	int			cvbr;		// 码率控制方式 定码率 变码率
 	int			minqp;
 	int			maxqp;
+	int         suggest_buffer_region_size;
+	int 		suggest_buffer_item_count;
 }venc_info_t;
 
 typedef struct{

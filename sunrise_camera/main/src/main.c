@@ -41,7 +41,7 @@ static int32_t _do_add_sms(int32_t channel)
 	T_SDK_RTSP_SRV_PARAM sms_param = { 0 };
 	int32_t type = venc_chn_info.type;
 	char *codec_type_string = "h264";
-	
+
 
 	sms_param.audio.enable = 0;
 
@@ -50,8 +50,8 @@ static int32_t _do_add_sms(int32_t channel)
 		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H264;
 		codec_type_string = "h264";
 	}else if(type == 265){
-		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H265; 
-		codec_type_string = "h265";		
+		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_H265;
+		codec_type_string = "h265";
 	}else if(type == 26){
 		sms_param.video.type = T_SDK_RTSP_VIDEO_TYPE_MJPEG;
 		codec_type_string = "jpeg";
@@ -71,10 +71,16 @@ static int32_t _do_add_sms(int32_t channel)
 
 	sms_param.stream_buf_size = venc_chn_info.stream_buf_size;
 	sms_param.video.framerate = venc_chn_info.framerate;
-	SC_LOGI("prefix: %s, port: %d, video_framerate: %d, shm_id: %s, shm_name: %s, stream_buf_size: %d",
+
+	sms_param.suggest_buffer_item_count = venc_chn_info.suggest_buffer_item_count;
+	sms_param.suggest_buffer_region_size = venc_chn_info.suggest_buffer_region_size;
+
+	SC_LOGI("prefix: %s, port: %d, video_framerate: %d, shm_id: %s, shm_name: %s, stream_buf_size: %d, region size %d, item count %d.",
 		sms_param.prefix, sms_param.port,
 		sms_param.video.framerate,
-		sms_param.shm_id, sms_param.shm_name, sms_param.stream_buf_size);
+		sms_param.shm_id, sms_param.shm_name, sms_param.stream_buf_size,
+		sms_param.suggest_buffer_region_size, sms_param.suggest_buffer_item_count);
+
 	ret = SDK_Cmd_Impl(SDK_CMD_RTSP_SERVER_ADD_SMS, (void*)&sms_param);
 	if(ret < 0)
 	{

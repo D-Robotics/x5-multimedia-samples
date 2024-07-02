@@ -15,6 +15,7 @@
 #include "communicate/sdk_common_struct.h"
 #include "communicate/sdk_communicate.h"
 
+#include "utils/nalu_utils.h"
 #include "utils/utils_log.h"
 #include "utils/cqueue.h"
 #include "utils/common_utils.h"
@@ -128,7 +129,15 @@ static void* venc_get_stream_proc(void *ptr)
 
 	mThreadSetName(privThread, __func__);
 #if 0
-	char enc_file_name [100];
+	int is_a = 0;
+	uint64_t start_time = -1;
+	char *current_file_name = NULL;
+
+	char enc_file_name_a [100];
+	char enc_file_name_b [100];
+	sprintf(enc_file_name_a, "/userdata/ch_%d_a.h264", vpp_camera->pipline_id);
+	sprintf(enc_file_name_b, "/userdata/ch_%d_b.h264", vpp_camera->pipline_id);
+
 	FILE *enc_data_file = NULL;
 #endif
 
@@ -169,13 +178,45 @@ static void* venc_get_stream_proc(void *ptr)
 		//for debug
 		{
 			#if 0
-			if(enc_data_file == NULL){
-				sprintf(enc_file_name, "/tmp/ch_%d_box_enc_output_%dx%d_nv12_.h265",
-					vpp_camera->pipline_id, vse_frame.width, vse_frame.height);
+			uint64_t current_time = get_timestamp_ms();
+			if((current_time - start_time) > 2 * 60 * 1000){
+				start_time = current_time;
 
-				enc_data_file = fopen(enc_file_name, "wb");
-				if(enc_data_file == NULL){
-					SC_LOGE("open file %s failed.", (char *)enc_file_name);
+				if(enc_data_file != NULL){
+					fclose(enc_data_file);
+					enc_data_file = NULL;
+				}
+
+				if(is_a){
+					is_a = 0;
+					current_file_name = enc_file_name_b;
+				}else{
+					is_a = 1;
+					current_file_name = enc_file_name_a;
+				}
+
+				if (access(current_file_name, F_OK) == 0) {
+					ret = unlink(current_file_name);
+					SC_LOGI("remove old file: %s, ret:%d", current_file_name, ret);
+				}
+			}
+			if(enc_data_file == NULL){
+				unsigned char* start_tmp = (unsigned char*)encode_stream.frame_buffer->vstream_buf.vir_ptr;
+				int len_tmp = encode_stream.frame_buffer->vstream_buf.size;
+				NALU_t nalu_tmp;
+				ret = get_annexb_nalu(start_tmp, len_tmp, &nalu_tmp, 0);
+				if (ret < 0) {
+					SC_LOGE("get_annexb_nalu failed.");
+				}else{
+					if(nalu_tmp.nal_unit_type == 7){
+						enc_data_file = fopen(current_file_name, "wb");
+						if(enc_data_file == NULL){
+							SC_LOGE("open file %s failed.", (char *)current_file_name);
+						}
+					}else{
+						SC_LOGI("ingore %d", nalu_tmp.nal_unit_type);
+					}
+
 				}
 			}
 			if(enc_data_file != NULL){
@@ -183,7 +224,7 @@ static void* venc_get_stream_proc(void *ptr)
 					1, encode_stream.frame_buffer->vstream_buf.size, enc_data_file);
 				if (elementsWritten != encode_stream.frame_buffer->vstream_buf.size) {
 					SC_LOGE("write file %s failed, size %d, return %d.",
-						(char *)enc_file_name, encode_stream.frame_buffer->vstream_buf.size, elementsWritten);
+						(char *)current_file_name, encode_stream.frame_buffer->vstream_buf.size, elementsWritten);
 				}
 			}
 			#endif
@@ -498,12 +539,14 @@ int32_t vpp_camera_start(void)
 					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
 					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), venc_ist_id);
 			g_vpp_camera[i].venc_shm = shm_stream_create(shm_id, shm_name,
-					STREAM_MAX_USER, venc_chn_info.framerate,
-					venc_chn_info.stream_buf_size,
+					STREAM_MAX_USER, venc_chn_info.suggest_buffer_item_count,
+					venc_chn_info.suggest_buffer_region_size,
 					SHM_STREAM_WRITE, SHM_STREAM_MALLOC);
 
-			SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d",
-				shm_id, shm_name, STREAM_MAX_USER, venc_chn_info.framerate, venc_chn_info.stream_buf_size);
+			SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, max user: %d, framerate: %d, stream_buf_size: %d bitrate:%d region size:%d, item count %d.",
+				shm_id, shm_name, STREAM_MAX_USER,
+				venc_chn_info.framerate, venc_chn_info.stream_buf_size, venc_chn_info.bitrate,
+				venc_chn_info.suggest_buffer_region_size, venc_chn_info.suggest_buffer_item_count);
 		}else{
 			SC_LOGE("channel %d's venc_shm is not null, exit(-1)", i);
 			exit(-1);
@@ -610,7 +653,6 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 					param->width = enc_params->width;
 					param->height = enc_params->height;
 					param->stream_buf_size = enc_params->bitstream_buf_size;
-					SC_LOGD("param->stream_buf_size:%d", param->stream_buf_size);
 					if (g_vpp_camera[i].m_encode_context.codec_id == MEDIA_CODEC_ID_H264) {
 						param->type = 96;
 						param->bitrate = enc_params->rc_params.h264_cbr_params.bit_rate;
@@ -619,7 +661,12 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 						param->type = 265;
 						param->bitrate = enc_params->rc_params.h265_cbr_params.bit_rate;
 						param->framerate = enc_params->rc_params.h265_cbr_params.frame_rate;
+					}else{
+						SC_LOGE("unsupport codec id %d.", g_vpp_camera[i].m_encode_context.codec_id);
+						exit(-1);
 					}
+					vp_codec_get_user_buffer_param(enc_params, &param->suggest_buffer_region_size,
+						&param->suggest_buffer_item_count);
 				}
 			}
 			break;

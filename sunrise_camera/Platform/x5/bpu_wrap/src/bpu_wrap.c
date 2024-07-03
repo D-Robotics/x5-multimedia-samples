@@ -377,10 +377,9 @@ static void *inference_fcos(void *ptr)
 	hbPackedDNNHandle_t packed_dnn_handle = bpu_handle->m_packed_dnn_handle;
 	hbDNNHandle_t dnn_handle = bpu_handle->m_dnn_handle;
 
-	SC_LOGI("packed_dnn_handle: %p, dnn_handle: %p", packed_dnn_handle, dnn_handle);
-
 	hbDNNGetOutputCount(&output_count, dnn_handle);
 
+	SC_LOGI("packed_dnn_handle: %p, dnn_handle: %p output count:%d.", packed_dnn_handle, dnn_handle, output_count);
 	// 准备模型输出节点tensor，5组输出buff轮转，简单处理，理论上后处理的速度是要比算法推理更快的
 	hbDNNTensor output_tensors[5][15];
 	int32_t cur_ouput_buf_idx = 0;
@@ -466,7 +465,7 @@ static void *inference_fcos(void *ptr)
 	}
 
 	for (i = 0; i < 5; i++)
-		release_output_tensor(output_tensors[i], 3);	// 释放模型输出资源
+		release_output_tensor(output_tensors[i], output_count);	// 释放模型输出资源
 exit:
 	mThreadFinish(privThread);
 	return NULL;

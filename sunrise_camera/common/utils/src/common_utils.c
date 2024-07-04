@@ -353,6 +353,43 @@ void print_file(const char *file_name)
 	fclose(fp);
 }
 
+
+// 删除指定目录下特定后缀的文件
+void delete_files_with_extension(const char *dir_path, const char *file_extension)
+{
+	DIR *dir;
+	struct dirent *entry;
+
+	dir = opendir(dir_path);
+	if (!dir) {
+		printf("[EEROR] Failed to open directory: %s\n", dir_path);
+		return;
+	}
+
+	size_t ext_len = strlen(file_extension);
+
+	while ((entry = readdir(dir)) != NULL) {
+		if (entry->d_type == DT_REG) { // 只处理普通文件
+			const char *filename = entry->d_name;
+			size_t filename_len = strlen(filename);
+
+			if (filename_len > ext_len && strncmp(filename + filename_len - ext_len, file_extension, ext_len) == 0) {
+				// 如果文件名以指定的后缀结尾
+				char filepath[PATH_MAX];
+				snprintf(filepath, sizeof(filepath), "%s/%s", dir_path, filename);
+				if (remove(filepath) != 0) {
+					printf("[ERROR] Failed to delete file: %s\n", filepath);
+				} else {
+					printf("[INFO] Deleted file: %s\n", filepath);
+				}
+			}
+		}
+	}
+
+	closedir(dir);
+}
+
+
 #ifdef __cplusplus
 }
 #endif

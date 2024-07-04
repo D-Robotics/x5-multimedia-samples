@@ -20,16 +20,16 @@ extern "C"{
 #undef FALSE
 #endif
 
-#define	TRUE	1
+#define TRUE	1
 #define FALSE	0
 
 //执行控制台指令
-int exec_cmd(const char *cmd);	
+int exec_cmd(const char *cmd);
 int exec_cmd_ex(const char *cmd, char* res, int max);
 //执行控制台指令, 判断执行结果是否存在str字符串
 int exec_cmd_chstr_exist(char* cmd, char* str);
 //获取系统剩余内存
-unsigned long get_system_mem_freeKb();		
+unsigned long get_system_mem_freeKb();
 //获取目录剩余存储空间
 unsigned long long get_system_tf_freeKb(char* dir);
 //获取系统自启动时间到现在的tick数
@@ -58,6 +58,8 @@ int str_splite(char* str, char* split, char* des, int rows, int row_size);
 
 //打印文件内容到标准输出
 void print_file(const char *file_name);
+
+void delete_files_with_extension(const char *dir_path, const char *file_extension);
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(_array)	(sizeof(_array) / sizeof(_array[0]))

@@ -95,6 +95,135 @@ const REQUEST_TYPES = {
 	ALOG_RESULT: 10
 };
 
+window.onload = function() {
+	// 获取 display_container 元素
+	var displayContainer = document.getElementById("display_container");
+
+	for (var i = 0; i < 16; i++) {
+		var layout = i + 1;
+
+		// 创建布局容器
+		var layoutDiv = document.createElement("div");
+
+		// 设置布局容器的 id
+		layoutDiv.id = "layout" + (i + 1);
+
+		// 添加类名
+		layoutDiv.className = "layout";
+
+		// 将布局容器添加到 display_container 中
+		displayContainer.appendChild(layoutDiv);
+
+		// 循环生成视频容器
+		for (var j = 0; j < layout; j++) {
+			// 创建视频容器
+			var videoContainer = document.createElement("div");
+			videoContainer.className = "video-container";
+
+			// 创建 video 元素
+			var video = document.createElement("video");
+			video.id = "video" + (i + 1) + "_" + (j + 1);
+			video.muted = true;
+			video.autoplay = true;
+
+			// 创建 canvas 元素
+			var canvas = document.createElement("canvas");
+			canvas.id = "canvas" + (i + 1) + "_" + (j + 1);
+			canvas.className = "canvas";
+
+			// 创建 overlay 元素
+			var overlay = document.createElement("div");
+			overlay.id = "status" + (i + 1) + "_" + (j + 1);
+			overlay.className = "overlay";
+			overlay.style.display = "block";
+
+			// 创建 overlay_alog 元素
+			var overlayAlog = document.createElement("div");
+			overlayAlog.id = "alog_result" + (i + 1) + "_" + (j + 1);
+			overlayAlog.className = "overlay_alog";
+			overlayAlog.style.display = "block";
+
+			// 创建抓拍按钮容器
+			var captureButtonContainer = document.createElement("div");
+			captureButtonContainer.id = "capture_buttons" + (i + 1) + "_" + (j + 1);
+			captureButtonContainer.className = "capture-button-container";
+
+			// 创建抓拍按钮
+			var captureRawButton = createCaptureButton("RAW", "Sensor 原始 RAW 图", i + 1, j + 1);
+			var captureIspButton = createCaptureButton("ISP", "ISP 调校的 YUV 图", i + 1, j + 1);
+			var captureVseButton = createCaptureButton("VSE", "VSE 处理的 YUV 图", i + 1, j + 1);
+
+			// 将按钮添加到按钮容器中
+			captureButtonContainer.appendChild(captureRawButton);
+			captureButtonContainer.appendChild(captureIspButton);
+			captureButtonContainer.appendChild(captureVseButton);
+
+			// 将 video、canvas、overlay、overlayAlog 添加到 videoContainer 中
+			videoContainer.appendChild(video);
+			videoContainer.appendChild(canvas);
+			videoContainer.appendChild(overlay);
+			videoContainer.appendChild(overlayAlog);
+			videoContainer.appendChild(captureButtonContainer);
+
+			// 将 videoContainer 添加到布局容器中
+			layoutDiv.appendChild(videoContainer);
+		}
+	}
+
+	// 创建抓拍按钮的函数
+	function createCaptureButton(mode, tooltip, layoutNum, videoNum) {
+		var captureButton = document.createElement("button");
+		captureButton.className = "capture-button";
+		captureButton.id = "capture_" + mode.toLowerCase() + "_" + layoutNum + "_" + videoNum;
+		captureButton.innerHTML = "📸 " + mode + " <span class='tooltip'>" + tooltip + "</span>";
+		return captureButton;
+	}
+
+	displayContainer.addEventListener("click", function(event) {
+		var target = event.target;
+		if (target.classList.contains("capture-button")) {
+			var buttonId = target.id;
+			switch (true) {
+				case buttonId.startsWith("capture_raw"):
+					var layoutNum = buttonId.split("_")[2];
+					var videoNum = buttonId.split("_")[3];
+					console.log("Clicked RAW capture button for layout " + layoutNum + ", video " + videoNum);
+					var cmdData = {
+						type: 'vin',
+						format: 'raw',
+						videoNum: videoNum
+					};
+					ws_send_cmd(REQUEST_TYPES.SNAPSHOT, cmdData); // 抓拍
+					break;
+				case buttonId.startsWith("capture_isp"):
+					var layoutNum = buttonId.split("_")[2];
+					var videoNum = buttonId.split("_")[3];
+					console.log("Clicked ISP capture button for layout " + layoutNum + ", video " + videoNum);
+					var cmdData = {
+						type: 'isp',
+						format: 'yuv',
+						videoNum: videoNum
+					};
+					ws_send_cmd(REQUEST_TYPES.SNAPSHOT, cmdData); // 抓拍
+					break;
+				case buttonId.startsWith("capture_vse"):
+					var layoutNum = buttonId.split("_")[2];
+					var videoNum = buttonId.split("_")[3];
+					console.log("Clicked VSE capture button for layout " + layoutNum + ", video " + videoNum);
+					var cmdData = {
+						type: 'vse',
+						format: 'yuv',
+						videoNum: videoNum
+					};
+					ws_send_cmd(REQUEST_TYPES.SNAPSHOT, cmdData); // 抓拍
+					break;
+				default:
+					break;
+			}
+		}
+	});
+};
+
 function update_solution_status(solutions_config) {
 	// 获取状态显示的DOM元素
 	const solution_status = document.getElementById("solution_status");
@@ -383,6 +512,19 @@ function adjust_layout(num_videos) {
 			videos.push(video);
 			// 监听视频准备就绪事件
 			video.addEventListener('loadeddata', handleLoadedData(i));
+		}
+	}
+
+	// 获取单选按钮元素
+	var radioButton = document.getElementById("cam_solution");
+
+	// 如果选择的方案是智能摄像机，显示抓拍按键
+	if (radioButton.checked) {
+		for (var i = 1; i <= num_videos; i++) {
+			var capture_buttons = document.getElementById(`capture_buttons${num_videos}_${i}`);
+			if (capture_buttons) {
+				capture_buttons.style.display = "flex";
+			}
 		}
 	}
 }
@@ -1058,14 +1200,6 @@ function save_solution_configs() {
 
 function recovery_solution_configs() {
 	ws_send_cmd(REQUEST_TYPES.RECOVERY_CONFIGS); // 恢复配置
-}
-
-function get_raw_frame() {
-	ws_send_cmd(REQUEST_TYPES.SNAPSHOT, 'raw'); // 抓拍
-}
-
-function get_yuv_frame() {
-	ws_send_cmd(REQUEST_TYPES.SNAPSHOT, 'yuv'); // 抓拍
 }
 
 function open_video() {

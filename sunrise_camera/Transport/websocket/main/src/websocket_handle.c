@@ -51,7 +51,7 @@ int websocket_upload_file(char *file_name)
 		return -1;
 
 	sprintf(upload_file_message, "{\"kind\":2,\"Filename\":\"%s\"}", file_name);
-	// ws_send_message(upload_file_message, strlen(upload_file_message));
+	ws_send_message(upload_file_message, strlen(upload_file_message));
 	return 0;
 }
 

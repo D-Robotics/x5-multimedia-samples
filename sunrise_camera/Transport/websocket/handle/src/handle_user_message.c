@@ -494,24 +494,40 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"Status\":\"200\"}");
 			break;
 		case WS_CMD_SNAP:
-			strcpy(cmd_context, cJSON_GetObjectItem(root, "param")->valuestring);
-			SC_LOGD("WS_CMD_SNAP type: %s", cmd_context);
-			int pipe_dev_id = 0;
-			if (strncmp(cmd_context, "raw", strlen(cmd_context)) == 0) {
-				ret = SDK_Cmd_Impl(SDK_CMD_VPP_GET_RAW_FRAME, (void *)&pipe_dev_id);
-			}
-			else if (strncmp(cmd_context, "yuv", strlen(cmd_context)) == 0) {
-				ret = SDK_Cmd_Impl(SDK_CMD_VPP_GET_YUV_FRAME, (void *)&pipe_dev_id);
-			}
-			else if (strncmp(cmd_context, "jpeg", strlen(cmd_context)) == 0) {
-				ret = SDK_Cmd_Impl(SDK_CMD_VPP_JPEG_SNAP, (void *)&pipe_dev_id);
-			}
-			else {
-				SC_LOGE("WS cmder undefined");
+			cJSON *param_item = cJSON_GetObjectItemCaseSensitive(root, "param");
+			if (!cJSON_IsObject(param_item)) {
+				SC_LOGE("WS_CMD_SNAP: Invalid param received");
+				return -1;
 			}
 
-			if(ret < 0)
-			{
+			cJSON *type_item = cJSON_GetObjectItemCaseSensitive(param_item, "type");
+			cJSON *format_item = cJSON_GetObjectItemCaseSensitive(param_item, "format");
+			cJSON *videoNum_item = cJSON_GetObjectItemCaseSensitive(param_item, "videoNum");
+
+			if (!cJSON_IsString(type_item) || !cJSON_IsString(format_item) || !cJSON_IsString(videoNum_item)) {
+				SC_LOGE("WS_CMD_SNAP: Invalid type or format received");
+				return -1;
+			}
+
+			const char *type = type_item->valuestring;
+			const char *format = format_item->valuestring;
+			// video_id 代表web上的第几个 video 控件，从1开始计数
+			// 需要结合当前使能了多少路pipeline来获取到对应的 pipeline id
+			int32_t video_id = atoi(videoNum_item->valuestring);
+
+			SC_LOGI("WS_CMD_SNAP type: %s, format: %s, videoNum: %d", type, format, video_id);
+
+			if (strcmp(type, "vin") == 0 && strcmp(format, "raw") == 0) {
+				ret = SDK_Cmd_Impl(SDK_CMD_VPP_GET_RAW_FRAME, (void *)&video_id);
+			} else if (strcmp(type, "isp") == 0 && strcmp(format, "yuv") == 0) {
+				ret = SDK_Cmd_Impl(SDK_CMD_VPP_GET_ISP_FRAME, (void *)&video_id);
+			} else if (strcmp(type, "vse") == 0 && strcmp(format, "yuv") == 0) {
+				ret = SDK_Cmd_Impl(SDK_CMD_VPP_GET_VSE_FRAME, (void *)&video_id);
+			} else {
+				SC_LOGE("WS_CMD_SNAP: Undefined command");
+			}
+
+			if (ret < 0) {
 				SC_LOGE("SDK_Cmd_Impl Error, ERRCODE: %d", ret);
 				return -1;
 			}

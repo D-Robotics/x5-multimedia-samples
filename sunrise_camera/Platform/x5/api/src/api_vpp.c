@@ -45,7 +45,8 @@ static sdk_cmd_reg_t cmd_reg[] =
 	{SDK_CMD_VPP_ISP_MODE_SET, 					vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_ADEC_DATA_PUSH, 				vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_GET_RAW_FRAME, 				vpp_cmd_impl,				1},
-	{SDK_CMD_VPP_GET_YUV_FRAME, 				vpp_cmd_impl,				1},
+	{SDK_CMD_VPP_GET_ISP_FRAME, 				vpp_cmd_impl,				1},
+	{SDK_CMD_VPP_GET_VSE_FRAME, 				vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_JPEG_SNAP, 					vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_START_RECORD, 					vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_STOP_RECORD, 					vpp_cmd_impl,				1},
@@ -328,14 +329,29 @@ int32_t vpp_cmd_impl(SDK_CMD_E cmd, void* param)
 			break;
 		}
 		case SDK_CMD_VPP_GET_RAW_FRAME:
-			ret = solution_handle_param_set(SOLUTION_GET_RAW_FRAME, (char*)param, sizeof(int));
+		{
+			uint32_t length = sizeof(int32_t);
+			ret = solution_handle_param_get(SOLUTION_GET_RAW_FRAME, (char*)param, &length);
 			break;
-		case SDK_CMD_VPP_GET_YUV_FRAME:
-			ret = solution_handle_param_set(SOLUTION_GET_YUV_FRAME, (char*)param, sizeof(int));
+		}
+		case SDK_CMD_VPP_GET_ISP_FRAME:
+		{
+			uint32_t length = sizeof(int32_t);
+			ret = solution_handle_param_get(SOLUTION_GET_ISP_FRAME, (char*)param, &length);
 			break;
+		}
+		case SDK_CMD_VPP_GET_VSE_FRAME:
+		{
+			uint32_t length = sizeof(int32_t);
+			ret = solution_handle_param_get(SOLUTION_GET_VSE_FRAME, (char*)param, &length);
+			break;
+		}
 		case SDK_CMD_VPP_JPEG_SNAP:
-			ret = solution_handle_param_set(SOLUTION_JPEG_SNAP, (char*)param, sizeof(int));
+		{
+			uint32_t length = sizeof(int32_t);
+			ret = solution_handle_param_get(SOLUTION_JPEG_SNAP, (char*)param, &length);
 			break;
+		}
 		case SDK_CMD_VPP_START_RECORD:
 			ret = solution_handle_param_set(SOLUTION_START_RECORDER, (char*)param, sizeof(int));
 			break;

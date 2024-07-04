@@ -105,19 +105,23 @@ int32_t vp_vin_get_frame(vp_vflow_contex_t *vp_vflow_contex, ImageFrame *frame)
 	int32_t ret = 0;
 	hbn_vnode_handle_t vin_node_handle = vp_vflow_contex->vin_node_handle;
 	uint32_t chn_id = 0;
-	hbn_vnode_image_t out_img;
 
-	ret = hbn_vnode_getframe(vin_node_handle, chn_id, 10000, &out_img);
+	ret = hbn_vnode_getframe_cond(vin_node_handle, chn_id, VP_GET_FRAME_TIMEOUT,
+		0, frame->hbn_vnode_image);
 	if (ret != 0) {
 		SC_LOGE("hbn_vnode_getframe s%d CIM failed(%d)\n", chn_id, ret);
 	}
-	hbn_vnode_releaseframe(vin_node_handle, chn_id, &out_img);
+
 	return ret;
 }
 
 int32_t vp_vin_release_frame(vp_vflow_contex_t *vp_vflow_contex, ImageFrame *frame)
 {
 	int32_t ret = 0;
+	uint32_t chn_id = 0;
+	hbn_vnode_handle_t vin_node_handle = vp_vflow_contex->vin_node_handle;
+
+	ret = hbn_vnode_releaseframe(vin_node_handle, chn_id, frame->hbn_vnode_image);
 
 	return ret;
 }

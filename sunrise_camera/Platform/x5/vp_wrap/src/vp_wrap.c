@@ -143,6 +143,25 @@ void vp_normal_buf_info_print(ImageFrame *frame)
 {
 }
 
+int32_t vp_dump_1plane_image_to_file(char *filename, uint8_t *src_buffer, uint32_t size)
+{
+	int image_fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+	if (image_fd == -1) {
+		SC_LOGE("Error opening file(%s)", filename);
+		return -1;
+	}
+
+	ssize_t bytes_written = write(image_fd, src_buffer, size);
+	close(image_fd);
+
+	if (bytes_written != size) {
+		SC_LOGE("Error writing to file");
+		return -1;
+	}
+	return 0;
+}
+
 int32_t vp_dump_yuv_to_file(char *filename, uint8_t *src_buffer, uint32_t size)
 {
 	int yuv_fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -168,17 +187,12 @@ int32_t vp_dump_nv12_to_file(char *filename, uint8_t *data_y, uint8_t *data_uv,
 		int width, int height)
 {
 	int yuv_fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	
+
 	if (yuv_fd == -1) {
 		SC_LOGE("Error opening file(%s)", filename);
 		return -1;
 	}
 
-	// dprintf(yuv_fd, "NV12\n");
-	// dprintf(yuv_fd, "Width: %d\n", width);
-	// dprintf(yuv_fd, "Height: %d\n", height);
-
-	
 	ssize_t bytes_written = write(yuv_fd, data_y, width * height);
 	if (bytes_written != width * height) {
 		SC_LOGE("Error writing to file");
@@ -203,12 +217,12 @@ int32_t vp_dump_2plane_yuv_to_file(char *filename, uint8_t *src_buffer, uint8_t 
 		uint32_t size, uint32_t size1)
 {
 	int yuv_fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	
+
 	if (yuv_fd == -1) {
 		SC_LOGE("Error opening file(%s)", filename);
 		return -1;
 	}
-	
+
 	ssize_t bytes_written = write(yuv_fd, src_buffer, size);
 	if (bytes_written != size) {
 		SC_LOGE("Error writing to file");

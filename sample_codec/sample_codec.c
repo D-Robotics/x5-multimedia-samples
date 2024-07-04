@@ -1118,18 +1118,59 @@ int32_t decode_output_video(media_codec_context_t *context, DecodeParams *params
 				printf("ouput_buffer.vframe_buf.vir_ptr[0]: %p ouput_buffer.vframe_buf.vir_ptr[1]: %p\n",
 					ouput_buffer.vframe_buf.vir_ptr[0], ouput_buffer.vframe_buf.vir_ptr[1]);
 			}
-			fwrite(
-				ouput_buffer.vframe_buf.vir_ptr[0],
-				ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height,
-				1,
-				fp_output
-			);
-			fwrite(
-				ouput_buffer.vframe_buf.vir_ptr[1],
-				ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height / 2,
-				1,
-				fp_output
-			);
+			// Jpeg解码器输出的图像分辨率会被强制32字节对齐
+			// 所以如果输入图像与输出图像的像素不一样的话，需要特殊处理，否则图像会有绿边
+			if (params->codec_type == MEDIA_CODEC_ID_JPEG) {
+				if (ouput_buffer.vframe_buf.width == params->width && ouput_buffer.vframe_buf.height == params->height) {
+					// 输出图像与输入图像的分辨率相同，直接写入文件
+					fwrite(
+						ouput_buffer.vframe_buf.vir_ptr[0],
+						ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height,
+						1,
+						fp_output
+					);
+					fwrite(
+						ouput_buffer.vframe_buf.vir_ptr[1],
+						ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height / 2,
+						1,
+						fp_output
+					);
+				} else {
+					// 输出图像与输入图像的分辨率不同，需要特殊处理
+					// 处理Y分量
+					for (int y = 0; y < params->height; y++) {
+						fwrite(
+							ouput_buffer.vframe_buf.vir_ptr[0] + y * ouput_buffer.vframe_buf.width,
+							params->width,
+							1,
+							fp_output
+						);
+					}
+
+					// 处理UV分量
+					for (int y = 0; y < params->height / 2; y++) {
+						fwrite(
+							ouput_buffer.vframe_buf.vir_ptr[1] + y * ouput_buffer.vframe_buf.width,
+							params->width,
+							1,
+							fp_output
+						);
+					}
+				}
+			} else {
+				fwrite(
+					ouput_buffer.vframe_buf.vir_ptr[0],
+					ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height,
+					1,
+					fp_output
+				);
+				fwrite(
+					ouput_buffer.vframe_buf.vir_ptr[1],
+					ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height / 2,
+					1,
+					fp_output
+				);
+			}
 		}
 		vp_codec_release_output(context, &ouput_buffer);
 	}

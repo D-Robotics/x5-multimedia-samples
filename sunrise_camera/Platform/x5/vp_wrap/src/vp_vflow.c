@@ -64,7 +64,7 @@ int32_t vp_vflow_start(vp_vflow_contex_t *vp_vflow_contex)
 	if (vp_vflow_contex->vin_node_handle && vp_vflow_contex->isp_node_handle) {
 		ret = hbn_vflow_bind_vnode(vp_vflow_contex->vflow_fd,
 								vp_vflow_contex->vin_node_handle,
-								1,
+								0,
 								vp_vflow_contex->isp_node_handle,
 								0);
 		SC_ERR_CON_EQ(ret, 0, "hbn_vflow_bind_vnode");
@@ -104,7 +104,7 @@ int32_t vp_vflow_stop(vp_vflow_contex_t *vp_vflow_contex)
 	if (vp_vflow_contex->isp_node_handle && vp_vflow_contex->vse_node_handle) {
 		hbn_vflow_unbind_vnode(vp_vflow_contex->vflow_fd,
 								vp_vflow_contex->vin_node_handle,
-								1,
+								0,
 								vp_vflow_contex->isp_node_handle,
 								0);
 	}

@@ -33,6 +33,7 @@ int32_t vp_isp_init(vp_vflow_contex_t *vp_vflow_contex)
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &vp_vflow_contex->isp_node_handle;
 
+	isp_attr->input_mode = 2; // offline
 	ret = hbn_vnode_open(HB_ISP, 0, AUTO_ALLOC_ID, isp_node_handle);
 	SC_ERR_CON_EQ(ret, 0, "hbn_vnode_open");
 	ret = hbn_vnode_set_attr(*isp_node_handle, isp_attr);

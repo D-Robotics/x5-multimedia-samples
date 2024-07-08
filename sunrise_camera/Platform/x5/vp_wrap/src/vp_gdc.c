@@ -24,6 +24,11 @@ static gdc_list_info_t g_gdc_list_info[] = {
         .sensor_name = "sc202",
         .gdc_file_name = "../gdc_bin/sc202_gdc.bin",
         .is_valid = -1
+    },
+	{
+        .sensor_name = "sc230ai",
+        .gdc_file_name = "../gdc_bin/sc230ai_gdc.bin",
+        .is_valid = -1
     }
 };
 

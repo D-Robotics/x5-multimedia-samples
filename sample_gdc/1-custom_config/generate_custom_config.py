@@ -50,7 +50,6 @@ def get_dist_coeffs(images):
     objpoints = []  # 3D points in the world coordinate system
     imgpoints = []  # 2D points in the image plane
 
-    i = 0
     for fname in images:
         img = cv2.imread(fname)
         # Get the center point of the image
@@ -59,10 +58,10 @@ def get_dist_coeffs(images):
         u, v = img.shape[:2]
         # Find the chessboard corners
         ret, corners = cv2.findChessboardCorners(gray, (w, h), None)
+        print(f"Image file name: {fname}, Return code: {ret}")
         # If enough corners are found, store them
         if ret:
-            print("i:", i)
-            i = i + 1
+            print(f"Corners shape: {corners.shape}")
             # Refine the corner locations to subpixel accuracy
             cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
             # Add to the list of 3D points and 2D points
@@ -75,6 +74,11 @@ def get_dist_coeffs(images):
                 cv2.resizeWindow('findCorners', 640, 480)
                 cv2.imshow('findCorners', img)
                 cv2.waitKey(200)
+        else:
+            print(f"No corners found for image file: {fname}")
+            print("Please check the image quality and ensure the chessboard"
+                  " is fully visible and clear.")
+            exit(1)
 
     cv2.destroyAllWindows()
     ret, mtx, dist, rvecs, tvecs = \

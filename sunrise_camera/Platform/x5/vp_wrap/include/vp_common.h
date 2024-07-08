@@ -84,6 +84,22 @@ typedef struct vse_info_s {
 typedef struct osd_info_s{
 	hbn_rgn_bitmap_t bitmap [6];
 } osd_user_info_t;
+
+enum GDC_STATUS{
+    GDC_STATUS_INVALID = -1,
+    GDC_STATUS_CLOSE = 0,
+    GDC_STATUS_OPEN = 1,
+};
+
+typedef struct{
+	enum GDC_STATUS status; //0: 没有gdc file， 1： 关闭 gdc, 2： 打开gdc
+	char sensor_name[64];
+	int bin_buf_is_valid;
+	hb_mem_common_buf_t bin_buf;
+	hbn_vnode_handle_t gdc_fd;
+	int input_width;
+	int input_height;
+}gdc_user_info_t;
 typedef struct vp_vflow_contex_s {
 	hbn_vflow_handle_t vflow_fd;
 	camera_handle_t cam_fd;
@@ -93,6 +109,7 @@ typedef struct vp_vflow_contex_s {
 	hbn_vnode_handle_t isp_node_handle;
 	vse_config_t vse_config;
 	osd_user_info_t osd_info;
+	gdc_user_info_t gdc_info;
 	hbn_vnode_handle_t vse_node_handle;
 	hbn_vnode_handle_t gdc_node_handle;
 } vp_vflow_contex_t;

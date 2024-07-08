@@ -41,10 +41,12 @@ install:
 	-mkdir -p $(GLOBAL_INSTALL_DIR)/lib
 	-mkdir -p $(GLOBAL_INSTALL_DIR)/test_data
 	-mkdir -p $(GLOBAL_INSTALL_DIR)/model_zoom
+	-mkdir -p $(GLOBAL_INSTALL_DIR)/gdc_bin
 	mv $(TARGET) $(GLOBAL_INSTALL_DIR)/lib
 	cp -rf tools/* $(GLOBAL_INSTALL_DIR)/bin
 	cp -rf test_data/* $(GLOBAL_INSTALL_DIR)/test_data
 	cp -rf model_zoom/* $(GLOBAL_INSTALL_DIR)/model_zoom
+	cp -rf gdc_bin/* $(GLOBAL_INSTALL_DIR)/gdc_bin
 
 clean:
 	@rm -rf $(OBJ) $(DEP) $(TARGET)

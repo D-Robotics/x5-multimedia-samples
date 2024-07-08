@@ -29,6 +29,7 @@
 #include "vp_wrap.h"
 #include "vp_codec.h"
 #include "vp_sensors.h"
+#include "vp_gdc.h"
 
 #include "solution_handle.h"
 #include "solution_config.h"
@@ -405,6 +406,10 @@ int32_t vpp_camera_init_param(void)
 		{
 			SC_LOGE("Encode config param error");
 		}
+		g_vpp_camera[i].vp_vflow_contex.gdc_info.input_width = input_width;
+		g_vpp_camera[i].vp_vflow_contex.gdc_info.input_height = input_height;
+		strcpy(g_vpp_camera[i].vp_vflow_contex.gdc_info.sensor_name, sensor_name);
+		g_vpp_camera[i].vp_vflow_contex.gdc_info.status = g_solution_config.cam_solution.cam_vpp[i].gdc_status;
 		vpp_camera_index++;
 	}
 
@@ -431,6 +436,7 @@ int32_t vpp_camera_init(void)
 		ret |= vp_isp_init(vp_vflow_contex);
 		ret |= vp_vse_init(vp_vflow_contex);
 		ret |= vp_osd_init(vp_vflow_contex);
+		ret |= vp_gdc_init(vp_vflow_contex);
 		ret |= vp_vflow_init(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_init");
 
@@ -475,6 +481,7 @@ int32_t vpp_camera_uninit(void)
 		ret |= vp_vflow_deinit(vp_vflow_contex);
 		ret |= vp_osd_deinit(vp_vflow_contex);
 		ret |= vp_vse_deinit(vp_vflow_contex);
+		ret |= vp_gdc_deinit(vp_vflow_contex);
 		ret |= vp_isp_deinit(vp_vflow_contex);
 		ret |= vp_vin_deinit(vp_vflow_contex);
 
@@ -519,6 +526,7 @@ int32_t vpp_camera_start(void)
 		ret |= vp_isp_start(vp_vflow_contex);
 		ret |= vp_vse_start(vp_vflow_contex);
 		ret |= vp_osd_start(vp_vflow_contex);
+		ret |= vp_gdc_start(vp_vflow_contex);
 		ret |= vp_vflow_start(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_start");
 
@@ -609,6 +617,7 @@ int32_t vpp_camera_stop(void)
 		ret |= vp_vin_stop(vp_vflow_contex);
 		ret |= vp_isp_stop(vp_vflow_contex);
 		ret |= vp_osd_stop(vp_vflow_contex);
+		ret |= vp_gdc_stop(vp_vflow_contex);
 		ret |= vp_vse_stop(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_stop");
 

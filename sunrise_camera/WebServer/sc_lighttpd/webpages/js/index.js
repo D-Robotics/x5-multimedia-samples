@@ -39,6 +39,12 @@ const g_solution_fields = {
 		options: "model_list", // Placeholder for model options
 		value_is_index: false
 	},
+	"gdc_status": {
+		chinese_name: "使能GDC",
+		type: "stringlist",
+		options: "gdc_status_list",
+		value_is_index: true
+	},
 	"stream": {
 		chinese_name: "视频数据流",
 		type: "text",
@@ -728,8 +734,21 @@ function render_json_to_html(solutions_config) {
 					html += `</li>`;
 				}else if((itemKey === "csi_index") || (itemKey === "is_enable") || (itemKey === "is_valid") ){
 					continue; //不显示
+
+				}else if(itemKey === "gdc_status"){
+					if(cam_vpp.gdc_status === -1){
+						const textValue = "invalid";
+						const field = g_solution_fields[itemKey];
+						const label = ` ${field.chinese_name}（${itemKey}）`;
+						html += `<li><span>${label}</span>：`;
+						html += `<input type="text" id="${uniqueId}" value="${textValue}">`;
+						html += `</li>`;
+					}else{
+						html += render_label_name(solutions_config, itemKey, uniqueId, cam_vpp);
+					}
+
 				}else{
-				html += render_label_name(solutions_config, itemKey, uniqueId, cam_vpp);
+					html += render_label_name(solutions_config, itemKey, uniqueId, cam_vpp);
 				}
 
 			}
@@ -1128,7 +1147,12 @@ function update_json_from_html() {
 						// 对于 encode_type 或 decode_type，读取下拉选择框的编号值
 						if (itemKey === 'encode_type' || itemKey === 'decode_type') {
 							cam_solution["cam_vpp"][i][itemKey] = parseInt(selectedIndex);
-						} else {
+						}else if (itemKey === 'gdc_status'){
+							if(cam_solution["cam_vpp"][i][itemKey] === -1){
+							}else{
+								cam_solution["cam_vpp"][i][itemKey] = parseInt(selectedIndex);
+							}
+						}else {
 							// 对于其他字段，直接更新为选择的文本值
 							cam_solution["cam_vpp"][i][itemKey] = selectedValue;
 						}

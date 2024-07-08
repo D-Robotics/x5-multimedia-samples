@@ -4,6 +4,7 @@
 #define STL_MAX_VPP_CAM_NUM 4
 #define STL_MAX_VPP_BOX_NUM 6
 #include "vp_sensors.h"
+#include "vp_common.h"
 
 typedef struct {
 	char chip_type[16];
@@ -13,6 +14,7 @@ typedef struct {
 	char codec_type_list[64];
 	int32_t encode_bit_rate_list[16];
 	char display_dev_list[64];
+	char gdc_status_list[64];
 } solution_hard_capability_t; // 硬件能力
 
 typedef struct {
@@ -23,6 +25,7 @@ typedef struct {
 	int32_t encode_type; // 编码类型
 	int32_t encode_bitrate; // 编码码率
 	char model[32]; // 算法模型
+	int32_t gdc_status; //0: 没有gdc file， 1： 关闭 gdc, 2： 打开gdc
 } solution_cfg_cam_vpp_t;
 
 typedef struct {

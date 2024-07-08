@@ -20,6 +20,7 @@
 #include "solution_config.h"
 #include "vp_wrap.h"
 #include "bpu_wrap.h"
+#include "vp_gdc.h"
 
 #define SOLUTION_CONFIG_PATH "../test_data/"
 #define SOLUTION_CONFIG_FILE SOLUTION_CONFIG_PATH "solution_config.json"
@@ -44,6 +45,7 @@ key_info_t hard_capability_key[] = {
 	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_STRING, chip_type, NULL),
 	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_OBJECT, csi_list_info, csi_list_info_key),
 	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_STRING, model_list, NULL),
+	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_STRING, gdc_status_list, NULL),
 	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_STRING, codec_type_list, NULL),
 	MAKE_ARRAY_INFO(solution_hard_capability_t, KEY_TYPE_ARRAY, encode_bit_rate_list, NULL, 16, KEY_TYPE_S32),
 	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_STRING, display_dev_list, NULL),
@@ -57,6 +59,7 @@ static key_info_t cfg_cam_vpp_key[] = {
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, encode_type, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, encode_bitrate, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_STRING, model, NULL),
+	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, gdc_status, NULL),
 	MAKE_END_INFO()};
 
 static key_info_t cfg_cam_key[] = {
@@ -132,6 +135,7 @@ void print_solution_cfg(const solution_cfg_t *config)
 		printf("    Encode Type: %d\n", config->cam_solution.cam_vpp[i].encode_type);
 		printf("    Encode Bitrate: %d\n", config->cam_solution.cam_vpp[i].encode_bitrate);
 		printf("    Model: %s\n", config->cam_solution.cam_vpp[i].model);
+		printf("    Gdb Status: %d\n", config->cam_solution.cam_vpp[i].gdc_status);
 	}
 	printf("Box Solution:\n");
 	printf("  Pipeline Count: %d\n", config->box_solution.pipeline_count);
@@ -239,6 +243,7 @@ int32_t solution_cfg_update_camera_config(){
 				cam_vpp->csi_index = i;
 				cam_vpp->encode_type = 0;
 				cam_vpp->encode_bitrate = 0;
+				cam_vpp->gdc_status = GDC_STATUS_INVALID;
 				memset(cam_vpp->sensor, 0, sizeof(cam_vpp->sensor));
 				memset(cam_vpp->model, 0, sizeof(cam_vpp->model));
 			}
@@ -265,6 +270,16 @@ int32_t solution_cfg_update_camera_config(){
 
 		//本次启动接入的摄像头 == 配置文件中对应的摄像头一致
 		if(cam_vpp_config_is_valid){
+			const char *gdc_bin_file = vp_gdc_get_bin_file(cam_vpp->sensor);
+			if((gdc_bin_file != NULL) && (cam_vpp->gdc_status == GDC_STATUS_INVALID)){
+				SC_LOGI("[%d] camera vpp config update gdc status, because new gdc file is added {%s}", i, gdc_bin_file);
+				cam_vpp->gdc_status = GDC_STATUS_CLOSE;
+			}else if((gdc_bin_file == NULL) && (cam_vpp->gdc_status != GDC_STATUS_INVALID)){
+				SC_LOGW("[%d] camera vpp config update gdc status, because new gdc file is removed {%s}", i, gdc_bin_file);
+				cam_vpp->gdc_status = GDC_STATUS_INVALID;
+			}else{
+				//保持不变
+			}
 			continue;
 		}
 
@@ -277,6 +292,13 @@ int32_t solution_cfg_update_camera_config(){
 
 		strncpy(cam_vpp->sensor, sensor_list_str, first_camera_end_index);
 		cam_vpp->sensor[first_camera_end_index] = '\0';
+
+		const char *gdc_bin_file = vp_gdc_get_bin_file(cam_vpp->sensor);
+		if(gdc_bin_file == NULL){
+			cam_vpp->gdc_status = GDC_STATUS_INVALID;
+		}else {
+			cam_vpp->gdc_status = GDC_STATUS_CLOSE;
+		}
 
 		cam_vpp->is_valid = 1;
 		cam_vpp->is_enable = 0; //新增相机默认关闭
@@ -298,6 +320,7 @@ int32_t solution_cfg_load_default_config()
 	memset(&g_solution_config.hardware_capability.model_list, 0, sizeof(g_solution_config.hardware_capability.model_list));
 
 	strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265");
+	strcpy(g_solution_config.hardware_capability.gdc_status_list, "close/open");
 	// strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265/Mjpeg");
 
 	// 初始化编码码率列表
@@ -330,7 +353,7 @@ int32_t solution_cfg_load_default_config()
 	for(int i = 0; i < csi_list_info->max_count; i++){
 		solution_cfg_cam_vpp_t* cam_vpp = &g_solution_config.cam_solution.cam_vpp[i];
 
-		if(csi_list_info->csi_info[i].is_valid){
+		if(csi_list_info->csi_info[i].is_valid){ //接入了摄像头
 			size_t sensor_config_list_size = sizeof(csi_list_info->csi_info[i].sensor_config_list);
 			const char *sensor_list_str = csi_list_info->csi_info[i].sensor_config_list;
 			int first_camera_end_index = get_first_camera_name_from_camera_list(sensor_list_str, sensor_config_list_size);
@@ -341,6 +364,12 @@ int32_t solution_cfg_load_default_config()
 
 			strncpy(cam_vpp->sensor, sensor_list_str, first_camera_end_index);
 			cam_vpp->sensor[first_camera_end_index] = '\0';
+			const char *gdc_bin_file = vp_gdc_get_bin_file(cam_vpp->sensor);
+			if(gdc_bin_file == NULL){
+				cam_vpp->gdc_status = GDC_STATUS_INVALID;
+			}else{
+				cam_vpp->gdc_status = GDC_STATUS_CLOSE;
+			}
 
 			cam_vpp->is_valid = 1;
 			//开机只打开一路相机
@@ -354,10 +383,11 @@ int32_t solution_cfg_load_default_config()
 			cam_vpp->csi_index = csi_list_info->csi_info[i].index;
 			cam_vpp->encode_type = 0;
 			cam_vpp->encode_bitrate = 8192;
-		}else{
+		}else{ //没有接摄像头
 			cam_vpp->is_valid = 0;
 			cam_vpp->is_enable = 0;
 			cam_vpp->csi_index = i;
+			cam_vpp->gdc_status = GDC_STATUS_INVALID;
 			cam_vpp->encode_type = 0;
 			cam_vpp->encode_bitrate = 0;
 			memset(cam_vpp->sensor, 0, sizeof(cam_vpp->sensor));
@@ -430,6 +460,12 @@ int32_t solution_cfg_load()
 					SC_LOGW("config file parser failed, so use default config .");
 					solution_cfg_load_default_config();
 				}else{
+					/**
+					 * 上次启动保存了一些配置到，但是有些信息，再一次启动时会变化, 如果不 重新更新可能会导致程序执行错误
+					 * 1. 新插入了摄像头
+					 * 2. gdc 配置文件 进行了更新
+					*/
+
 					SC_LOGI("update camera info.");
 					g_solution_config.hardware_capability.csi_list_info = csi_info_tmp;
 					solution_cfg_update_camera_config();

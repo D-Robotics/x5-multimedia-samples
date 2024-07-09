@@ -592,7 +592,7 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			char cfg_str[WS_MAX_BUFFER] = {0};
 			strcpy(cfg_str, cJSON_GetObjectItem(root, "param")->valuestring);
 			print_json = cJSON_Parse(cfg_str);
-			SC_LOGD("%s", cJSON_Print(print_json));
+			SC_LOGI("%s", cJSON_Print(print_json));
 			free(print_json);
 			SDK_Cmd_Impl(SDK_CMD_VPP_SAVE_SOLUTION_CONFIG, (void *)cfg_str);
 			break;

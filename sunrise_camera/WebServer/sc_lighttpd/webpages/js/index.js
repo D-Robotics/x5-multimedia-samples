@@ -741,7 +741,7 @@ function render_json_to_html(solutions_config) {
 						const field = g_solution_fields[itemKey];
 						const label = ` ${field.chinese_name}（${itemKey}）`;
 						html += `<li><span>${label}</span>：`;
-						html += `<input type="text" id="${uniqueId}" value="${textValue}">`;
+						html += `<input type="text" id="${uniqueId}" value=" ${textValue}">`;
 						html += `</li>`;
 					}else{
 						html += render_label_name(solutions_config, itemKey, uniqueId, cam_vpp);
@@ -1122,6 +1122,10 @@ function update_json_from_html() {
 					continue;
 				if(itemKey === "is_valid")
 					continue;
+
+				if((itemKey === 'gdc_status') && (cam_solution["cam_vpp"][i][itemKey] === -1)){
+					continue;
+				}
 
 				const uniqueId = `item_${i}_${itemKey}`;
 				const element = document.getElementById(uniqueId);

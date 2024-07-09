@@ -861,11 +861,19 @@ int32_t vp_codec_get_output(media_codec_context_t *context, media_codec_buffer_t
 	info = buffer_info;
 
 	ret = hb_mm_mc_dequeue_output_buffer(context, buffer, info, timeout);
-	if (ret != 0)
+	if (ret != 0 && ret != -268435443)  // Check for timeout error
 	{
-		printf("%s idx: %d, hb_mm_mc_dequeue_output_buffer failed ret = %d\n",
-			context->encoder ? "Encode" : "Decode", context->instance_index, ret);
+		printf("%s idx: %d, %s ret = %d\n",
+			context->encoder ? "Encode" : "Decode", context->instance_index,
+			ret == -1 ? "hb_mm_mc_dequeue_output_buffer failed" : "hb_mm_mc_dequeue_output_buffer encountered an error",
+			ret);
 		return -1;
+	}
+	else if (ret == -268435443)
+	{
+		printf("%s idx: %d, %s\n",
+			context->encoder ? "Encode" : "Decode", context->instance_index,
+			"hb_mm_mc_dequeue_output_buffer timed out (possibly normal exit due to lack of data)");
 	}
 	if ((!context->encoder) && (buffer->type != MC_VIDEO_FRAME_BUFFER))
 	{
@@ -1217,9 +1225,11 @@ int32_t decode_h264_h265_mjpeg_video(media_codec_context_t *context, DecodeParam
 		{
 			if (ret == AVERROR_EOF || avContext->pb->eof_reached == true)
 			{
-				printf("No more input data available, avpacket.size: %d."
-					" Re-cycling to send again.\n", avpacket.size);
-				// if decode done, continue decode current file
+				printf("No more valid data available for decoding, "
+					"avpacket.size: %d."
+					" Decoder will exit due to timeout after fetching"
+					" decoded output.\n", avpacket.size);
+
 				eos = false;
 			}
 			else

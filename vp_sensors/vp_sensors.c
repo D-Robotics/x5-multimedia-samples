@@ -10,6 +10,8 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <dirent.h>
+#include <errno.h>
+#include <ctype.h>
 
 #include <stdbool.h>
 
@@ -379,7 +381,7 @@ static int check_mipi_host_status(int mipi_host) {
 
 	FILE *file = fopen(file_path, "r");
 	if (file == NULL) {
-		perror("Failed to open file");
+		printf("Failed to open %s: %s\n", file_path, strerror(errno));
 		return 0;
 	}
 
@@ -402,56 +404,82 @@ static int check_mipi_host_status(int mipi_host) {
 	}
 }
 
-int get_board_id(char *data, size_t size){
+int get_board_id(char *data, size_t size)
+{
 	const char *board_id_file = "/sys/class/socinfo/board_id";
 	FILE *fp = fopen(board_id_file, "r");
-	if(fp == NULL){
-		printf("[ERROR] open file %s failed.", board_id_file);
+	if (fp == NULL) {
+		printf("[ERROR] open file %s failed.\n", board_id_file);
 		return -1;
 	}
-	int ret = fread(data, sizeof(char), size -1, fp);
-	if(ret > 0){
-		data[ret] = '\0';
-	}else{
-		printf("[ERROR] read file %s failed.", board_id_file);
+
+	if (fgets(data, size, fp) == NULL) {
+		printf("[ERROR] read file %s failed.\n", board_id_file);
+		fclose(fp);
 		return -1;
 	}
 	fclose(fp);
+
+	// Remove trailing newline
+	size_t len = strlen(data);
+	if (len > 0 && data[len - 1] == '\n') {
+		data[len - 1] = '\0';
+	}
+
+	// Trim leading and trailing whitespace
+	char *start = data;
+	while (isspace((unsigned char)*start)) {
+		start++;
+	}
+
+	char *end = data + strlen(data) - 1;
+	while (end > start && isspace((unsigned char)*end)) {
+		end--;
+	}
+
+	// Null-terminate the trimmed string
+	*(end + 1) = '\0';
+
+	// Move the trimmed string to the start of the buffer
+	if (start != data) {
+		memmove(data, start, end - start + 2);
+	}
+
 	return 0;
 }
+
+static bool should_skip_sci1(void)
+{
+	char board_id[16];
+	bool is_need_skip_sci1 = true; // Default to skip if get_board_id fails
+	int ret = get_board_id(board_id, sizeof(board_id));
+
+	if (ret == 0) {
+		if (strncmp(board_id, "201", 3) == 0 || strncmp(board_id, "202", 3) == 0) {
+			printf("[INFO] board_id is %s, so skip sci1.\n", board_id);
+		} else {
+			printf("[INFO] board_id is %s, not need skip sci1.\n", board_id);
+			is_need_skip_sci1 = false;
+		}
+	} else {
+		printf("read board_id file failed, so skip sci1.\n");
+	}
+
+	return is_need_skip_sci1;
+}
+
 void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 {
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
-	char board_id[10];
-	bool is_need_skip_sci1 = false;
-	int ret = get_board_id(board_id, sizeof(board_id));
-	if(ret == 0) {
-		ret = strncmp(board_id, "201", 3);
-		if(ret == 0) {
-			printf("[INFO] board_id is 201, so skip sci1.");
-			is_need_skip_sci1 = true;
-		} else {
-			ret = strncmp(board_id, "202", 3);
-			if(ret == 0){
-				printf("[INFO] board_id is 202, so skip sci1.");
-				is_need_skip_sci1 = true;
-			}else{
-				printf("[INFO] board_id is %s, not need skip sci1.", board_id);
-				is_need_skip_sci1 = false;
-			}
-		}
-	}else{
-		printf("read board_id file failed, so skip sci1.");
-		is_need_skip_sci1 = true;
-	}
 	csi_list_info->valid_count = 0;
 	csi_list_info->max_count = VP_MAX_VCON_NUM;
+	bool is_need_skip_sci1 = should_skip_sci1();
 	// Iterate over vcon@0 - 3
 	for (int i = 0; i < VP_MAX_VCON_NUM; ++i) {
 		csi_info_t csi_info_tmp = {.index = i, .is_valid = 0};
 		read_device_tree(i, &vcon_props_array[i]);
 
-		if((i == 1) && (is_need_skip_sci1)){
+		if ((i == 1) && (is_need_skip_sci1)) {
 			csi_list_info->csi_info[i] = csi_info_tmp;
 			continue;
 		}
@@ -506,12 +534,15 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 	int32_t ret = -1, j = 0;
 	static int32_t i = 0;
 	uint32_t frequency = 24000000;
+	bool is_need_skip_sci1 = should_skip_sci1();
 
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
 
 	// Iterate over vcon@0 - 3
 	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
-		if (i == 1) continue;
+		if ((i == 1) && (is_need_skip_sci1)) {
+			continue;
+		}
 		// 跳过使用使用的mipi csi控制器，支持同时接入相同的摄像头
 		if (used_mipi_host & (1 << i))
 			continue;
@@ -562,12 +593,15 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config)
 {
 	int32_t ret = 0, i = 0, j = 0;
 	uint32_t frequency = 24000000;
+	bool is_need_skip_sci1 = should_skip_sci1();
 
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
 
 	// Iterate over vcon@0 - 3
 	for (i = 0; i < VP_MAX_VCON_NUM; ++i) {
-		if (i == 1) continue;
+		if ((i == 1) && (is_need_skip_sci1)) {
+			continue;
+		}
 		if (check_mipi_host_status(i) == 0)
 			continue;
 

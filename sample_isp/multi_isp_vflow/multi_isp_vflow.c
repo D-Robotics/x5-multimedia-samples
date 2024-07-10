@@ -47,10 +47,10 @@ static void command_help() {
 static int settle = -1;
 static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 
-static int fixed_dummy_sensor_config(pipe_contex_t *vin_contex,
+static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 	vp_sensor_config_t *dummy_sensor_config)
 {
-	vp_sensor_config_t *vin_sensor_config = vin_contex->sensor_config;
+	vp_sensor_config_t *vin_sensor_config = vin_isp_contex->sensor_config;
 
 	camera_config_t *camera_config = dummy_sensor_config->camera_config;
 	vin_node_attr_t *vin_node_attr = dummy_sensor_config->vin_node_attr;
@@ -228,7 +228,7 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	return 0;
 }
 
-int create_and_run_vin_vflow(pipe_contex_t *pipe_contex) {
+int create_and_run_vin_isp_vflow(pipe_contex_t *pipe_contex) {
 	int32_t ret = 0;
 
 	// 创建pipeline中的每个node
@@ -236,12 +236,23 @@ int create_and_run_vin_vflow(pipe_contex_t *pipe_contex) {
 	ERR_CON_EQ(ret, 0);
 	ret = create_vin_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
+	ret = create_isp_node(pipe_contex);
+	ERR_CON_EQ(ret, 0);
 
 	// 创建HBN vflow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vin_node_handle);
+	ERR_CON_EQ(ret, 0);
+	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
+							pipe_contex->isp_node_handle);
+	ERR_CON_EQ(ret, 0);
+	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+							pipe_contex->vin_node_handle,
+							1, // online
+							pipe_contex->isp_node_handle,
+							0);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
 							pipe_contex->vin_node_handle);
@@ -325,7 +336,7 @@ void isp_dump_func(hbn_vnode_handle_t isp_node_handle) {
 
 
 void vin_dump_func(hbn_vnode_handle_t vin_node_handle,
-	hbn_vnode_handle_t isp_node_handle, hbn_vnode_handle_t isp2_node_handle)
+	hbn_vnode_handle_t isp_node_handle)
 {
 	int ret;
 	char dst_file[128];
@@ -334,7 +345,7 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle,
 	hbn_vnode_image_t out_img;
 
 	// 调用hbn_vnode_getframe获取帧数据
-	ret = hbn_vnode_getframe(vin_node_handle, chn_id, timeout, &out_img);
+	ret = hbn_vnode_getframe_cond(vin_node_handle, chn_id, timeout, 0, &out_img);
 	if (ret != 0) {
 		printf("hbn_vnode_getframe from vin chn:%d failed(%d)\n", chn_id, ret);
 		return;
@@ -366,29 +377,20 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle,
 
 	isp_dump_func(isp_node_handle);
 
-	ret = hbn_vnode_sendframe(isp2_node_handle, 0, &out_img);
-	if (ret != 0) {
-		printf("hbn_vnode_sendframe to isp failed(%d)\n", ret);
-		return;
-	}
-
-	isp_dump_func(isp2_node_handle);
-
 	// 释放帧数据
 	hbn_vnode_releaseframe(vin_node_handle, chn_id, &out_img);
 }
 
-static int handle_user_command(pipe_contex_t *vin_contex,
-	pipe_contex_t *isp_contex, pipe_contex_t *isp2_contex)
+static int handle_user_command(pipe_contex_t *vin_isp_contex,
+	pipe_contex_t *isp_contex)
 {
 	int i = 0;
 	char option = 'a';
-	hbn_vnode_handle_t vin_node_handle, isp_node_handle, isp2_node_handle;
+	hbn_vnode_handle_t vin_node_handle, isp_node_handle;
 	int running = -1;
 
-	vin_node_handle = vin_contex->vin_node_handle;
+	vin_node_handle = vin_isp_contex->vin_node_handle;
 	isp_node_handle = isp_contex->isp_node_handle;
-	isp2_node_handle = isp2_contex->isp_node_handle;
 
 	command_help();
 	printf("\nCommand: "); // 将打印移到循环外部
@@ -399,12 +401,15 @@ static int handle_user_command(pipe_contex_t *vin_contex,
 				printf("quit\n");
 				running = 0;
 				return 0;
-			case 'g':  // get a raw file
-				vin_dump_func(vin_node_handle, isp_node_handle, isp2_node_handle);
+			case 'g':
+				isp_dump_func(vin_isp_contex->isp_node_handle);
+				vin_dump_func(vin_node_handle, isp_node_handle);
 				break;
 			case 'l': // 循环获取，用于计算帧率
-				for (i = 0; i < 12; i++)
-					vin_dump_func(vin_node_handle, isp_node_handle, isp2_node_handle);
+				for (i = 0; i < 12; i++) {
+					isp_dump_func(vin_isp_contex->isp_node_handle);
+					vin_dump_func(vin_node_handle, isp_node_handle);
+				}
 				break;
 			case 'h':
 				command_help();
@@ -423,15 +428,15 @@ static int handle_user_command(pipe_contex_t *vin_contex,
 	return 0;
 }
 
-/* 启动三个vflow：
- * 1. 启动实际 Camera Sensor 初始化到 vin 的 vflow，可以从vin中拿到sensor的raw图
- * 2. 启动两个isp模块的 vflow，vin的raw图分别喂给这两个isp vflow进行处理
+/* 启动两个vflow：
+ * 1. 启动实际 Camera Sensor 初始化 vin，并且bind isp 的 vflow
+ *    可以从vin中拿到sensor的raw图，从isp中拿到 yuv 图，并且可以调节sensor 的 AE
+ * 2. 启动一个isp模块的 vflow，vin的raw图送给这个isp vflow进行处理
 */
 int main(int argc, char** argv) {
 	int ret = 0;
-	pipe_contex_t vin_contex = {0};
+	pipe_contex_t vin_isp_contex = {0};
 	pipe_contex_t isp_contex = {0};
-	pipe_contex_t isp2_contex = {0};
 	int opt_index = 0;
 	int c = 0;
 	int index = -1;
@@ -456,12 +461,12 @@ int main(int argc, char** argv) {
 		}
 	}
 	if (index < vp_get_sensors_list_number() && index >= 0) {
-		vin_contex.sensor_config = vp_sensor_config_list[index];
+		vin_isp_contex.sensor_config = vp_sensor_config_list[index];
 		printf("Using index:%d  sensor_name:%s  config_file:%s\n",
 				index,
 				vp_sensor_config_list[index]->sensor_name,
 				vp_sensor_config_list[index]->config_file);
-		ret = vp_sensor_fixed_mipi_host(vin_contex.sensor_config);
+		ret = vp_sensor_fixed_mipi_host(vin_isp_contex.sensor_config);
 		if (ret != 0) {
 			printf("No Camera Sensor found. Please check if the specified "
 				"sensor is connected to the Camera interface.\n");
@@ -475,30 +480,24 @@ int main(int argc, char** argv) {
 
 	hb_mem_module_open();
 
-	ret = create_and_run_vin_vflow(&vin_contex);
+	ret = create_and_run_vin_isp_vflow(&vin_isp_contex);
 	ERR_CON_EQ(ret, 0);
 
 	// 根据 Camera Sensor的配置设置虚拟 Sensor 的参数
-	fixed_dummy_sensor_config(&vin_contex, &dummy_sensor_config);
+	fixed_dummy_sensor_config(&vin_isp_contex, &dummy_sensor_config);
 	isp_contex.sensor_config = &dummy_sensor_config;
 	ret = create_and_run_isp_vflow(&isp_contex);
 	ERR_CON_EQ(ret, 0);
-	isp2_contex.sensor_config = &dummy_sensor_config;
-	ret = create_and_run_isp_vflow(&isp2_contex);
-	ERR_CON_EQ(ret, 0);
 
-	handle_user_command(&vin_contex, &isp_contex, &isp2_contex);
+	handle_user_command(&vin_isp_contex, &isp_contex);
 
-	ret = hbn_vflow_stop(vin_contex.vflow_fd);
+	ret = hbn_vflow_stop(vin_isp_contex.vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_stop(isp_contex.vflow_fd);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_stop(isp2_contex.vflow_fd);
-	ERR_CON_EQ(ret, 0);
 
-	hbn_vflow_destroy(vin_contex.vflow_fd);
+	hbn_vflow_destroy(vin_isp_contex.vflow_fd);
 	hbn_vflow_destroy(isp_contex.vflow_fd);
-	hbn_vflow_destroy(isp2_contex.vflow_fd);
 
 	return 0;
 }

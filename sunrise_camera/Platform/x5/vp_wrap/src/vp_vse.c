@@ -97,11 +97,8 @@ int32_t vp_vse_get_frame(vp_vflow_contex_t *vp_vflow_contex,
 	int32_t ret = 0;
 	hbn_vnode_handle_t vse_node_handle = vp_vflow_contex->vse_node_handle;
 
-	ret = hbn_vnode_getframe(vse_node_handle, ochn_id, VP_GET_FRAME_TIMEOUT, frame->hbn_vnode_image);
-	if (ret != 0) {
-		SC_LOGE("hbn_vnode_getframe VSE channel %d failed(%d)", ochn_id, ret);
-	}
-
+	ret = hbn_vnode_getframe(vse_node_handle, ochn_id, VP_GET_FRAME_TIMEOUT,
+		frame->hbn_vnode_image);
 	return ret;
 }
 
@@ -112,6 +109,5 @@ int32_t vp_vse_release_frame(vp_vflow_contex_t *vp_vflow_contex,
 	hbn_vnode_handle_t vse_node_handle = vp_vflow_contex->vse_node_handle;
 
 	ret = hbn_vnode_releaseframe(vse_node_handle, ochn_id, frame->hbn_vnode_image);
-
 	return ret;
 }

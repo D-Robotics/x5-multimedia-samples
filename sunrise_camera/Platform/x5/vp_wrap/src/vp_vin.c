@@ -109,7 +109,7 @@ int32_t vp_vin_get_frame(vp_vflow_contex_t *vp_vflow_contex, ImageFrame *frame)
 	ret = hbn_vnode_getframe_cond(vin_node_handle, chn_id, VP_GET_FRAME_TIMEOUT,
 		0, frame->hbn_vnode_image);
 	if (ret != 0) {
-		SC_LOGE("hbn_vnode_getframe s%d CIM failed(%d)\n", chn_id, ret);
+		SC_LOGE("hbn_vnode_getframe %d CIM failed(%d)\n", chn_id, ret);
 	}
 
 	return ret;

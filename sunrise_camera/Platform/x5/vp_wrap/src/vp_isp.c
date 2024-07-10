@@ -88,7 +88,7 @@ int32_t vp_isp_get_frame(vp_vflow_contex_t *vp_vflow_contex, ImageFrame *frame)
 
 	ret = hbn_vnode_getframe(isp_node_handle, chn_id, 1000, frame->hbn_vnode_image);
 	if (ret != 0) {
-		SC_LOGE("hbn_vnode_getframe s%d ISP failed\n", chn_id);
+		SC_LOGE("hbn_vnode_getframe %d ISP failed\n", chn_id);
 	}
 
 	return ret;

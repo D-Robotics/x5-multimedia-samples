@@ -149,7 +149,11 @@ static void* venc_get_stream_proc(void *ptr)
 		time_statistics_at_beginning_of_loop(&time_statistics);
 		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
 		if (ret != 0) {
-			SC_LOGE("vp_vse_get_frame failed.");
+			// 当线程接收到退出信号时，getframe 接口会立即报超时退出
+			// 所以只有当线程是正常运行状态下的异常才属于真异常
+			if (privThread->eState == E_THREAD_RUNNING) {
+				SC_LOGE("vp_vse_get_frame chn 0 failed(%d).", ret);
+			}
 			break;
 		}
 		update_osd_info(&vpp_camera->vp_vflow_contex, &next_update_time_ms);
@@ -275,7 +279,11 @@ static void *send_yuv_to_bpu(void *ptr) {
 	while(privThread->eState == E_THREAD_RUNNING) {
 		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 1, &vse_frame);
 		if (ret != 0) {
-			SC_LOGE("vp_vse_get_frame failed");
+			// 当线程接收到退出信号时，getframe 接口会立即报超时退出
+			// 所以只有当线程是正常运行状态下的异常才属于真异常
+			if (privThread->eState == E_THREAD_RUNNING) {
+				SC_LOGE("vp_vse_get_frame chn 1 failed(%d).", ret);
+			}
 			break;
 		}
 

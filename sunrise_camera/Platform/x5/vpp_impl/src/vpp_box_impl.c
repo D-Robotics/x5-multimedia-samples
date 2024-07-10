@@ -214,9 +214,14 @@ static void *get_decode_output_thread(void *ptr) {
 		if (strlen(vpp_box->m_bpu_handle.m_model_name) > 0) {
 			ret = vp_vse_get_frame(&vpp_box->vp_vflow_contex, 1, &vse_frame);
 			if (ret != 0) {
-				SC_LOGE("vp_vse_get_frame failed(%d)", ret);
+				// 当线程接收到退出信号时，getframe 接口会立即报超时退出
+				// 所以只有当线程是正常运行状态下的异常才属于真异常
+				if (privThread->eState == E_THREAD_RUNNING) {
+					SC_LOGE("vp_vse_get_frame chn 1 failed(%d).", ret);
+				}
 				continue;
 			}
+
 			if (log_ctrl_level_get(NULL) == LOG_TRACE) {
 				sprintf(nv12_file_name, "/tmp/box_vse_chn1_%dx%d_nv12_size_%lu.yuv",
 					vse_frame.hbn_vnode_image->buffer.width, vse_frame.hbn_vnode_image->buffer.height,
@@ -243,7 +248,11 @@ static void *get_decode_output_thread(void *ptr) {
 		// 从第一通道获取数据给编码模块使用
 		ret = vp_vse_get_frame(&vpp_box->vp_vflow_contex, 0, &vse_frame);
 		if (ret != 0) {
-			SC_LOGE("vp_vse_get_frame failed(%d)", ret);
+			// 当线程接收到退出信号时，getframe 接口会立即报超时退出
+			// 所以只有当线程是正常运行状态下的异常才属于真异常
+			if (privThread->eState == E_THREAD_RUNNING) {
+				SC_LOGE("vp_vse_get_frame chn 0 failed(%d).", ret);
+			}
 			continue;
 		}
 

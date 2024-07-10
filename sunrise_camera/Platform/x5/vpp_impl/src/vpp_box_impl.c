@@ -721,16 +721,16 @@ int32_t vpp_box_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			}
 			vp_codec_get_user_buffer_param(enc_params, &param->suggest_buffer_region_size,
 					&param->suggest_buffer_item_count);
-			SC_LOGW("Codec_id: %d", g_vpp_box[param->channel].m_encode_context.codec_id);
-			SC_LOGW("Instance Index: %d", g_vpp_box[param->channel].m_encode_context.instance_index);
-			SC_LOGW("Param Channel: %d", param->channel);
-			SC_LOGW("Param Enable: %d", param->enable);
-			SC_LOGW("Param Width: %d", param->width);
-			SC_LOGW("Param Height: %d", param->height);
-			SC_LOGW("Param Stream Buffer Size: %d", param->stream_buf_size);
-			SC_LOGW("Param Type: %d", param->type);
-			SC_LOGW("Param Bitrate: %d", param->bitrate);
-			SC_LOGW("Param Framerate: %d", param->framerate);
+			SC_LOGI("Codec_id: %d", g_vpp_box[param->channel].m_encode_context.codec_id);
+			SC_LOGI("Instance Index: %d", g_vpp_box[param->channel].m_encode_context.instance_index);
+			SC_LOGI("Param Channel: %d", param->channel);
+			SC_LOGI("Param Enable: %d", param->enable);
+			SC_LOGI("Param Width: %d", param->width);
+			SC_LOGI("Param Height: %d", param->height);
+			SC_LOGI("Param Stream Buffer Size: %d", param->stream_buf_size);
+			SC_LOGI("Param Type: %d", param->type);
+			SC_LOGI("Param Bitrate: %d", param->bitrate);
+			SC_LOGI("Param Framerate: %d", param->framerate);
 			break;
 		}
 	case SOLUTION_GET_VENC_CHN_STATUS: // 获取哪些编码通道被使能了

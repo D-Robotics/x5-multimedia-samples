@@ -12,6 +12,7 @@ public:
 	static H265MainVideoSource* createNew(UsageEnvironment& env,
 		char *shmId, char *shmName, int streamBufSize, int frameRate,
 		int buffer_region_size, int buffer_item_count,
+		bool is_dumy,
 		unsigned preferredFrameSize = 0,
 		unsigned playTimePerFrame = 0);
 	// "preferredFrameSize" == 0 means 'no preference'
@@ -24,6 +25,7 @@ protected:
 	H265MainVideoSource(UsageEnvironment& env,
 		char *shmId, char *shmName, int streamBufSize, int frameRate,
 		int buffer_region_size, int buffer_item_count,
+		bool is_dumy,
 		unsigned preferredFrameSize = 0,
 		unsigned playTimePerFrame = 0);
 	// called only by createNew()
@@ -49,6 +51,7 @@ private:
 	int fBufferRegionSize;
 	int fBufferItemCount;
 
+	bool fIsDummy;
 	//for debug
 	char fShmName[32];
 	char fShmId[32];

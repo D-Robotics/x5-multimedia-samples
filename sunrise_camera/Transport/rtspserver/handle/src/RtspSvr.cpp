@@ -30,10 +30,14 @@ static bool CheckAsyncProcessSmsIsComplete(cqueue *queue){
 	int check_period_ms = 100;
 	//等待1s 查询是否删除完毕
 	for(int i = 0; i< 10; i++){
-		usleep(check_period_ms * 1000); //wait 100ms
+		if(i == 0){
+			usleep(1 * 1000); //wait 1ms
+		}else{
+			usleep(check_period_ms * 1000); //wait 100ms
+		}
 		int is_empty = cqueue_is_empty(queue);
 		if(is_empty){
-			SC_LOGI("rtsp server sms async process consumed %d ms", check_period_ms * (i + 1));
+			SC_LOGI("rtsp server sms async process consumed %d ms", check_period_ms * i + 1);
 			return true;
 		}
 	}

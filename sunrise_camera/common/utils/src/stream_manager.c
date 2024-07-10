@@ -135,11 +135,12 @@ void shm_stream_destory(shm_stream_t* handle)
 
 	cmtx_enter(handle->mtx);
 	shm_user_t* user = (shm_user_t *)handle->user_array;
-	SC_LOGI("[%s] name:%s handle addr: %p, index: %d",
-		user[handle->index].id, handle->name, handle, handle->index);
 
 	if(handle->mode == SHM_STREAM_READ)
 		user[0].users--;
+
+	SC_LOGI("[%s] name:%s handle addr: %p, index: %d, writer user count:%d",
+		user[handle->index].id, handle->name, handle, handle->index, user[0].users);
 
 	memset(user[handle->index].id, 0, 32);
 	if(handle->type == SHM_STREAM_MMAP)
@@ -498,6 +499,36 @@ void* shm_stream_malloc(shm_stream_t* handle, const char* name, unsigned int siz
 	return memory;
 }
 
+int shm_stream_is_already_create(char* id, char* name, int max_users){
+	if((id == NULL) || (name == NULL)){
+		SC_LOGE("id or name is null.");
+		return 0;
+	}
+
+	cmtx_enter(s_shmmap_lock);
+	shmmap_node* node = (shmmap_node*)cmap_pkey_find(s_shmmap, name);
+	if(node == NULL){
+		cmtx_leave(s_shmmap_lock);
+		return 0;
+	}
+
+	shm_user_t* users = (shm_user_t*)node->addr;
+	if(users == NULL){
+		cmtx_leave(s_shmmap_lock);
+		SC_LOGE("[%s-%s] stream manager logic is error, map is found bug users is null.",
+			id, name);
+		return 0;
+	}
+	for (int i = 0; i < max_users; i++){
+		if (strncmp(users[i].id, id, 32) == 0){
+			cmtx_leave(s_shmmap_lock);
+			SC_LOGW("[%s-%s] found is already created.", id, name);
+			return 1;
+		}
+	}
+	cmtx_leave(s_shmmap_lock);
+	return 0;
+}
 /*
 	为了避免同一个id未能正确调用destory而造成ref_count重复累计
 */
@@ -530,7 +561,7 @@ void shm_stream_unmalloc(shm_stream_t* handle)
 		return;
 
 	cmtx_enter(s_shmmap_lock);
-	void* node = cmap_pkey_find(s_shmmap, handle->name);\
+	void* node = cmap_pkey_find(s_shmmap, handle->name);
 
 	if(node == NULL){
 		cmtx_leave(s_shmmap_lock);

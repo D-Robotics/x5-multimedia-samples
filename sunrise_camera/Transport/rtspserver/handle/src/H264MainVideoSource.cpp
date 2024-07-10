@@ -11,43 +11,50 @@
 
 H264MainVideoSource* H264MainVideoSource::createNew(UsageEnvironment& env,
 	char *shmId, char *shmName, int streamBufSize, int frameRate,
-	int buffer_region_size, int buffer_item_count,
+	int buffer_region_size, int buffer_item_count, bool is_dumy,
 	unsigned preferredFrameSize,
 	unsigned playTimePerFrame)
 {
 	H264MainVideoSource* source = new H264MainVideoSource(env, shmId, shmName, streamBufSize, frameRate,
-		buffer_region_size, buffer_item_count, preferredFrameSize, playTimePerFrame);
+		buffer_region_size, buffer_item_count, is_dumy, preferredFrameSize, playTimePerFrame);
 	return source;
 }
 H264MainVideoSource::H264MainVideoSource(UsageEnvironment& env,
 	char *shmId, char *shmName, int streamBufSize, int frameRate,
 	int buffer_region_size, int buffer_item_count,
+	bool is_dumy,
 	unsigned preferredFrameSize,
 	unsigned playTimePerFrame)
 	: FramedSource(env), fPreferredFrameSize(preferredFrameSize), fPlayTimePerFrame(playTimePerFrame), fLastPlayTime(0)
 {
+	fIsDummy = is_dumy;
+
+	int ret = shm_stream_is_already_create(shmId, shmName, STREAM_MAX_USER);
+	if(ret != 0){
+		SC_LOGW("shm_id: %s, shm_name: %s is already created.", shmId, shmName);
+	}
+
 	fPresentationTime.tv_sec = 0;
 	fPresentationTime.tv_usec = 0;
-	SC_LOGI("video source created for %s", shmName);
+	SC_LOGI("video source created for shm_id: %s, shm_name: %s, is dummy %d", shmId, shmName, is_dumy);
 	fShmSource = shm_stream_create(shmId, shmName, STREAM_MAX_USER,
-		buffer_item_count, buffer_region_size,
-		SHM_STREAM_READ, SHM_STREAM_MALLOC);
+		buffer_item_count, buffer_region_size, SHM_STREAM_READ, SHM_STREAM_MALLOC);
 
 	strncpy(fShmName, shmName, sizeof(fShmName) - 1);
 	strncpy(fShmId, shmId, sizeof(fShmId) - 1);
-
 	fBufferRegionSize = buffer_region_size;
 	fBufferItemCount = buffer_item_count;
+	fPts = 0;
+	fNaluLen = 0;
 
 	SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, STREAM_MAX_USER: %d, framerate: %d, stream_buf_size: %d, region size:%d, item count %d",
 		 shmId, shmName, STREAM_MAX_USER, frameRate, streamBufSize, buffer_region_size, buffer_item_count);
-	fPts = 0;
-	fNaluLen = 0;
 }
 
 H264MainVideoSource::~H264MainVideoSource()
 {
-	SC_LOGI("video source deleted .");
+
+	SC_LOGI("video source deleted shm_id: %s, shm_name: %s, is dummy %d", fShmId, fShmName, fIsDummy);
 	if(fShmSource != NULL)
 	{
 		shm_stream_destory(fShmSource);
@@ -59,7 +66,11 @@ H264MainVideoSource::~H264MainVideoSource()
 
 void H264MainVideoSource::sync()
 {
-	shm_stream_sync(fShmSource);
+	if(fShmSource != NULL){
+		shm_stream_sync(fShmSource);
+	}else{
+		SC_LOGW("shm is null, but do sync.");
+	}
 }
 
 void H264MainVideoSource::idr()

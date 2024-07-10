@@ -58,6 +58,7 @@ OnDemandServerMediaSubsession::~OnDemandServerMediaSubsession() {
 char const*
 OnDemandServerMediaSubsession::sdpLines() {
   if (fSDPLines == NULL) {
+     printf("[rtsp-server] sdpLines is null start\n");
     // We need to construct a set of SDP lines that describe this
     // subsession (as a unicast stream).  To do so, we first create
     // dummy (unused) source and "RTPSink" objects,
@@ -75,6 +76,7 @@ OnDemandServerMediaSubsession::sdpLines() {
     Medium::close(dummyRTPSink);
     delete dummyGroupsock;
     closeStreamSource(inputSource);
+    printf("[rtsp-server] sdpLines is null end\n");
   }
   return fSDPLines;
 }
@@ -105,6 +107,7 @@ void OnDemandServerMediaSubsession
     ++((StreamState*)fLastStreamToken)->referenceCount();
     streamToken = fLastStreamToken;
   } else {
+    printf("[rtsp-server] getStreamParameters start \n");
     // Normal case: Create a new media source:
     unsigned streamBitrate;
     FramedSource* mediaSource
@@ -124,7 +127,7 @@ void OnDemandServerMediaSubsession
 	NoReuse dummy(envir()); // ensures that we skip over ports that are already in use
 	for (serverPortNum = fInitialPortNum; ; ++serverPortNum) {
 	  struct in_addr dummyAddr; dummyAddr.s_addr = 0;
-	  
+
 	  serverRTPPort = serverPortNum;
 	  rtpGroupsock = createGroupsock(dummyAddr, serverRTPPort);
 	  if (rtpGroupsock->socketNum() >= 0) break; // success
@@ -188,6 +191,8 @@ void OnDemandServerMediaSubsession
       = new StreamState(*this, serverRTPPort, serverRTCPPort, rtpSink, udpSink,
 			streamBitrate, mediaSource,
 			rtpGroupsock, rtcpGroupsock);
+
+    printf("[rtsp-server] getStreamParameters end \n");
   }
 
   // Record these destinations as being for this client session id:
@@ -419,6 +424,7 @@ void OnDemandServerMediaSubsession
 
 void OnDemandServerMediaSubsession
 ::setSDPLinesFromRTPSink(RTPSink* rtpSink, FramedSource* inputSource, unsigned estBitrate) {
+  printf("[rtsp-server] setSDPLinesFromRTPSink start\n");
   if (rtpSink == NULL) return;
   char const* mediaType = rtpSink->sdpMediaType();
   unsigned char rtpPayloadType = rtpSink->rtpPayloadType();
@@ -461,6 +467,7 @@ void OnDemandServerMediaSubsession
   delete[] (char*)rangeLine; delete[] rtpmapLine;
   delete[] fSDPLines; fSDPLines = strDup(sdpLines);
   delete[] sdpLines;
+  printf("[rtsp-server] setSDPLinesFromRTPSink end\n");
 }
 
 

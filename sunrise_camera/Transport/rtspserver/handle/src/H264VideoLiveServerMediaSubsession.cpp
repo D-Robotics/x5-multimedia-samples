@@ -47,6 +47,7 @@ char *shmId, char *shmName, int streamBufSize, int frameRate, int buffer_region_
 	fFrameRate = frameRate;
 	fBufferItemCount = buffer_item_count;
 	fBufferRegionSize = buffer_region_size;
+	fDummyVideoSourceCount = 0;
 	SC_LOGI("media subsession created for :%s [%d:%d]", shmName, fBufferRegionSize, fBufferItemCount);
 }
 
@@ -193,15 +194,39 @@ char const* H264VideoLiveServerMediaSubsession::getAuxSDPLine(RTPSink* rtpSink, 
 	return fAuxSDPLine;
 }
 
-FramedSource* H264VideoLiveServerMediaSubsession::createNewStreamSource(unsigned /*clientSessionId*/, unsigned& estBitrate) {
+FramedSource* H264VideoLiveServerMediaSubsession::createNewStreamSource(unsigned clientSessionId, unsigned& estBitrate) {
 //	estBitrate = 1500; // kbps, estimate
-	estBitrate = 1024*1024; // kbps, estimate
-	SC_LOGI("fFrameRate: %d", fFrameRate);
-	fVideoSource = H264MainVideoSource::createNew(envir(), fShmId, fShmName, fStreamBufSize, fFrameRate,
-		fBufferRegionSize, fBufferItemCount);
-	if (fVideoSource == NULL) return NULL;
+	bool is_dummy = false;
+	char* fShmId_tmp = fShmId;
+	if(clientSessionId == 0){
+		fDummyVideoSourceCount++;
+		is_dummy = true;
+		int len = strlen(fShmId) + snprintf(NULL, 0, "-%d", fDummyVideoSourceCount) + 1;
+		fShmId_tmp = (char*)malloc(len * sizeof(char));
+		sprintf(fShmId_tmp, "%s-%d", fShmId, fDummyVideoSourceCount);
+	}
+
+	SC_LOGI("create stream source %s %s bitrate:%d clientSessionId:%d fDummyVideoSourceCount:%d",
+		fShmId, fShmName, estBitrate, clientSessionId, fDummyVideoSourceCount);
+
+	fVideoSource = H264MainVideoSource::createNew(envir(), fShmId_tmp, fShmName, fStreamBufSize, fFrameRate,
+		fBufferRegionSize, fBufferItemCount, is_dummy);
+
+	if(clientSessionId == 0){
+		free(fShmId_tmp);
+	}
+
+	estBitrate = fBufferRegionSize; // kbps, estimate
+	if (fVideoSource == NULL) {
+		SC_LOGE("createNewStreamSource create video source failed.");
+		return NULL;
+	}
 
 	H264VideoLiveDiscreteFramer* videoSource = H264VideoLiveDiscreteFramer::createNew(envir(), (FramedSource*)fVideoSource);
+	if (videoSource == NULL) {
+		SC_LOGE("createNewStreamSource create discrete framer failed.");
+		return NULL;
+	}
 	return videoSource;
 }
 

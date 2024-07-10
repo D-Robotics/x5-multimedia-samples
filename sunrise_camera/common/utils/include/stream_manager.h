@@ -95,7 +95,7 @@ int shm_stream_remains(shm_stream_t* handle);
 int shm_stream_readers(shm_stream_t* handle);
 int shm_stream_info_callback_register(shm_stream_t* handle, shm_stream_info_callback callback);
 int shm_stream_info_callback_unregister(shm_stream_t* handle);
-
+int shm_stream_is_already_create(char* id, char* name, int max_users);
 //private
 void* shm_stream_malloc(shm_stream_t* handle, const char* name, unsigned int size);
 int   shm_stream_malloc_fix(shm_stream_t* handle, char* id, const char* name, int users, void* addr);

@@ -80,6 +80,7 @@ private:
 	int fFrameRate;
 	int fBufferRegionSize;
 	int fBufferItemCount;
+	int fDummyVideoSourceCount;
 };
 
 #endif

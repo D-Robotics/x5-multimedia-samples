@@ -399,7 +399,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	switch (codec_type)
 	{
 	case MEDIA_CODEC_ID_H264:
-		SC_LOGI("codec type is h264 .");
+		SC_LOGI("codec type is h264: frame size:%d  frame rate: %d", params->bitstream_buf_size, frame_rate);
 		context->codec_id = MEDIA_CODEC_ID_H264;
 		params->rc_params.mode = MC_AV_RC_MODE_H264CBR;
 		get_rc_params(context, &params->rc_params);
@@ -407,7 +407,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 		params->rc_params.h264_cbr_params.bit_rate = bit_rate;
 		break;
 	case MEDIA_CODEC_ID_H265:
-		SC_LOGI("codec type is h265 .");
+		SC_LOGI("codec type is h265: frame size:%d  frame rate: %d", params->bitstream_buf_size, frame_rate);
 		context->codec_id = MEDIA_CODEC_ID_H265;
 		params->rc_params.mode = MC_AV_RC_MODE_H265CBR;
 		get_rc_params(context, &params->rc_params);
@@ -415,7 +415,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 		params->rc_params.h265_cbr_params.bit_rate = bit_rate;
 		break;
 	case MEDIA_CODEC_ID_MJPEG:
-		SC_LOGI("codec type is mjpeg .");
+		SC_LOGI("codec type is mjpeg: frame size:%d  frame rate: %d", params->bitstream_buf_size, frame_rate);
 		context->codec_id = MEDIA_CODEC_ID_MJPEG;
 		params->rc_params.mode = MC_AV_RC_MODE_MJPEGFIXQP;
 		get_rc_params(context, &params->rc_params);

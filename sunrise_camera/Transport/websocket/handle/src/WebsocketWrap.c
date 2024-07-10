@@ -308,7 +308,7 @@ void *handleClient(void *args)
 		ws_connection_close ret = communicate(n, next, next_len);
 		if (ret != CONTINUE)
 		{
-			printf("communicate is error %d\n", ret);
+			printf("communicate disconnected: %d\n", ret);
 			break;
 		}
 

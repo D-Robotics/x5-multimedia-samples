@@ -920,48 +920,60 @@ function ws_send_cmd(kind, data) {
 // ws_send_cmd(REQUEST_TYPES.SET_ENCODE_BITRATE, Number(data)); // 设置编码码率
 
 function draw_detection_result(pipeline, detection_result) {
-	//获取画布DOM  还不可以操作
-
-	// 原图的大小是 1920 * 1080 或者 3840 * 2160
-	// web上显示的大小不一定是这个值，所以画框的时候需要做比例调整
-	// 获取真实视频的分辨率
-	// 获取与canvas关联的video对象，并且把  canvas 的 width 和 height 设置为 video 的 width 和 height
+	// 获取画布DOM
 	var video = document.getElementById(`video${g_current_layout}_${pipeline}`);
-	if(!video){
-		console.log("not found video" + g_current_layout +"_" + pipeline);
-		return
+	if (!video) {
+		console.log("not found video" + g_current_layout + "_" + pipeline);
+		return;
 	}
 
 	var canvas = document.getElementById(`canvas${g_current_layout}_${pipeline}`);
-	canvas.width = video.videoWidth;
-	canvas.height = video.videoHeight;
-
 	var context2D = canvas.getContext("2d");
 
-	// 清空
+	// 清空画布
 	context2D.clearRect(0, 0, canvas.width, canvas.height);
 	context2D.globalAlpha = 50;
 
-	// 遍历bbox
+	// 设置 canvas 尺寸与 video 尺寸一致
+	canvas.width = video.clientWidth;
+	canvas.height = video.clientHeight;
+
+	// 计算 video 的缩放比例
+	var scaleX = video.clientWidth / video.videoWidth;
+	var scaleY = video.clientHeight / video.videoHeight;
+
+	// 使用最小缩放比例，确保内容保持正确的宽高比
+	var scale = Math.min(scaleX, scaleY);
+
+	// 计算视频在画布中的偏移量
+	var offsetX = (canvas.width - video.videoWidth * scale) / 2;
+	var offsetY = (canvas.height - video.videoHeight * scale) / 2;
+
 	context2D.lineWidth = 2;
 	context2D.strokeStyle = "#f1af37";
 	context2D.font = "24px Arial";
-	context2D.fillStyle = "#ff6666";    // 柔和浅红色
+	context2D.fillStyle = "#ff6666"; // 柔和浅红色
+
+	// 遍历 bbox 并绘制
 	for (var i in detection_result) {
-		/*console.log(detection_result[i]);*/
 		var result = detection_result[i];
-		context2D.strokeRect(result.bbox[0], result.bbox[1], (result.bbox[2] - result.bbox[0]) , (result.bbox[3] - result.bbox[1]));
-		if (result.name) {
-			// 如果 result.name 存在，则执行以下逻辑
-			context2D.fillText(result.name + "(" + result.score + ")", result.bbox[0], result.bbox[1]);
-		} else if (result.class_name) {
-			// 如果 result.name 不存在但 result.class_name 存在，则执行以下逻辑
-			context2D.fillText(result.class_name + "(" + result.prob + ")", result.bbox[0], result.bbox[1]);
-		}
+		var x = result.bbox[0] * scale + offsetX;
+		var y = result.bbox[1] * scale + offsetY;
+		var width = (result.bbox[2] - result.bbox[0]) * scale;
+		var height = (result.bbox[3] - result.bbox[1]) * scale;
+
+		context2D.strokeRect(x, y, width, height);
+
+		// 绘制标签文本
+		var text = result.name ? `${result.name} (${result.score})` : `${result.class_name} (${result.prob})`;
+		context2D.fillText(text, x, y - 5); // 在矩形上方显示标签
 	}
+
+
 	context2D.stroke();
 	context2D.fill();
 }
+
 
 function show_classification_result(pipeline, msg) {
 	const alogResultId = `alog_result${g_current_layout}_${pipeline}`;

@@ -5,21 +5,8 @@
 *.patch
 *.vscode
 
-gdc/basic/gdc_basic
-gdc/generate_bin/generate_bin
-isp/get_isp_data/get_isp_data
-vin/get_vin_data/get_vin_data
-sample_vse/sample_vse
-pipelines/single_pipe_vin_isp_vse/single_pipe_vin_isp_vse
-pipelines/multi_pipe_vin_isp_vse/multi_pipe_vin_isp_vse
-
-sample_gdc/basic/gdc_basic
-sample_gdc/generate_bin/generate_bin
-sample_isp/get_isp_data/get_isp_data
 sample_vin/get_vin_data/get_vin_data
 sample_vse/sample_vse
-sample_pipeline/single_pipe_vin_isp_vse/single_pipe_vin_isp_vse
-sample_pipeline/multi_pipe_vin_isp_vse/multi_pipe_vin_isp_vse
-sample_pipeline/single_pipe_vin_isp_vse_vpu/single_pipe_vin_isp_vse_vpu
 sample_codec/sample_codec
 tuning_tool/out
+

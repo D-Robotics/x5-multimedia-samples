@@ -46,7 +46,7 @@ install:
 	cp -rf tools/* $(GLOBAL_INSTALL_DIR)/bin
 	cp -rf test_data/* $(GLOBAL_INSTALL_DIR)/test_data
 	cp -rf model_zoom/* $(GLOBAL_INSTALL_DIR)/model_zoom
-	cp -rf gdc_bin/* $(GLOBAL_INSTALL_DIR)/gdc_bin
+	cp -rf vp_sensors/gdc_bin/* $(GLOBAL_INSTALL_DIR)/gdc_bin
 
 clean:
 	@rm -rf $(OBJ) $(DEP) $(TARGET)

@@ -104,6 +104,7 @@ typedef struct vp_vflow_contex_s {
 	hbn_vflow_handle_t vflow_fd;
 	camera_handle_t cam_fd;
 	int32_t mipi_csi_rx_index;
+	int32_t mclk_is_not_configed;
 	vp_sensor_config_t *sensor_config;
 	hbn_vnode_handle_t vin_node_handle;
 	hbn_vnode_handle_t isp_node_handle;

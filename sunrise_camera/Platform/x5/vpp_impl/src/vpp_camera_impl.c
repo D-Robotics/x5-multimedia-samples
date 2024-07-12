@@ -337,10 +337,12 @@ int32_t vpp_camera_init_param(void)
 			SC_LOGI("Ignore camera sensor [%s] [%d/%d].", sensor_name, i, pipeline_count);
 			continue;
 		}
-
-		SC_LOGI("Enable camera sensor [%s] [%d/%d]", sensor_name, i, pipeline_count);
 		g_vpp_camera[i].vp_vflow_contex.mipi_csi_rx_index = g_solution_config.cam_solution.cam_vpp[i].csi_index;
 		g_vpp_camera[i].vp_vflow_contex.sensor_config = vp_get_sensor_config_by_name(sensor_name);
+		g_vpp_camera[i].vp_vflow_contex.mclk_is_not_configed = g_solution_config.cam_solution.cam_vpp[i].mclk_is_not_configed;
+
+		SC_LOGI("Enable camera sensor [%s] [%d/%d] mclk_is_not_configed:[%d]", sensor_name, i, pipeline_count,
+			g_vpp_camera[i].vp_vflow_contex.mclk_is_not_configed);
 		if (g_vpp_camera[i].vp_vflow_contex.sensor_config == NULL) {
 			SC_LOGE("sensor name not found(%s)", sensor_name);
 			return -1;
@@ -446,13 +448,15 @@ int32_t vpp_camera_init(void)
 		ret |= vp_osd_init(vp_vflow_contex);
 		ret |= vp_gdc_init(vp_vflow_contex);
 		ret |= vp_vflow_init(vp_vflow_contex);
-		SC_ERR_CON_EQ(ret, 0, "vpp_camera_init");
+		if (ret != 0){
+			SC_LOGE("pipeline init failed for channel %d error", i);
+			continue;
+		}
 
 		ret = vp_codec_init(&g_vpp_camera[i].m_encode_context);
-		if (ret != 0)
-		{
-			SC_LOGE("Encode vp_codec_init error");
-			return -1;
+		if (ret != 0){
+			SC_LOGE("Encode vp_codec_init error for channel %d", i);
+			continue;
 		}
 		SC_LOGI("Init video encode instance %d successful", g_vpp_camera[i].m_encode_context.instance_index);
 
@@ -463,7 +467,7 @@ int32_t vpp_camera_init(void)
 		ret = bpu_wrap_model_init(&g_vpp_camera[i].m_bpu_handle, g_vpp_camera[i].m_bpu_handle.m_model_name);
 		if (ret != 0) {
 			SC_LOGE("bpu_wrap_model_init failed");
-			return -1;
+			continue;
 		}
 		// 注册算法结果回调函数
 		bpu_wrap_callback_register(&g_vpp_camera[i].m_bpu_handle,

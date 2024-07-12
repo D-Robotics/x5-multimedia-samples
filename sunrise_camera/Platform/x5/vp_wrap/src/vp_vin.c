@@ -34,8 +34,16 @@ int32_t vp_vin_init(vp_vflow_contex_t *vp_vflow_contex)
 	hbn_vnode_handle_t *vin_node_handle = &vp_vflow_contex->vin_node_handle;
 	vin_attr_ex_t vin_attr_ex;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
-	vin_attr_ex.vin_attr_ex_mask = 0x80;
-	vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
+
+	if(vp_vflow_contex->mclk_is_not_configed){
+		vin_attr_ex.vin_attr_ex_mask = 0x00;
+		vin_attr_ex.mclk_ex_attr.mclk_freq = 0; // 使用外部有源晶振
+		SC_LOGI("csi%d ignore mclk ex attr, because mclk is not configed at device tree.",
+			vp_vflow_contex->mipi_csi_rx_index);
+	}else{
+		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
+		vin_attr_ex.vin_attr_ex_mask = 0x80;
+	}
 
 	// 创建pipeline中的vin node
 	ret = hbn_camera_create(camera_config, &vp_vflow_contex->cam_fd);

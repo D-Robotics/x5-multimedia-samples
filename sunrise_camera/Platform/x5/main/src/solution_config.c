@@ -31,6 +31,7 @@ solution_cfg_t g_solution_config;
 static key_info_t csi_info_key[] = {
 	MAKE_KEY_INFO(csi_info_t, KEY_TYPE_S32, index, NULL),
 	MAKE_KEY_INFO(csi_info_t, KEY_TYPE_S32, is_valid, NULL),
+	MAKE_KEY_INFO(csi_info_t, KEY_TYPE_S32, mclk_is_not_configed, NULL),
 	MAKE_KEY_INFO(csi_info_t, KEY_TYPE_STRING, sensor_config_list, NULL),
 	MAKE_END_INFO()
 };
@@ -55,6 +56,7 @@ static key_info_t cfg_cam_vpp_key[] = {
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, is_valid, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, is_enable, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, csi_index, NULL),
+	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, mclk_is_not_configed, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_STRING, sensor, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, encode_type, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, encode_bitrate, NULL),
@@ -112,6 +114,13 @@ void print_solution_cfg(const solution_cfg_t *config)
 	}
 	printf("\n");
 
+	printf("  MclkIsNotConfiged Status: \n");
+	for(int i = 0; i< csi_list_info->max_count; i++){
+		printf("  	CSI_%d: [%d]", csi_list_info->csi_info[i].index,
+			csi_list_info->csi_info[i].mclk_is_not_configed);
+	}
+	printf("\n");
+
 	printf("  Model List: %s\n", config->hardware_capability.model_list);
 	printf("  Codec Type List: %s\n", config->hardware_capability.codec_type_list);
 	printf("  Encode Bit Rate List: ");
@@ -136,6 +145,7 @@ void print_solution_cfg(const solution_cfg_t *config)
 		printf("    Encode Bitrate: %d\n", config->cam_solution.cam_vpp[i].encode_bitrate);
 		printf("    Model: %s\n", config->cam_solution.cam_vpp[i].model);
 		printf("    Gdb Status: %d\n", config->cam_solution.cam_vpp[i].gdc_status);
+		printf("    MclkIsNotConfiged Status: %d\n", config->cam_solution.cam_vpp[i].mclk_is_not_configed);
 	}
 	printf("Box Solution:\n");
 	printf("  Pipeline Count: %d\n", config->box_solution.pipeline_count);
@@ -233,6 +243,9 @@ int32_t solution_cfg_update_camera_config(){
 	for(int i = 0; i < csi_list_info->max_count; i++){
 		solution_cfg_cam_vpp_t* cam_vpp = &g_solution_config.cam_solution.cam_vpp[i];
 		const char *sensor_list_str = csi_list_info->csi_info[i].sensor_config_list;
+		//mclk 是否配置与系统有关，每次启动 不管摄像头是否接入，都必须更新
+		cam_vpp->mclk_is_not_configed = csi_list_info->csi_info[i].mclk_is_not_configed;
+
 		//本次启动: CSI_${i} 没有接摄像头
 		if(!csi_list_info->csi_info[i].is_valid){
 			if(cam_vpp->is_valid == 1){
@@ -352,6 +365,7 @@ int32_t solution_cfg_load_default_config()
 	g_solution_config.cam_solution.max_pipeline_count = STL_MAX_VPP_CAM_NUM;
 	for(int i = 0; i < csi_list_info->max_count; i++){
 		solution_cfg_cam_vpp_t* cam_vpp = &g_solution_config.cam_solution.cam_vpp[i];
+		cam_vpp->mclk_is_not_configed = csi_list_info->csi_info[i].mclk_is_not_configed;
 
 		if(csi_list_info->csi_info[i].is_valid){ //接入了摄像头
 			size_t sensor_config_list_size = sizeof(csi_list_info->csi_info[i].sensor_config_list);
@@ -381,6 +395,7 @@ int32_t solution_cfg_load_default_config()
 				strcpy(cam_vpp->model, "null");
 			}
 			cam_vpp->csi_index = csi_list_info->csi_info[i].index;
+
 			cam_vpp->encode_type = 0;
 			cam_vpp->encode_bitrate = 8192;
 		}else{ //没有接摄像头

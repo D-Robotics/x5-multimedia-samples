@@ -354,7 +354,8 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 				print_help();
 				exit(0);
 			}
-			ret = vp_sensor_multi_fixed_mipi_host(pipeline_info->pipe_contexts.sensor_config, used_mipi_host);
+			ret = vp_sensor_multi_fixed_mipi_host(pipeline_info->pipe_contexts.sensor_config, used_mipi_host,
+				&pipeline_info->pipe_contexts.csi_config);
 			if (ret < 0) {
 				printf("vp sensor fixed mipi host fail, sensor id %d."
 					"Maybe No Camera Sensor found. Please check if the specified "
@@ -435,6 +436,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
 	uint32_t chn_id = 0;
+	uint64_t vin_attr_ex_mask = 0;
 
 	sensor_config = pipe_contex->sensor_config;
 	vin_node_attr = sensor_config->vin_node_attr;
@@ -445,8 +447,14 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
-	vin_attr_ex.ex_attr_type = VIN_STATIC_MCLK_ATTR;
-	vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
+	if(pipe_contex->csi_config.mclk_is_not_configed){
+		//设备树中没有配置mclk：使用外部晶振
+		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
+			pipe_contex->csi_config.index);
+	}else{
+		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
+		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
+	}
 
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
 	ERR_CON_EQ(ret, 0);
@@ -459,9 +467,17 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	// 设置输出通道的属性
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, chn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
-	ERR_CON_EQ(ret, 0);
-
+	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+	if (vin_attr_ex_mask) {
+		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
+			if ((vin_attr_ex_mask & (1 << i)) == 0)
+				continue;
+			vin_attr_ex.ex_attr_type = i;
+			/*we need to set hbn_vnode_set_attr_ex in a loop*/
+			ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
+			ERR_CON_EQ(ret, 0);
+		}
+	}
 	return 0;
 }
 

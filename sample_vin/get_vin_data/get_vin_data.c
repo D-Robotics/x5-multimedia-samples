@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
 				index,
 				vp_sensor_config_list[index]->sensor_name,
 				vp_sensor_config_list[index]->config_file);
-		ret = vp_sensor_fixed_mipi_host(pipe_contex.sensor_config);
+		ret = vp_sensor_fixed_mipi_host(pipe_contex.sensor_config, &pipe_contex.csi_config);
 		if (ret != 0) {
 			printf("No Camera Sensor found. Please check if the specified "
 				"sensor is connected to the Camera interface.\n");
@@ -149,9 +149,14 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
-	vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
-	vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
-
+	if(pipe_contex->csi_config.mclk_is_not_configed){
+		//设备树中没有配置mclk：使用外部晶振
+		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
+			pipe_contex->csi_config.index);
+	}else{
+		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
+		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
+	}
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
 	ERR_CON_EQ(ret, 0);
 	// 设置基本属性

@@ -43,6 +43,7 @@ typedef struct pipe_contex_s {
 	hbn_vnode_handle_t codec_node_handle;
 	camera_handle_t cam_fd;
 	vp_sensor_config_t *sensor_config;
+	vp_csi_config_t csi_config;
 } pipe_contex_t;
 
 int32_t read_yuv420_file(const char *filename, char *addr0, char *addr1, uint32_t y_size);

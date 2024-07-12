@@ -732,7 +732,7 @@ function render_json_to_html(solutions_config) {
 					});
 					html += `</select>`;
 					html += `</li>`;
-				}else if((itemKey === "csi_index") || (itemKey === "is_enable") || (itemKey === "is_valid") ){
+				}else if((itemKey === "csi_index") || (itemKey === "is_enable") || (itemKey === "is_valid") ||  (itemKey === "mclk_is_not_configed") ){
 					continue; //不显示
 
 				}else if(itemKey === "gdc_status"){
@@ -1133,6 +1133,8 @@ function update_json_from_html() {
 				if(itemKey === "is_enable")
 					continue;
 				if(itemKey === "is_valid")
+					continue;
+				if(itemKey === "mclk_is_not_configed")
 					continue;
 
 				if((itemKey === 'gdc_status') && (cam_solution["cam_vpp"][i][itemKey] === -1)){

@@ -21,6 +21,7 @@ typedef struct {
 	int32_t is_valid;
 	int32_t is_enable;
 	int32_t csi_index;
+	int32_t mclk_is_not_configed; //设备树中是否配置了 mclk
 	char sensor[32]; // camera sensor型号
 	int32_t encode_type; // 编码类型
 	int32_t encode_bitrate; // 编码码率

@@ -611,6 +611,24 @@ int32_t vpp_box_start(void)
 	return 0;
 }
 
+static int32_t get_pipeline_id_by_video_id(int32_t video_id)
+{
+	int32_t i = 0;
+	int32_t enable_pipeline_count = 0;
+	// 遍历所有 pipeline
+	// 用 enable_pipeline_count 记录使能的pipeline的编号，这个编号理论上与 web 上的video编号相等
+	// 当 enable_pipeline_count == video_id时就说明找到了对应的pipeline
+	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
+		if (g_vpp_box[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
+			enable_pipeline_count++;
+			if (enable_pipeline_count == video_id) {
+				return i;
+			}
+		}
+	}
+	return 0;
+}
+
 int32_t vpp_box_stop(void)
 {
 	int32_t i = 0, ret = 0;
@@ -694,6 +712,9 @@ int32_t vpp_box_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 {
 	int32_t i= 0, ret = 0;
 	mc_video_codec_enc_params_t *enc_params;
+	ImageFrame image_frame = {0};
+	char file_name[256] = {0};
+	hbn_vnode_image_t *hbn_vnode_image = NULL;
 
 	switch(type)
 	{
@@ -756,6 +777,61 @@ int32_t vpp_box_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 				}
 			}
 			SC_LOGI("Box Solution current enabled status is [0x%x]\n", *status);
+			break;
+		}
+	case SOLUTION_GET_VSE_FRAME:
+		{
+			// video_id 代表web上的第几个 video 控件，从1开始计数
+			// 需要结合当前使能了多少路pipeline来获取到对应的 pipeline id
+			int32_t video_id = *(int32_t *)val;
+			int32_t pipeline_id = get_pipeline_id_by_video_id(video_id);
+			if (vp_allocate_image_frame(&image_frame) == NULL) {
+				SC_LOGE("vp_allocate_image_frame failed");
+				return -1;
+			}
+			ret = vp_vse_get_frame(&g_vpp_box[pipeline_id].vp_vflow_contex, 0, &image_frame);
+			if (ret != 0) {
+				SC_LOGE("vp_vse_get_frame failed (%d)", ret);
+				vp_free_image_frame(&image_frame);
+				return -1;
+			}
+
+			hbn_vnode_image = (hbn_vnode_image_t *)image_frame.hbn_vnode_image;
+
+			snprintf(file_name, sizeof(file_name),
+				"/tmp/pipeline_%d_vse_ochn0_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
+				pipeline_id,
+				hbn_vnode_image->buffer.width,
+				hbn_vnode_image->buffer.height,
+				hbn_vnode_image->buffer.stride,
+				hbn_vnode_image->info.frame_id,
+				hbn_vnode_image->info.timestamps);
+
+			SC_LOGI("pipeline %d vse dump yuv %dx%d(stride:%d), buffer size: %ld frame id: %d,"
+				" timestamp: %ld",
+				pipeline_id,
+				hbn_vnode_image->buffer.width, hbn_vnode_image->buffer.height,
+				hbn_vnode_image->buffer.stride,
+				hbn_vnode_image->buffer.size[0],
+				hbn_vnode_image->info.frame_id,
+				hbn_vnode_image->info.timestamps);
+
+			delete_files_with_extension("/tmp", ".yuv");
+			vp_dump_2plane_yuv_to_file(file_name,
+				hbn_vnode_image->buffer.virt_addr[0],
+				hbn_vnode_image->buffer.virt_addr[1],
+				hbn_vnode_image->buffer.size[0],
+				hbn_vnode_image->buffer.size[1]);
+
+			vp_vse_release_frame(&g_vpp_box[pipeline_id].vp_vflow_contex, 0, &image_frame);
+			if (ret != 0) {
+				SC_LOGE("vp_vse_release_frame failed.");
+				vp_free_image_frame(&image_frame);
+				return -1;
+			}
+			vp_free_image_frame(&image_frame);
+			// 通知浏览器下载文件
+			SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_UPLOAD_FILE, (void*)file_name);
 			break;
 		}
 	default:

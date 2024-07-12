@@ -182,6 +182,7 @@ window.onload = function() {
 		captureButton.className = "capture-button";
 		captureButton.id = "capture_" + mode.toLowerCase() + "_" + layoutNum + "_" + videoNum;
 		captureButton.innerHTML = "📸 " + mode + " <span class='tooltip'>" + tooltip + "</span>";
+		captureButton.display = "none"
 		return captureButton;
 	}
 
@@ -498,14 +499,14 @@ function adjust_layout(num_videos) {
 		layout.style.display = 'none';
 	});
 
-	if(num_videos === 0){
+	if (num_videos === 0) {
 		//do nothing
 		return;
-	}else if (num_videos === 1) {
+	} else if (num_videos === 1) {
 		document.getElementById('layout1').style.display = 'block';
 	} else if (num_videos === 2) {
 		document.getElementById('layout2').style.display = 'flex';
-	}else {
+	} else {
 		document.getElementById(`layout${num_videos}`).style.display = 'grid';
 	}
 
@@ -524,13 +525,25 @@ function adjust_layout(num_videos) {
 	// 获取单选按钮元素
 	var radioButton = document.getElementById("cam_solution");
 
-	// 如果选择的方案是智能摄像机，显示抓拍按键
-	if (radioButton.checked) {
-		for (var i = 1; i <= num_videos; i++) {
-			var capture_buttons = document.getElementById(`capture_buttons${num_videos}_${i}`);
-			if (capture_buttons) {
-				capture_buttons.style.display = "flex";
-			}
+	// Show or hide capture buttons based on radio button state
+	for (let i = 1; i <= num_videos; i++) {
+		const captureButtons = document.getElementById(`capture_buttons${num_videos}_${i}`);
+		if (captureButtons) {
+			captureButtons.style.display = 'flex';
+		}
+
+		const captureRawButton = document.getElementById(`capture_raw_${num_videos}_${i}`);
+		const captureIspButton = document.getElementById(`capture_isp_${num_videos}_${i}`);
+		const captureVseButton = document.getElementById(`capture_vse_${num_videos}_${i}`);
+
+		if (radioButton.checked) {
+			if (captureRawButton) captureRawButton.style.display = 'flex';
+			if (captureIspButton) captureIspButton.style.display = 'flex';
+			if (captureVseButton) captureVseButton.style.display = 'flex';
+		} else {
+			if (captureRawButton) captureRawButton.style.display = 'none';
+			if (captureIspButton) captureIspButton.style.display = 'none';
+			if (captureVseButton) captureVseButton.style.display = 'flex';
 		}
 	}
 }
@@ -760,20 +773,20 @@ function render_json_to_html(solutions_config) {
 		container.innerHTML = html;
 		function createCheckboxChangeHandler(checkboxNumber) {
 			return function(event) {
-			  const cam_solution = g_solution_configs["cam_solution"];
-			  const cam_vpp_list = cam_solution.cam_vpp
-			  const cam_vpp = cam_vpp_list[checkboxNumber];
-			  if(cam_vpp.is_valid === 0){
-				console.error("csi_" + cam_vpp.csi_index + " is not valid, but set checkbox." );
-				return;
-			  }
-			  const isChecked = event.target.checked;
-			  if (isChecked) {
-				cam_vpp.is_enable = 1;
-			  } else {
-				cam_vpp.is_enable = 0;
-			  }
-			  render_json_to_html(g_solution_configs);
+				const cam_solution = g_solution_configs["cam_solution"];
+				const cam_vpp_list = cam_solution.cam_vpp
+				const cam_vpp = cam_vpp_list[checkboxNumber];
+				if(cam_vpp.is_valid === 0){
+					console.error("csi_" + cam_vpp.csi_index + " is not valid, but set checkbox." );
+					return;
+				}
+				const isChecked = event.target.checked;
+				if (isChecked) {
+					cam_vpp.is_enable = 1;
+				} else {
+					cam_vpp.is_enable = 0;
+				}
+				render_json_to_html(g_solution_configs);
 			};
 		}
 		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
@@ -792,8 +805,8 @@ function render_json_to_html(solutions_config) {
 				const cam_vpp_list = cam_solution.cam_vpp
 				const cam_vpp = cam_vpp_list[channel_number];
 				if(cam_vpp.is_enable === 0){
-				  console.error("csi_" + cam_vpp.csi_index + " is not enable, but set encodetype." );
-				  return;
+					console.error("csi_" + cam_vpp.csi_index + " is not enable, but set encodetype." );
+					return;
 				}
 				var selectedEncodeType = this.options[this.selectedIndex].text;
 				const encode_type_int = getIntDecodeType(selectedEncodeType);
@@ -804,7 +817,7 @@ function render_json_to_html(solutions_config) {
 
 				cam_vpp["encode_type"] = encode_type_int;
 				render_json_to_html(g_solution_configs);
-			  };
+			};
 		}
 		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
 			const cam_vpp = cam_vpp_list[i];

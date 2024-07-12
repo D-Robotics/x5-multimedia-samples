@@ -152,6 +152,7 @@ int32_t av_open_stream(DecodeParams *p_param,
 	av_dict_set(&option, "stimeout", "3000000", 0);
 	av_dict_set(&option, "bufsize", "1024000", 0);
 	av_dict_set(&option, "rtsp_transport", "tcp", 0);
+	av_dict_set(&option, "probesize", "10000000", 0); // 设置 probesize 为 10M
 
 	// 循环尝试打开视频流，最多重试 10 次
 	do
@@ -188,6 +189,7 @@ int32_t av_open_stream(DecodeParams *p_param,
 
 	// 获取视频流的帧数
 	p_param->frame_num = (*p_avContext)->streams[video_idx]->codec_info_nb_frames;
+	printf("p_param->frame_num: %d\n", p_param->frame_num);
 
 exit:
 	return video_idx;
@@ -874,6 +876,7 @@ int32_t vp_codec_get_output(media_codec_context_t *context, media_codec_buffer_t
 		printf("%s idx: %d, %s\n",
 			context->encoder ? "Encode" : "Decode", context->instance_index,
 			"hb_mm_mc_dequeue_output_buffer timed out (possibly normal exit due to lack of data)");
+		return -1;
 	}
 	if ((!context->encoder) && (buffer->type != MC_VIDEO_FRAME_BUFFER))
 	{
@@ -1236,26 +1239,6 @@ int32_t decode_h264_h265_mjpeg_video(media_codec_context_t *context, DecodeParam
 			{
 				printf("Failed to av_read_frame error(0x%08x)\n", ret);
 			}
-
-			if (avContext)
-			{
-				avformat_close_input(&avContext);
-			}
-			if (params->input != NULL)
-			{
-				avContext = NULL;
-				memset(&avpacket, 0, sizeof(avpacket));
-				video_idx = av_open_stream(params, &avContext, &avpacket);
-				if (video_idx < 0)
-				{
-					printf("failed to av_open_stream\n");
-					goto err_av_open;
-				}
-			}
-			else
-			{
-				eos = true;
-			}
 			break;
 		}
 		else
@@ -1579,6 +1562,8 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
+	// 等待100豪秒，让解码器完成所有帧的解码并被output
+	usleep(100*1000);
 	decode_output_exit = 0;
 
 	// 等待所有解码输出线程结束

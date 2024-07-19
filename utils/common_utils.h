@@ -12,6 +12,7 @@
 #include "vp_sensors.h"
 #include "vse_cfg.h"
 #include "codec_cfg.h"
+#include "hb_media_codec.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +33,12 @@ extern "C" {
 	} while(0)\
 
 #define VSE_MAX_CHANNELS 6
+typedef struct camera_config_info_s{
+	int width;
+	int height;
+	int fps;
+	media_codec_id_t encode_type;
+}camera_config_info_t;
 
 typedef struct pipe_contex_s {
 	hbn_vflow_handle_t vflow_fd;

@@ -446,15 +446,15 @@ int32_t vp_codec_release_output(media_codec_context_t *context, media_codec_buff
 
 	return ret;
 }
-int vp_codec_encoder_create_and_start(media_codec_context_t *media_context, vp_codec_info_t *vp_codec_info)
+int vp_codec_encoder_create_and_start(media_codec_context_t *media_context, camera_config_info_t *camera_config_info)
 {
 	int ret = 0;
-	int encode_width = vp_codec_info->width;
-	int encode_height = vp_codec_info->height;
-	int encode_fps = vp_codec_info->fps;
+	int encode_width = camera_config_info->width;
+	int encode_height = camera_config_info->height;
+	int encode_fps = camera_config_info->fps;
 	mc_av_codec_startup_params_t startup_params = {0};
 
-	ret = vp_encode_config_param(media_context, vp_codec_info->encode_type,
+	ret = vp_encode_config_param(media_context, camera_config_info->encode_type,
 								encode_width, encode_height,
 								encode_fps, 8192);
 	ERR_CON_EQ(ret, 0);

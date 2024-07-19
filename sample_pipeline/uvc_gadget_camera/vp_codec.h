@@ -13,17 +13,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+#include "common_utils.h"
 #include "hb_media_codec.h"
 #include "hb_media_error.h"
 
-typedef struct vp_codec_info_s{
-	int width;
-	int height;
-	int fps;
-	media_codec_id_t encode_type;
-}vp_codec_info_t;
-int vp_codec_encoder_create_and_start(media_codec_context_t *media_context, vp_codec_info_t *vp_codec_info);
+
+int vp_codec_encoder_create_and_start(media_codec_context_t *media_context, camera_config_info_t *camera_config_info);
 int vp_codec_encoder_destroy_and_stop(media_codec_context_t *media_context);
 
 #ifdef __cplusplus

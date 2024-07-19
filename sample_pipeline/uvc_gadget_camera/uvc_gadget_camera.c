@@ -24,12 +24,13 @@ enum pipeline_thread_state_t{
 };
 typedef struct uvc_gadget_camera_contex_s
 {
+	camera_config_info_t camera_config_info;
 	struct uvc_context *uvc_contex;
 	pipe_contex_t pipe_contex;
 
 	int vse_bind_codec_chn;
 	int codec_buffer_count;
-	vp_codec_info_t vp_codec_info;
+
 	media_codec_context_t encode_context;
 
 	int sensor_mode;
@@ -140,19 +141,6 @@ void *pipeline_porcess_func(void *data){
 	return NULL;
 }
 
-static int get_codec_info_from_pipeline(pipe_contex_t *pipe_context, vp_codec_info_t *vp_codec_info){
-	vse_ochn_attr_t vse_ochn_attr = {0};
-	int ret = hbn_vnode_get_ochn_attr(pipe_context->vse_node_handle,
-								g_uvc_gadget_camera_contex.vse_bind_codec_chn,
-								&vse_ochn_attr);
-	ERR_CON_EQ(ret, 0);
-	vp_codec_info->fps = pipe_context->sensor_config->camera_config->fps;
-	vp_codec_info->width = vse_ochn_attr.target_w;
-	vp_codec_info->height = vse_ochn_attr.target_h;
-	vp_codec_info->encode_type = MEDIA_CODEC_ID_H264;
-	return 0;
-}
-
 static int uvc_gadget_camera_contex_init(){
 	int codec_buffer_count = g_uvc_gadget_camera_contex.codec_buffer_count;
 	teQueueStatus status = mQueueCreate(&g_uvc_gadget_camera_contex.inused_queue, codec_buffer_count + 1);
@@ -168,31 +156,34 @@ static int uvc_gadget_camera_contex_init(){
 	return 0;
 }
 
-static int pipeline_process_start(uvc_gadget_camera_contex_t *uvc_gadget_camera_contex){
+static int pipeline_process_start(uvc_gadget_camera_contex_t *uvc_gadget_camera_contex, camera_config_info_t *camera_config_info){
 	int ret = 0;
 	int codec_buffer_count = uvc_gadget_camera_contex->codec_buffer_count;
-		// 2. create pipeline:vin->isp->vse
+
+	// 1. create pipeline:vin->isp->vse
 	pipe_contex_t *pipe_contex = &uvc_gadget_camera_contex->pipe_contex;
 	memset(pipe_contex, 0, sizeof(pipe_contex_t));
-
 	pipe_contex->sensor_config = uvc_gadget_camera_contex->sensor_config;
 	pipe_contex->csi_config = uvc_gadget_camera_contex->csi_config;
 
-	ret = vp_create_and_start_pipeline(pipe_contex,
-									   pipe_contex->csi_config.index,
-									   uvc_gadget_camera_contex->vse_bind_codec_chn,
-									   uvc_gadget_camera_contex->sensor_mode);
+	vp_pipeline_info_t vp_pipeline_info = {
+		.active_mipi_host = pipe_contex->csi_config.index,
+		.vse_bind_index = uvc_gadget_camera_contex->vse_bind_codec_chn,
+		.sensor_mode = uvc_gadget_camera_contex->sensor_mode,
+	};
+	vp_pipeline_info.camera_config_info = *camera_config_info;
+	ret = vp_create_and_start_pipeline(pipe_contex, &vp_pipeline_info);
 	ERR_CON_EQ(ret, 0);
 
-	//3. create h264 codec
-	get_codec_info_from_pipeline(pipe_contex, &uvc_gadget_camera_contex->vp_codec_info);
+	//2. create h264 codec
 	media_codec_context_t *encode_context = &uvc_gadget_camera_contex->encode_context;
-	ret = vp_codec_encoder_create_and_start(encode_context, &uvc_gadget_camera_contex->vp_codec_info);
+	ret = vp_codec_encoder_create_and_start(encode_context, camera_config_info);
 	if (ret != 0){
 		printf("create_encodec failed:%d\n", ret);
 		return -1;
 	}
 
+	//3. init unused queue
 	for (size_t i = 0; i < codec_buffer_count; i++){
 		media_codec_buffer_t *ouput_buffer_ptr = (media_codec_buffer_t *)malloc(sizeof(media_codec_buffer_t));
 		if (ouput_buffer_ptr == NULL){
@@ -205,7 +196,7 @@ static int pipeline_process_start(uvc_gadget_camera_contex_t *uvc_gadget_camera_
 			return -1;
 		}
 	}
-
+	//4. create pipeline thread
 	uvc_gadget_camera_contex->pipeline_thread_state = E_THREAD_RUNNING;
 	ret = pthread_create(&uvc_gadget_camera_contex->pipeline_thread, NULL,
 						 pipeline_porcess_func, &g_uvc_gadget_camera_contex);
@@ -219,7 +210,7 @@ static int pipeline_process_start(uvc_gadget_camera_contex_t *uvc_gadget_camera_
 
 static void pipeline_process_stop(uvc_gadget_camera_contex_t *uvc_gadget_camera_contex){
 
-	//wait thread stop
+	//1. wait pipeline thread stop
 	uvc_gadget_camera_contex->pipeline_thread_state = E_THREAD_STOPPING;
 	while(uvc_gadget_camera_contex->pipeline_thread_state != E_THREAD_STOPPED){
 		usleep(1000*100);
@@ -303,19 +294,27 @@ void uvc_streamon_on_or_off(struct uvc_context *ctx, int is_on, void *userdata){
 	int width = uvc_gadget_camera_contex->sensor_config->camera_config->width;
 	int height = uvc_gadget_camera_contex->sensor_config->camera_config->height;
 	if(is_on){
-		if((width != dev->width)
-			||(height != dev->height)
-			||(dev->fcc != V4L2_PIX_FMT_H264)){
-
-			printf("Camera info(%dx%d:h264) does not match the PC client configuration(%ux%u:%s), so exit.\n",
-				width, height,
-				dev->width, dev->height, fcc_to_string(dev->fcc));
+		if(dev->fcc != V4L2_PIX_FMT_H264){
+			printf("PC client configuration data format %s, not support so exit.\n", fcc_to_string(dev->fcc));
 			exit(-1);
 		}
-		printf("## uvc camera on(%d)## %s(%ux%u)\n", is_on, fcc_to_string(dev->fcc), dev->width, dev->height);
-		pipeline_process_start(uvc_gadget_camera_contex);
+
+		if((width != dev->width) || (height != dev->height)){
+			printf("Camera info(%dx%d:h264) does not match the PC client configuration(%ux%u:%s), so use vse convert it.\n",
+				width, height,
+				dev->width, dev->height, fcc_to_string(dev->fcc));
+		}
+		camera_config_info_t camera_config_info = {
+			.width = dev->width,
+			.height = dev->height,
+			.fps = uvc_gadget_camera_contex->sensor_config->camera_config->fps,
+	 		.encode_type = MEDIA_CODEC_ID_H264,
+		};
+		printf("\n\n## uvc camera on(%d)## %s(%ux%u) fps:%d.\n", is_on, fcc_to_string(dev->fcc),
+			dev->width, dev->height, camera_config_info.fps);
+		pipeline_process_start(uvc_gadget_camera_contex, &camera_config_info);
 	}else{
-		printf("## uvc camera off(%d)## %s(%ux%u)\n", is_on, fcc_to_string(dev->fcc), dev->width, dev->height);
+		printf("\n\n## uvc camera off(%d)## %s(%ux%u)\n", is_on, fcc_to_string(dev->fcc), dev->width, dev->height);
 		pipeline_process_stop(uvc_gadget_camera_contex);
 	}
 }
@@ -372,13 +371,16 @@ int main(int argc, char *argv[])
 
 	hb_mem_module_open();
 
-	//4. create uvc dadget
+	//2. create uvc dadget
 	uvc_gadget_camera_info_t g_uvc_gadget_camera_info = {
 		.frame_width = g_uvc_gadget_camera_contex.sensor_config->camera_config->width,
 		.frame_height = g_uvc_gadget_camera_contex.sensor_config->camera_config->height,
 
+		//uvc回调函数：uvc 发送新数据时触发
 		.prepare_frame_cb = {uvc_get_frame_cb_func, &g_uvc_gadget_camera_contex},
+		//uvc回调函数：uvc 将数据传输完成时触发
 		.release_frame_cb = {uvc_release_frame_cb_func, &g_uvc_gadget_camera_contex},
+		//uvc回调函数：客户端打开(启动pipeline)和关闭(关闭pipeline)时触发
 		.stream_on_or_off_cb = {uvc_streamon_on_or_off, &g_uvc_gadget_camera_contex}
 	};
 	g_uvc_gadget_camera_contex.uvc_contex = uvc_gadget_create_and_start(&g_uvc_gadget_camera_info);
@@ -387,7 +389,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	//5. other init
+	//3. other init
 	ret = uvc_gadget_camera_contex_init();
 	if(ret != 0){
 		printf("uvc_gadget_camera_contex_init failed.\n");
@@ -397,6 +399,7 @@ int main(int argc, char *argv[])
 	printf("'q' for exit\n");
 	while (getchar() != 'q');
 
+	//4. destroy uvc dadget
 	uvc_gadget_destroy_and_stop(g_uvc_gadget_camera_contex.uvc_contex);
 	hb_mem_module_close();
 	return 0;

@@ -109,7 +109,7 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	return 0;
 }
 
-static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
+static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index, camera_config_info_t* output_info) {
 	int ret = 0;
 	hbn_vnode_handle_t *vse_node_handle = &pipe_contex->vse_node_handle;
 	isp_ichn_attr_t isp_ichn_attr = {0};
@@ -145,9 +145,9 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 		&output_width, &output_height);
 
 	// 输出原分辨率
-	vse_ochn_attr[vse_bind_index].target_w = output_width;
-	vse_ochn_attr[vse_bind_index].target_h = output_height;
-
+	vse_ochn_attr[vse_bind_index].target_w = output_info->width;
+	vse_ochn_attr[vse_bind_index].target_h = output_info->height;
+	// vse_ochn_attr[vse_bind_index].fps = output_info->fps;
 	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, vse_node_handle);
 	ERR_CON_EQ(ret, 0);
 
@@ -161,8 +161,8 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
 
-	printf("hbn_vnode_set_ochn_attr: %dx%d\n", vse_ochn_attr[vse_bind_index].target_w,
-		vse_ochn_attr[vse_bind_index].target_h);
+	printf("hbn_vnode_set_ochn_attr: %dx%d fps:%d\n", vse_ochn_attr[vse_bind_index].target_w,
+		vse_ochn_attr[vse_bind_index].target_h, output_info->fps);
 	ret = hbn_vnode_set_ochn_attr(*vse_node_handle, vse_bind_index, &vse_ochn_attr[vse_bind_index]);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vnode_set_ochn_buf_attr(*vse_node_handle, vse_bind_index, &alloc_attr);
@@ -171,19 +171,19 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	return 0;
 }
 
-int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex,
-	int active_mipi_host, int vse_bind_index, uint32_t sensor_mode)
+int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t* vp_pipeline_info)
 {
 	int32_t ret = 0;
 
 	// 创建pipeline中的每个node
-	ret = create_camera_node(pipe_contex, sensor_mode);
+	ret = create_camera_node(pipe_contex, vp_pipeline_info->sensor_mode);
 	ERR_CON_EQ(ret, 0);
-	ret = create_vin_node(pipe_contex, active_mipi_host);
+	ret = create_vin_node(pipe_contex, vp_pipeline_info->active_mipi_host);
 	ERR_CON_EQ(ret, 0);
 	ret = create_isp_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
-	ret = create_vse_node(pipe_contex, vse_bind_index);
+	ret = create_vse_node(pipe_contex,
+		vp_pipeline_info->vse_bind_index, &(vp_pipeline_info->camera_config_info));
 	ERR_CON_EQ(ret, 0);
 
 	// 创建HBN flow

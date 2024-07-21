@@ -467,7 +467,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	params->pix_fmt = MC_PIXEL_FORMAT_NV12;
 	params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
 	params->frame_buf_count = 3;
-	params->external_frame_buf = false;
+	params->external_frame_buf = true;
 	params->bitstream_buf_count = 3;
 	/* Hardware limitations of x5 wave521cl:
 	 * - B-frame encoding is not supported.
@@ -594,6 +594,81 @@ static int32_t read_nv12_file(char *addr0, char *addr1, FILE *fd, uint32_t y_siz
 
 	if (buffer)
 		free(buffer);
+
+	return 0;
+}
+
+static void on_encode_input_buffer_consumed(hb_ptr userdata, media_codec_buffer_t *inputBuffer)
+{
+	hb_mem_graphic_buf_t *buffer;
+
+	if (!inputBuffer)
+		return;
+
+	printf("%s userdata(%p), inputBuffer->user_ptr(%p)\n", __func__,
+			userdata, inputBuffer->user_ptr);
+
+	if (inputBuffer->user_ptr) {
+		buffer = (hb_mem_graphic_buf_t *)inputBuffer->user_ptr;
+
+		hb_mem_free_buf(buffer->fd[0]);
+		free(buffer);
+	}
+}
+
+/* fill input buffer with external buffer */
+static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd)
+{
+	hb_mem_graphic_buf_t *buffer;
+	int64_t flags;
+	uint32_t y_size;
+	int32_t width, height;
+	uint8_t *y_data;
+	uint8_t *uv_data;
+	int32_t ret;
+
+	if (fd == NULL || input_buffer == NULL) {
+		printf("ERR(%s):null param.\n", __func__);
+		return -1;
+	}
+
+	width = input_buffer->vframe_buf.width;
+	height = input_buffer->vframe_buf.height;
+	y_size = input_buffer->vframe_buf.width * input_buffer->vframe_buf.height;
+
+	buffer = malloc(sizeof(hb_mem_graphic_buf_t));
+	memset(buffer, 0, sizeof(hb_mem_graphic_buf_t));
+
+	flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+	ret = hb_mem_alloc_graph_buf(width, height, MEM_PIX_FMT_NV12, flags, 0, 0, buffer);
+	if (ret < 0) {
+		printf("hb_mem_alloc_graph_buf ret %d failed \n", ret);
+		return ret;
+	}
+
+	y_data = buffer->virt_addr[0];
+	uv_data = buffer->virt_addr[1];
+
+#if 0
+	printf("hb_mem alloc. y_data(%p), uv_data(%p), y_size(%d), size[0]: %lu, size[1]: %lu\n",
+			y_data, uv_data, y_size, buffer->size[0], buffer->size[1]);
+#endif
+
+	if (fread(y_data, 1, y_size, fd) != y_size) {
+		return -1;
+	}
+
+	if (fread(uv_data, 1, y_size / 2, fd) != y_size / 2) {
+		return -1;
+	}
+
+	input_buffer->vframe_buf.vir_ptr[0] = y_data;
+	input_buffer->vframe_buf.vir_ptr[1] = uv_data;
+	input_buffer->vframe_buf.phy_ptr[0] = buffer->phys_addr[0];
+	input_buffer->vframe_buf.phy_ptr[1] = buffer->phys_addr[1];
+
+	/* set external buffer ptr to user_ptr, using on_input_buffer_consumed to release it */
+	input_buffer->user_ptr = buffer;
 
 	return 0;
 }
@@ -1099,6 +1174,159 @@ venc_exit:
 	return 0;
 }
 
+// 视频编码函数, external buffer and using callback to release external buffer
+int32_t encode_video2(media_codec_context_t *context, EncodeParams *params) {
+	int32_t ret = 0;
+	int32_t frame_count = 0;
+	mc_av_codec_startup_params_t startup_params = {0};
+	media_codec_buffer_t input_buffer = {0};
+	media_codec_buffer_t ouput_buffer = {0};
+	media_codec_output_buffer_info_t info;
+	media_codec_callback_t callback;
+
+	ret = hb_mm_mc_initialize(context);
+	if (0 != ret)
+	{
+		printf("hb_mm_mc_initialize failed.\n");
+		return -1;
+	}
+
+	callback.on_input_buffer_consumed = on_encode_input_buffer_consumed;
+	ret = hb_mm_mc_set_input_buffer_listener(context, &callback, NULL);
+	if (0 != ret)
+	{
+		printf("hbmm_mc_set_input_buffer_listener failed.\n");
+		return -1;
+	}
+
+	ret = hb_mm_mc_configure(context);
+	if (0 != ret)
+	{
+		printf("hb_mm_mc_configure failed.\n");
+		hb_mm_mc_release(context);
+		return -1;
+	}
+
+	printf("%s idx: %d, init successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+
+	ret = hb_mm_mc_start(context, &startup_params);
+	if (ret != 0)
+	{
+		printf("%s:%d hb_mm_mc_start failed.\n", __FUNCTION__, __LINE__);
+		return -1;
+	}
+
+	printf("%s idx: %d, start successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+
+	FILE *fp_input = fopen(params->input, "rb");
+	if (NULL == fp_input) {
+		printf("Failed to open input file: %s\n", params->input);
+		return -1;
+	}
+
+	FILE *fp_output = fopen(params->output, "w+b");
+	if (NULL == fp_output) {
+		printf("Failed to open output file: %s\n", params->output);
+		return -1;
+	}
+
+	while (frame_count < params->frame_num) {
+		usleep(30*1000);
+		memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
+		// input_buffer.type = MC_VIDEO_FRAME_BUFFER;
+		ret = hb_mm_mc_dequeue_input_buffer(context, &input_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("hb_mm_mc_dequeue_input_buffer failed ret = %d\n", ret);
+			goto venc_exit;
+		}
+
+		input_buffer.type = MC_VIDEO_FRAME_BUFFER;
+		input_buffer.vframe_buf.width = context->video_enc_params.width;
+		input_buffer.vframe_buf.height = context->video_enc_params.height;
+		input_buffer.vframe_buf.pix_fmt = MC_PIXEL_FORMAT_NV12;
+		input_buffer.vframe_buf.size = input_buffer.vframe_buf.width * input_buffer.vframe_buf.height * 3 / 2;
+
+		printf("dequeue input buffer. src_idx(%d), user_ptr(%p)\n", input_buffer.vframe_buf.src_idx, input_buffer.user_ptr);
+
+		// 如果从 emmc 上读取数据，会在一定程度上影响性能
+		ret = read_input_frame(&input_buffer, fp_input);
+		if (ret != 0 || feof(fp_input)) {
+			clearerr(fp_input);
+			rewind(fp_input);
+
+			ret = read_input_frame(&input_buffer, fp_input);
+		}
+		frame_count++;
+
+		printf("%s idx: %d, frame= %d\n",
+			context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+
+		ret = hb_mm_mc_queue_input_buffer(context, &input_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("hb_mm_mc_queue_input_buffer failed, ret = 0x%x\n", ret);
+			goto venc_exit;
+		}
+
+		if (verbose) {
+			printf("%s idx: %d, send frame %d successful\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+		}
+
+		memset(&ouput_buffer, 0x0, sizeof(media_codec_buffer_t));
+		memset(&info, 0x0, sizeof(media_codec_output_buffer_info_t));
+		ret = hb_mm_mc_dequeue_output_buffer(context, &ouput_buffer, &info, 2000);
+		if (ret != 0)
+		{
+			printf("%s idx: %d, hb_mm_mc_dequeue_output_buffer failed ret = %d\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, ret);
+			goto venc_exit;
+		}
+
+		if (verbose) {
+			printf("%s idx: %d, get stream %d successful\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+		}
+
+		if (fp_output) {
+			fwrite(ouput_buffer.vstream_buf.vir_ptr, ouput_buffer.vstream_buf.size, 1, fp_output);
+		}
+
+		ret = hb_mm_mc_queue_output_buffer(context, &ouput_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("idx: %d, hb_mm_mc_queue_output_buffer failed ret = %d \n", context->instance_index, ret);
+			goto venc_exit;
+		}
+	}
+
+venc_exit:
+	if (fp_output) {
+		fclose(fp_output);
+	}
+
+	if (fp_input) {
+		fclose(fp_input);
+	}
+
+	ret = hb_mm_mc_pause(context);
+	if (ret != 0)
+	{
+		printf("Failed to hb_mm_mc_pause ret = %d \n", ret);
+		return -1;
+	}
+
+	ret = hb_mm_mc_release(context);
+	if (ret != 0)
+	{
+		printf("Failed to hb_mm_mc_release ret = %d \n", ret);
+		return -1;
+	}
+
+	return 0;
+}
+
 int32_t decode_output_video(media_codec_context_t *context, DecodeParams *params)
 {
 	int32_t ret = 0;
@@ -1387,7 +1615,7 @@ void *encode_thread(void *arg) {
 			params->frame_rate,
 			params->bit_rate);
 	}
-	encode_video(&context, params);
+	encode_video2(&context, params);
 	pthread_exit(NULL);
 }
 

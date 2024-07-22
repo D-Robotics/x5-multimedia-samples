@@ -786,13 +786,15 @@ int32_t vp_codec_restart(media_codec_context_t *context)
 	return 0;
 }
 
-int32_t vp_codec_set_input(media_codec_context_t *context, media_codec_buffer_t *frame_buffer, uint8_t *data, uint32_t data_size, int32_t eos)
+int32_t vp_codec_set_input(media_codec_context_t *context,
+	media_codec_buffer_t *frame_buffer, uint8_t *data,
+	uint32_t data_size, int32_t eos)
 // int32_t vp_codec_set_input(media_codec_context_t *context, ImageFrame *frame, int32_t eos)
 {
 	int32_t ret = 0;
 	media_codec_buffer_t *buffer = NULL;
 
-	if ((context == NULL) || (frame_buffer == NULL) || (data == NULL))
+	if ((context == NULL) || (frame_buffer == NULL) || (!eos && (data == NULL)))
 	{
 		printf("codec param is NULL!\n");
 		return -1;
@@ -1233,7 +1235,7 @@ int32_t decode_h264_h265_mjpeg_video(media_codec_context_t *context, DecodeParam
 					" Decoder will exit due to timeout after fetching"
 					" decoded output.\n", avpacket.size);
 
-				eos = false;
+				eos = true;
 			}
 			else
 			{
@@ -1562,8 +1564,8 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	// 等待100豪秒，让解码器完成所有帧的解码并被output
-	usleep(100*1000);
+	// 等待1000豪秒，让解码器完成所有帧的解码并被output
+	usleep(1000*1000);
 	decode_output_exit = 0;
 
 	// 等待所有解码输出线程结束

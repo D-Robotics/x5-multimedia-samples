@@ -62,9 +62,10 @@ static void print_help() {
 
 static void print_encode_params(EncodeParams *params) {
 	printf("Encode params...\n codec_type: %d, width: %d, height: %d, frame_rate: %d, "
-		"bit_rate: %u, input_file: %s, output_file: %s, frame_num: %d, external_buffer: %d\n",
+		"bit_rate: %u, input_file: %s, output_file: %s, frame_num: %d, external_buffer: %d performance_test:%d\n",
 			params->codec_type, params->width, params->height, params->frame_rate,
-			params->bit_rate, params->input, params->output, params->frame_num, params->external_buffer);
+			params->bit_rate, params->input, params->output, params->frame_num,
+			params->external_buffer, params->performance_test);
 }
 
 static void print_decode_params(DecodeParams *params) {
@@ -655,10 +656,14 @@ static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd)
 #endif
 
 	if (fread(y_data, 1, y_size, fd) != y_size) {
+		hb_mem_free_buf(buffer->fd[0]);
+		free(buffer);
 		return -1;
 	}
 
 	if (fread(uv_data, 1, y_size / 2, fd) != y_size / 2) {
+		hb_mem_free_buf(buffer->fd[0]);
+		free(buffer);
 		return -1;
 	}
 
@@ -745,6 +750,8 @@ int parse_config(const char *filename,
 				params->frame_num = atoi(trimmed_value);
 			else if (strcmp(trimmed_key, "external_buffer") == 0)
 				params->external_buffer = atoi(trimmed_value);
+			else if (strcmp(trimmed_key, "performance_test") == 0)
+				params->performance_test = atoi(trimmed_value);
 		}
 		if (strcmp(section, "decode") == 0) {
 			if (strstr(line, "decode_streams") != NULL) {
@@ -1179,7 +1186,7 @@ venc_exit:
 }
 
 // 视频编码函数, external buffer and using callback to release external buffer
-int32_t encode_video2(media_codec_context_t *context, EncodeParams *params) {
+int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParams *params) {
 	int32_t ret = 0;
 	int32_t frame_count = 0;
 	mc_av_codec_startup_params_t startup_params = {0};
@@ -1315,6 +1322,197 @@ venc_exit:
 	if (fp_input) {
 		fclose(fp_input);
 	}
+
+	ret = hb_mm_mc_pause(context);
+	if (ret != 0)
+	{
+		printf("Failed to hb_mm_mc_pause ret = %d \n", ret);
+		return -1;
+	}
+
+	ret = hb_mm_mc_release(context);
+	if (ret != 0)
+	{
+		printf("Failed to hb_mm_mc_release ret = %d \n", ret);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int32_t create_hb_mem_graphic_buf_from_file(hb_mem_graphic_buf_t *input_buffer,
+	int max_count, const char *file_name, int width, int height)
+{
+	uint32_t y_size = width * height;
+	int meida_codec_buffer_count = 0;
+	FILE *fp_output = fopen(file_name, "rb");
+	if (NULL == fp_output) {
+		printf("Failed to open output file: %s\n", file_name);
+		return -1;
+	}
+
+	for (size_t i = 0; i < max_count; i++){
+
+		int64_t flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		int ret = hb_mem_alloc_graph_buf(width, height, MEM_PIX_FMT_NV12, flags, 0, 0, input_buffer + i);
+		if (ret < 0) {
+			printf("hb_mem_alloc_graph_buf ret %d failed \n", ret);
+			return ret;
+		}
+		uint8_t *y_data = input_buffer[i].virt_addr[0];
+		uint8_t *uv_data = input_buffer[i].virt_addr[1];
+		if (fread(y_data, 1, y_size, fp_output) != y_size) {
+			hb_mem_free_buf(input_buffer[i].fd[0]);
+			break;
+		}
+		if (fread(uv_data, 1, y_size / 2, fp_output) != y_size / 2) {
+			hb_mem_free_buf(input_buffer[i].fd[0]);
+			break;
+		}
+		meida_codec_buffer_count++;
+	}
+	fclose(fp_output);
+	return meida_codec_buffer_count;
+}
+static void release_hb_mem_graphic_buf(hb_mem_graphic_buf_t *input_buffer, int max_count){
+	for (size_t i = 0; i < max_count; i++){
+		hb_mem_free_buf(input_buffer[i].fd[0]);
+	}
+}
+
+// 视频编码函数, for performance testing
+int32_t encode_video_performance_test(media_codec_context_t *context, EncodeParams *params) {
+	int32_t ret = 0;
+	int32_t frame_count = 0;
+	mc_av_codec_startup_params_t startup_params = {0};
+	media_codec_buffer_t input_buffer = {0};
+	media_codec_buffer_t ouput_buffer = {0};
+	media_codec_output_buffer_info_t info;
+
+	printf("%s...\n", __func__);
+
+	ret = hb_mm_mc_initialize(context);
+	if (0 != ret)
+	{
+		printf("hb_mm_mc_initialize failed.\n");
+		return -1;
+	}
+
+	ret = hb_mm_mc_configure(context);
+	if (0 != ret)
+	{
+		printf("hb_mm_mc_configure failed.\n");
+		hb_mm_mc_release(context);
+		return -1;
+	}
+
+	printf("%s idx: %d, init successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+
+	ret = hb_mm_mc_start(context, &startup_params);
+	if (ret != 0)
+	{
+		printf("%s:%d hb_mm_mc_start failed.\n", __FUNCTION__, __LINE__);
+		return -1;
+	}
+
+	printf("%s idx: %d, start successful\n", context->encoder ? "Encode" : "Decode", context->instance_index);
+	#define  MEDIA_CODEC_BUFFER_MAX_COUNT 10
+	hb_mem_graphic_buf_t hb_mem_graphic_bufs[MEDIA_CODEC_BUFFER_MAX_COUNT];
+	int meida_codec_buffer_count = create_hb_mem_graphic_buf_from_file(hb_mem_graphic_bufs,
+		MEDIA_CODEC_BUFFER_MAX_COUNT, params->input, params->width, params->height);
+	if(meida_codec_buffer_count <= 0){
+		printf("file %s not have yuv data, so exit(-1).\n", params->input);
+		exit(-1);
+	}else{
+		printf("use file %s  %d frames to encode.\n", params->output, meida_codec_buffer_count);
+	}
+
+	FILE *fp_output = fopen(params->output, "w+b");
+	if (NULL == fp_output) {
+		printf("Failed to open output file: %s\n", params->output);
+		return -1;
+	}
+	int meida_codec_buffer_index = 0;
+	hb_mem_graphic_buf_t *hb_mem_graphic_buf = NULL;
+	while (frame_count < params->frame_num) {
+		usleep(33*1000);
+
+		//1. update input yuv data
+		if(meida_codec_buffer_index >= meida_codec_buffer_count){
+			meida_codec_buffer_index = 0;
+		}
+		hb_mem_graphic_buf = &hb_mem_graphic_bufs[meida_codec_buffer_index];
+		meida_codec_buffer_index++;
+
+		//2. init media_codec_buffer_t
+		memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
+		ret = hb_mm_mc_dequeue_input_buffer(context, &input_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("hb_mm_mc_dequeue_input_buffer failed ret = %d\n", ret);
+			goto venc_exit;
+		}
+		input_buffer.type = MC_VIDEO_FRAME_BUFFER;
+		input_buffer.vframe_buf.width = context->video_enc_params.width;
+		input_buffer.vframe_buf.height = context->video_enc_params.height;
+		input_buffer.vframe_buf.pix_fmt = MC_PIXEL_FORMAT_NV12;
+		input_buffer.vframe_buf.size = input_buffer.vframe_buf.width * input_buffer.vframe_buf.height * 3 / 2;
+
+		input_buffer.vframe_buf.vir_ptr[0] = hb_mem_graphic_buf->virt_addr[0];
+		input_buffer.vframe_buf.vir_ptr[1] = hb_mem_graphic_buf->virt_addr[1];
+		input_buffer.vframe_buf.phy_ptr[0] = hb_mem_graphic_buf->phys_addr[0];
+		input_buffer.vframe_buf.phy_ptr[1] = hb_mem_graphic_buf->phys_addr[1];
+
+		frame_count++;
+
+		printf("%s idx: %d, frame= %d\n",
+			context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+
+		ret = hb_mm_mc_queue_input_buffer(context, &input_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("hb_mm_mc_queue_input_buffer failed, ret = 0x%x\n", ret);
+			goto venc_exit;
+		}
+
+		if (verbose) {
+			printf("%s idx: %d, send frame %d successful\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+		}
+
+		memset(&ouput_buffer, 0x0, sizeof(media_codec_buffer_t));
+		memset(&info, 0x0, sizeof(media_codec_output_buffer_info_t));
+		ret = hb_mm_mc_dequeue_output_buffer(context, &ouput_buffer, &info, 2000);
+		if (ret != 0)
+		{
+			printf("%s idx: %d, hb_mm_mc_dequeue_output_buffer failed ret = %d\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, ret);
+			goto venc_exit;
+		}
+
+		if (verbose) {
+			printf("%s idx: %d, get stream %d successful\n",
+				context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
+		}
+
+		if (fp_output) {
+			fwrite(ouput_buffer.vstream_buf.vir_ptr, ouput_buffer.vstream_buf.size, 1, fp_output);
+		}
+
+		ret = hb_mm_mc_queue_output_buffer(context, &ouput_buffer, 2000);
+		if (ret != 0)
+		{
+			printf("idx: %d, hb_mm_mc_queue_output_buffer failed ret = %d \n", context->instance_index, ret);
+			goto venc_exit;
+		}
+	}
+
+venc_exit:
+	if (fp_output) {
+		fclose(fp_output);
+	}
+
+	release_hb_mem_graphic_buf(hb_mem_graphic_bufs, meida_codec_buffer_count);
 
 	ret = hb_mm_mc_pause(context);
 	if (ret != 0)
@@ -1606,13 +1804,17 @@ void *encode_thread(void *arg) {
 
 	printf("Encoding video...\n");
 	print_encode_params(params);
+	bool is_enable_external_buffer = false;
+	if( params->external_buffer ||  params->performance_test){
+		is_enable_external_buffer = true;
+	}
 	ret = vp_encode_config_param(&context,
 		params->codec_type,
 		params->width,
 		params->height,
 		params->frame_rate,
 		params->bit_rate,
-		params->external_buffer ? true : false);
+		is_enable_external_buffer);
 	if (ret != 0) {
 		printf("Encode config param error, type:%d width:%d height:%d"
 			" frame_rate: %d bit_rate:%d\n",
@@ -1623,8 +1825,10 @@ void *encode_thread(void *arg) {
 			params->bit_rate);
 	}
 
-	if (params->external_buffer)
-		encode_video2(&context, params);
+	if (params->performance_test)
+		encode_video_performance_test(&context, params);
+	else if (params->external_buffer)
+		encode_video_external_buffer(&context, params);
 	else
 		encode_video(&context, params);
 	pthread_exit(NULL);

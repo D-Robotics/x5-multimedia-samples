@@ -62,9 +62,9 @@ static void print_help() {
 
 static void print_encode_params(EncodeParams *params) {
 	printf("Encode params...\n codec_type: %d, width: %d, height: %d, frame_rate: %d, "
-		"bit_rate: %u, input_file: %s, output_file: %s, frame_num: %d\n",
+		"bit_rate: %u, input_file: %s, output_file: %s, frame_num: %d, external_buffer: %d\n",
 			params->codec_type, params->width, params->height, params->frame_rate,
-			params->bit_rate, params->input, params->output, params->frame_num);
+			params->bit_rate, params->input, params->output, params->frame_num, params->external_buffer);
 }
 
 static void print_decode_params(DecodeParams *params) {
@@ -455,7 +455,7 @@ static int32_t get_rc_params(media_codec_context_t *context,
 }
 
 int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
-	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate)
+	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, bool external_buffer)
 {
 	mc_video_codec_enc_params_t *params;
 
@@ -467,7 +467,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	params->pix_fmt = MC_PIXEL_FORMAT_NV12;
 	params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
 	params->frame_buf_count = 3;
-	params->external_frame_buf = true;
+	params->external_frame_buf = external_buffer;
 	params->bitstream_buf_count = 3;
 	/* Hardware limitations of x5 wave521cl:
 	 * - B-frame encoding is not supported.
@@ -743,6 +743,8 @@ int parse_config(const char *filename,
 				strcpy(params->output, trimmed_value);
 			else if (strcmp(trimmed_key, "frame_num") == 0)
 				params->frame_num = atoi(trimmed_value);
+			else if (strcmp(trimmed_key, "external_buffer") == 0)
+				params->external_buffer = atoi(trimmed_value);
 		}
 		if (strcmp(section, "decode") == 0) {
 			if (strstr(line, "decode_streams") != NULL) {
@@ -1037,6 +1039,8 @@ int32_t encode_video(media_codec_context_t *context, EncodeParams *params) {
 	media_codec_buffer_t ouput_buffer = {0};
 	media_codec_output_buffer_info_t info;
 
+	printf("%s...\n", __func__);
+
 	ret = hb_mm_mc_initialize(context);
 	if (0 != ret)
 	{
@@ -1183,6 +1187,8 @@ int32_t encode_video2(media_codec_context_t *context, EncodeParams *params) {
 	media_codec_buffer_t ouput_buffer = {0};
 	media_codec_output_buffer_info_t info;
 	media_codec_callback_t callback;
+
+	printf("%s...\n", __func__);
 
 	ret = hb_mm_mc_initialize(context);
 	if (0 != ret)
@@ -1605,7 +1611,8 @@ void *encode_thread(void *arg) {
 		params->width,
 		params->height,
 		params->frame_rate,
-		params->bit_rate);
+		params->bit_rate,
+		params->external_buffer ? true : false);
 	if (ret != 0) {
 		printf("Encode config param error, type:%d width:%d height:%d"
 			" frame_rate: %d bit_rate:%d\n",
@@ -1615,7 +1622,11 @@ void *encode_thread(void *arg) {
 			params->frame_rate,
 			params->bit_rate);
 	}
-	encode_video2(&context, params);
+
+	if (params->external_buffer)
+		encode_video2(&context, params);
+	else
+		encode_video(&context, params);
 	pthread_exit(NULL);
 }
 

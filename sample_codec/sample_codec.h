@@ -28,6 +28,7 @@ typedef struct {
 	char input[MAX_LINE_LENGTH];
 	char output[MAX_LINE_LENGTH];
 	int32_t frame_num;
+	int32_t external_buffer;
 } EncodeParams;
 
 // 视频解码参数结构体

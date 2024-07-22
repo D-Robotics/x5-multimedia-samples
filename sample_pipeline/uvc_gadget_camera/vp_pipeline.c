@@ -170,7 +170,21 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index, camer
 
 	return 0;
 }
-
+int vp_get_vse_channel(int input_width, int input_height, int output_width, int output_height){
+	int input_size = input_width * input_height;
+	int output_size = output_width * output_height;
+	//Upscale
+	if(input_size < output_size){
+#if 0
+		if(output_size > input_size * 4){
+			return -1;
+		}
+#endif
+		return 5;
+	}else{
+		return 0;
+	}
+}
 int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t* vp_pipeline_info)
 {
 	int32_t ret = 0;

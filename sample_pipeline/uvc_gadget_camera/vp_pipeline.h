@@ -15,4 +15,5 @@ typedef struct vp_pipeline_info_s {
 
 int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t* vp_pipeline_info);
 int vp_destroy_and_stop_pipeline(pipe_contex_t *pipe_contex);
+int vp_get_vse_channel(int input_width, int input_height, int output_width, int output_height);
 #endif //

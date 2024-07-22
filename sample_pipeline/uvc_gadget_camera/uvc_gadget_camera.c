@@ -52,7 +52,6 @@ static uvc_gadget_camera_contex_t g_uvc_gadget_camera_contex = {
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
-	{"settle", optional_argument, NULL, 't'},
 	{"mode", optional_argument, NULL, 'm'},
 	{NULL, 0, NULL, 0}};
 
@@ -61,7 +60,6 @@ static void print_help()
 	printf("Usage: get_isp_data [OPTIONS]\n");
 	printf("Options:\n");
 	printf("  -s <sensor_index>      Specify sensor index\n");
-	printf("  -t <settle_value>      Specify settle time for debug\n");
 	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
@@ -304,6 +302,20 @@ void uvc_streamon_on_or_off(struct uvc_context *ctx, int is_on, void *userdata){
 				width, height,
 				dev->width, dev->height, fcc_to_string(dev->fcc));
 		}
+
+		int vse_bind_channel = vp_get_vse_channel(width, height, dev->width, dev->height);
+		if(vse_bind_channel < 0){
+			printf("Camera info(%dx%d:h264) does not match the PC client configuration(%ux%u:%s), and vse can't convert it, so exit -1.\n",
+				width, height,
+				dev->width, dev->height, fcc_to_string(dev->fcc));
+			exit(-1);
+		}else{
+			printf("Camera info(%dx%d:h264) does not match the PC client configuration(%ux%u:%s), use vse channel [%d] to convert it.\n",
+				width, height,
+				dev->width, dev->height, fcc_to_string(dev->fcc), vse_bind_channel);
+		}
+		uvc_gadget_camera_contex->vse_bind_codec_chn = vse_bind_channel;
+
 		camera_config_info_t camera_config_info = {
 			.width = dev->width,
 			.height = dev->height,
@@ -328,14 +340,11 @@ int main(int argc, char *argv[])
 	int settle = -1;
 	int opt_index = 0;
 	int sensor_mode = 0;
-	while ((c = getopt_long(argc, argv, "s:t:m:h",
+	while ((c = getopt_long(argc, argv, "s:m:h",
 							long_options, &opt_index)) != -1){
 		switch (c){
 		case 's':
 			index = atoi(optarg);
-			break;
-		case 't':
-			settle = atoi(optarg);
 			break;
 		case 'm':
 			sensor_mode = atoi(optarg);

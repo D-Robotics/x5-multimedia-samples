@@ -62,10 +62,11 @@ static void print_help() {
 
 static void print_encode_params(EncodeParams *params) {
 	printf("Encode params...\n codec_type: %d, width: %d, height: %d, frame_rate: %d, "
-		"bit_rate: %u, input_file: %s, output_file: %s, frame_num: %d, external_buffer: %d performance_test:%d\n",
+			"bit_rate: %u, input_file: %s, output_file: %s, frame_num: %d, profile: %s, "
+			"external_buffer: %d performance_test:%d\n",
 			params->codec_type, params->width, params->height, params->frame_rate,
 			params->bit_rate, params->input, params->output, params->frame_num,
-			params->external_buffer, params->performance_test);
+			params->profile, params->external_buffer, params->performance_test);
 }
 
 static void print_decode_params(DecodeParams *params) {
@@ -336,6 +337,151 @@ int32_t av_build_dec_seq_header(uint8_t *pbHeader,
 	return size;
 }
 
+static int32_t h264_parse_profile(const char *str_profile, H264Profile *h264_profile)
+{
+	char *s, *stringp, *profile, *level;
+	if (str_profile == NULL || h264_profile == NULL || strlen(str_profile) == 0)
+		return -EINVAL;
+
+	stringp = strdup(str_profile);
+	s = stringp;
+
+	if (!stringp)
+		return -EINVAL;
+
+	/*
+	 * format: profile@level%tier
+	 * example:
+	 *	h264_main@L4
+	 */
+	profile = strsep(&s, "@");
+	level = s;
+	if (!profile || ! level)
+		return -EINVAL;
+
+	if (strcmp(profile, "h264_main") == 0)
+		h264_profile->profile = MC_H264_PROFILE_MP;
+	else if (strcmp(profile, "h264_baseline") == 0)
+		h264_profile->profile = MC_H264_PROFILE_BP;
+	else if (strcmp(profile, "h264_high") == 0)
+		h264_profile->profile = MC_H264_PROFILE_HP;
+	else if (strcmp(profile, "h264_high10") == 0)
+		h264_profile->profile = MC_H264_PROFILE_HIGH10;
+	else if (strcmp(profile, "h264_high422") == 0)
+		h264_profile->profile = MC_H264_PROFILE_HIGH422;
+	else if (strcmp(profile, "h264_high444") == 0)
+		h264_profile->profile = MC_H264_PROFILE_HIGH444;
+	else if (strcmp(profile, "h264_extended") == 0)
+		h264_profile->profile = MC_H264_PROFILE_EXTENDED;
+	else
+		h264_profile->profile = MC_H264_PROFILE_UNSPECIFIED;
+
+	if (strcmp(level, "L1") == 0)
+		h264_profile->level = MC_H264_LEVEL1;
+	else if (strcmp(level, "L1B") == 0)
+		h264_profile->level = MC_H264_LEVEL1b;
+	else if (strcmp(level, "L1_1") == 0)
+		h264_profile->level = MC_H264_LEVEL1_1;
+	else if (strcmp(level, "L1_2") == 0)
+		h264_profile->level = MC_H264_LEVEL1_2;
+	else if (strcmp(level, "L1_3") == 0)
+		h264_profile->level = MC_H264_LEVEL1_3;
+	else if (strcmp(level, "L2") == 0)
+		h264_profile->level = MC_H264_LEVEL2;
+	else if (strcmp(level, "L2_1") == 0)
+		h264_profile->level = MC_H264_LEVEL2_1;
+	else if (strcmp(level, "L3") == 0)
+		h264_profile->level = MC_H264_LEVEL3;
+	else if (strcmp(level, "L3_1") == 0)
+		h264_profile->level = MC_H264_LEVEL3_1;
+	else if (strcmp(level, "L3_2") ==0 )
+		h264_profile->level = MC_H264_LEVEL3_2;
+	else if (strcmp(level, "L4") == 0)
+		h264_profile->level = MC_H264_LEVEL4;
+	else if (strcmp(level, "L4_1") == 0)
+		h264_profile->level = MC_H264_LEVEL4_1;
+	else if (strcmp(level, "L4_2") == 0)
+		h264_profile->level = MC_H264_LEVEL4_2;
+	else if (strcmp(level, "L5") == 0)
+		h264_profile->level = MC_H264_LEVEL5;
+	else if (strcmp(level, "L5_1") == 0)
+		h264_profile->level = MC_H264_LEVEL5_1;
+	else if (strcmp(level, "L5_2") == 0)
+		h264_profile->level = MC_H264_LEVEL5_2;
+	else
+		h264_profile->level = MC_H264_LEVEL_UNSPECIFIED;
+
+	free(stringp);
+
+	return 0;
+}
+
+static int32_t h265_parse_profile(const char *str_profile, H265Profile *h265_profile)
+{
+	char *s, *stringp, *profile, *level, *tier;
+	if (str_profile == NULL || h265_profile == NULL || strlen(str_profile) == 0)
+		return -EINVAL;
+
+	stringp = strdup(str_profile);
+	s = stringp;
+
+	if (!stringp)
+		return -EINVAL;
+
+	/*
+	 * format: profile@level%tier
+	 * example:
+	 *	h265_main@L4%high_tier
+	 */
+	profile = strsep(&s, "@");
+	level = strsep(&s, "%");
+	tier = s;
+
+	if (!profile || !level)
+		return -EINVAL;
+
+	if (strcmp(profile, "h265_main") == 0)
+		h265_profile->main_still_picture_profile_enable = 0;
+	else if (strcmp(profile, "h265_main_still") == 0)
+		h265_profile->main_still_picture_profile_enable = 1;
+	else
+		h265_profile->main_still_picture_profile_enable = 0;
+
+	if (strcmp(level, "L1") == 0)
+		h265_profile->level = MC_H265_LEVEL1;
+	else if (strcmp(level, "L2") == 0)
+		h265_profile->level = MC_H265_LEVEL2;
+	else if (strcmp(level, "L2_1") == 0)
+		h265_profile->level = MC_H265_LEVEL2_1;
+	else if (strcmp(level, "L3") == 0)
+		h265_profile->level = MC_H265_LEVEL3;
+	else if (strcmp(level, "L3_1") == 0)
+		h265_profile->level = MC_H265_LEVEL3_1;
+	else if (strcmp(level, "L4") == 0)
+		h265_profile->level = MC_H265_LEVEL4;
+	else if (strcmp(level, "L4_1") == 0)
+		h265_profile->level = MC_H265_LEVEL4_1;
+	else if (strcmp(level, "L5") == 0)
+		h265_profile->level = MC_H265_LEVEL5;
+	else if (strcmp(level, "L5_1") == 0)
+		h265_profile->level = MC_H265_LEVEL5_1;
+	else
+		h265_profile->level = MC_H265_LEVEL_UNSPECIFIED;
+
+	if (tier) {
+		if (strcmp(tier, "main_tier") == 0)
+			h265_profile->tier = 0;
+		else if (strcmp(tier, "high_tier") == 0)
+			h265_profile->tier = 1;
+		else
+			h265_profile->tier = 0;
+	}
+
+	free(stringp);
+
+	return 0;
+}
+
 static int32_t get_rc_params(media_codec_context_t *context,
 			mc_rate_control_params_t *rc_params) {
 	int32_t ret = 0;
@@ -456,9 +602,12 @@ static int32_t get_rc_params(media_codec_context_t *context,
 }
 
 int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
-	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, bool external_buffer)
+	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, const char *str_profile, bool external_buffer)
 {
 	mc_video_codec_enc_params_t *params;
+	H264Profile h264_profile = { 0, };
+	H265Profile h265_profile = { 0, };
+	int r;
 
 	memset(context, 0x00, sizeof(media_codec_context_t));
 	context->encoder = true;
@@ -488,6 +637,12 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 		get_rc_params(context, &params->rc_params);
 		params->rc_params.h264_cbr_params.frame_rate = frame_rate;
 		params->rc_params.h264_cbr_params.bit_rate = bit_rate;
+
+		r = h264_parse_profile(str_profile, &h264_profile);
+		if (r == 0) {
+			params->h264_enc_config.h264_profile = h264_profile.profile;
+			params->h264_enc_config.h264_level = h264_profile.level;
+		}
 		break;
 	case MEDIA_CODEC_ID_H265:
 		context->codec_id = MEDIA_CODEC_ID_H265;
@@ -495,6 +650,13 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 		get_rc_params(context, &params->rc_params);
 		params->rc_params.h265_cbr_params.frame_rate = frame_rate;
 		params->rc_params.h265_cbr_params.bit_rate = bit_rate;
+
+		r = h265_parse_profile(str_profile, &h265_profile);
+		if (r == 0) {
+			params->h265_enc_config.main_still_picture_profile_enable = h265_profile.main_still_picture_profile_enable;
+			params->h265_enc_config.h265_level = h265_profile.level;
+			params->h265_enc_config.h265_tier = h265_profile.tier;
+		}
 		break;
 	case MEDIA_CODEC_ID_MJPEG:
 		context->codec_id = MEDIA_CODEC_ID_MJPEG;
@@ -752,6 +914,8 @@ int parse_config(const char *filename,
 				params->external_buffer = atoi(trimmed_value);
 			else if (strcmp(trimmed_key, "performance_test") == 0)
 				params->performance_test = atoi(trimmed_value);
+			else if (strcmp(trimmed_key, "profile") == 0)
+				strcpy(params->profile, trimmed_value);
 		}
 		if (strcmp(section, "decode") == 0) {
 			if (strstr(line, "decode_streams") != NULL) {
@@ -1814,6 +1978,7 @@ void *encode_thread(void *arg) {
 		params->height,
 		params->frame_rate,
 		params->bit_rate,
+		params->profile,
 		is_enable_external_buffer);
 	if (ret != 0) {
 		printf("Encode config param error, type:%d width:%d height:%d"

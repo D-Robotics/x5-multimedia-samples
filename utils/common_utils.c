@@ -132,7 +132,7 @@ int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, uint32_t width, uint32_t he
 	// vpm_hb_mem_init();
 
 	alloc_flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD | HB_MEM_USAGE_CPU_READ_OFTEN |
-		      HB_MEM_USAGE_CPU_WRITE_OFTEN;
+			  HB_MEM_USAGE_CPU_WRITE_OFTEN;
 
 	memset(img, 0, sizeof(hbn_vnode_image_t));
 	if (cached == 1)
@@ -237,12 +237,12 @@ char* get_program_name()
 
 // VSE通道最大分辨率限制
 const int VSE_MAX_RESOLUTIONS[VSE_MAX_CHANNELS][2] = {
-    {4096, 3076}, // 4K Downscale
-    {1920, 1080}, // 1080P0 Downscale
-    {1920, 1080}, // 1080P1 Downscale
-    {1280,  720}, // 720P0 Downscale
-    {1280,  720}, // 720P1 Downscale
-    {4096, 3076}  // 4K Upscale
+	{4096, 3076}, // 4K Downscale
+	{1920, 1080}, // 1080P0 Downscale
+	{1920, 1080}, // 1080P1 Downscale
+	{1280,  720}, // 720P0 Downscale
+	{1280,  720}, // 720P1 Downscale
+	{4096, 3076}  // 4K Upscale
 };
 
 // 配置最大分辨率的函数
@@ -273,4 +273,23 @@ void configure_vse_max_resolution(int32_t channel, uint32_t input_width, uint32_
 	} else {
 		*output_height = input_height;
 	}
+}
+uint64_t get_timestamp_ms() {
+
+	uint64_t timestamp;
+	struct timeval ts;
+
+	gettimeofday(&ts, NULL);
+	timestamp = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_usec / 1000;
+	return timestamp;
+}
+
+uint64_t get_timestamp_us() {
+
+	uint64_t timestamp;
+	struct timeval ts;
+
+	gettimeofday(&ts, NULL);
+	timestamp = (uint64_t)ts.tv_sec * 1000000 + (uint64_t)ts.tv_usec;
+	return timestamp;
 }

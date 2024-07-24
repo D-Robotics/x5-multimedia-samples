@@ -67,7 +67,8 @@ uint32_t load_file_2_buff_nosize(const char *path, char *filebuff);
 char* get_program_name();
 void configure_vse_max_resolution(int32_t channel, uint32_t input_width, uint32_t input_height,
 	uint32_t *output_width, uint32_t *output_height);
-
+uint64_t get_timestamp_ms();
+uint64_t get_timestamp_us();
 #ifdef __cplusplus
 	}
 #endif	/* __cplusplus */

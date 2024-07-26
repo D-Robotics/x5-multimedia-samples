@@ -43,6 +43,7 @@ int parser_params(int argc, char** argv, struct PerformanceTestParam *param);
 
 void performance_test_stop(struct PerformanceTestParam *param);
 void performance_test_start(struct PerformanceTestParam *param);
+void performance_test_stop_with_name(struct PerformanceTestParam *param, char* test_case);
 
 n2d_error_t performance_test_create_buffer_black(struct PerformanceTestParam *param,
 	n2d_buffer_format_t format, n2d_buffer_t *src);
@@ -51,6 +52,7 @@ n2d_error_t performance_test_create_buffer_with_rect(struct PerformanceTestParam
 
 n2d_error_t performance_test_add_rect(struct PerformanceTestParam *param,
 	n2d_buffer_t *src, enum RectRelationPosition position, n2d_color_t color);
-n2d_error_t performance_test_save_to_file(struct PerformanceTestParam *param,
-	n2d_buffer_t *src, char* file_name_suffix);
+n2d_error_t performance_test_save_to_file(struct PerformanceTestParam *param, n2d_buffer_t *src);
+n2d_error_t performance_test_save_to_file_width_name(struct PerformanceTestParam *param,
+	n2d_buffer_t *src, char *test_case_name);
 #endif

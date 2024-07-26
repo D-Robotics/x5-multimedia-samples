@@ -64,7 +64,7 @@ void rotation_performance_test(struct PerformanceTestParam *param){
 	}
 	performance_test_stop(param);
 
-	performance_test_save_to_file(param, &dst, ".bmp");
+	performance_test_save_to_file(param, &dst);
 on_error:
 	if(N2D_INVALID_HANDLE != src.handle){
 		n2d_free(&src);

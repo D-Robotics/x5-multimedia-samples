@@ -64,7 +64,7 @@ void format_convert_performance_test(struct PerformanceTestParam *param){
 	}
 	performance_test_stop(param);
 
-	performance_test_save_to_file(param, &dst, ".vimg");
+	performance_test_save_to_file(param, &dst);
 
 on_error:
 	if(N2D_INVALID_HANDLE != src.handle){

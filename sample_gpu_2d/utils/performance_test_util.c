@@ -95,6 +95,8 @@ void print_help(char *test_case)
 	printf("  -r <image_height>      Specify image height(row)\n");
 	printf("  -i <iteration_number>  Specify frames per second\n");
 	printf("  -h <help>              Show this help message\n");
+	printf("     For Example, performance test: ./%s -m 1 -c 1920 -r 1080 -i 1000\n", test_case);
+	printf("     For Example, sample          : ./%s (not need input param)\n", test_case);
 }
 
 int parser_params(int argc, char **argv, struct PerformanceTestParam *param)
@@ -132,11 +134,15 @@ int parser_params(int argc, char **argv, struct PerformanceTestParam *param)
 			return -1;
 		}
 	}
+	if(param->mode){
+		printf("\nRun PerformanceTest[%s] width*height:%d*%d iteration number:%d.\n\n",
+			param->test_case,
+			param->image_width, param->image_height,
+			param->iteration_number);
 
-	printf("\nRun [%s] width*height:%d*%d iteration number:%d.\n\n",
-		   param->mode ? "performance_test" : "sample",
-		   param->image_width, param->image_height,
-		   param->iteration_number);
+	}else{
+		printf("\nRun Sample[%s](sample mode ignore input param).\n\n", param->test_case);
+	}
 
 	return 0;
 }
@@ -146,24 +152,43 @@ void performance_test_start(struct PerformanceTestParam *param)
 	param->test_start_time_us = get_timestamp_us();
 }
 
-void performance_test_stop(struct PerformanceTestParam *param)
+void performance_test_stop_with_name(struct PerformanceTestParam *param, char* test_case)
 {
 	param->test_end_time_us = get_timestamp_us();
+	char *test_case_name = test_case;
+	if(test_case_name == NULL){
+		test_case_name = param->test_case;
+	}
 
 	uint64_t diff_time_sum_us = param->test_end_time_us - param->test_start_time_us;
 	float fps = 1000000.0 * param->iteration_number / diff_time_sum_us;
-	printf("performance test %d times, total consume %ldus, average %ldus fps:%f\n",
-		   param->iteration_number, diff_time_sum_us,
+	printf("\nperformance test [%s] %d times, total consume %ldus, average %ldus fps:%f\n",
+		   test_case, param->iteration_number, diff_time_sum_us,
 		   diff_time_sum_us / param->iteration_number, fps);
+}
+
+void performance_test_stop(struct PerformanceTestParam *param)
+{
+	performance_test_stop_with_name(param, NULL);
 }
 
 n2d_error_t performance_test_create_buffer_black(struct PerformanceTestParam *param,
 												 n2d_buffer_format_t format, n2d_buffer_t *src)
 {
+	int image_width = 0;
+	int image_height = 0;
+	if((src->width > 0) && (src->height > 0)){
+		image_width = src->width;
+		image_height = src->height;
+	}else{
+		image_width = param->image_width;
+		image_height = param->image_height;
+	}
+
 	n2d_error_t error = N2D_SUCCESS;
 	error = n2d_util_allocate_buffer(
-		param->image_width,
-		param->image_height,
+		image_width,
+		image_height,
 		format,
 		N2D_0,
 		N2D_LINEAR,
@@ -258,28 +283,41 @@ n2d_error_t performance_test_add_rect(struct PerformanceTestParam *param,
 	}
 	return N2D_SUCCESS;
 }
+n2d_error_t performance_test_save_to_file_width_name(struct PerformanceTestParam *param,
+	n2d_buffer_t *src, char *test_case){
 
-n2d_error_t performance_test_save_to_file(struct PerformanceTestParam *param, n2d_buffer_t *src, char* file_name_suffix){
+	char *test_case_name = test_case;
+	if(test_case_name == NULL){
+		test_case_name = param->test_case;
+	}
+
 	char *format_string = convert_format_to_string(src->format);
 
 	char output_file_name[128];
 	memset(output_file_name, 0, sizeof(output_file_name));
-	sprintf(output_file_name, "./performance_test_%s_%d_%d_%s%s",
-		param->test_case, param->image_width, param->image_height,
-		format_string, file_name_suffix);
-
-	printf("performance test save result to file [%s]\n", output_file_name);
 
 	n2d_error_t error = N2D_SUCCESS;
 	if(n2d_buffer_is_yuv(src->format)){
+
+		sprintf(output_file_name, "./performance_test_%s_%d_%d.%s",
+			test_case_name, param->image_width, param->image_height,
+			format_string);
+
 		error = n2d_util_save_buffer_to_vimg(src, output_file_name);
 	}else{
+		sprintf(output_file_name, "./performance_test_%s_%d_%d_%s.bmp",
+			test_case_name, param->image_width, param->image_height,
+			format_string);
 		error = n2d_util_save_buffer_to_file(src, output_file_name);
 	}
+	printf("performance test save result to file [%s]\n", output_file_name);
 
 	if (N2D_IS_ERROR(error))
 	{
 		printf("alphablend failed! error=%d.\n", error);
 	}
 	return error;
+}
+n2d_error_t performance_test_save_to_file(struct PerformanceTestParam *param, n2d_buffer_t *src){
+	return performance_test_save_to_file_width_name(param, src, NULL);
 }

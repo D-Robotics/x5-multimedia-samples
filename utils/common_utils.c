@@ -274,22 +274,3 @@ void configure_vse_max_resolution(int32_t channel, uint32_t input_width, uint32_
 		*output_height = input_height;
 	}
 }
-uint64_t get_timestamp_ms() {
-
-	uint64_t timestamp;
-	struct timeval ts;
-
-	gettimeofday(&ts, NULL);
-	timestamp = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_usec / 1000;
-	return timestamp;
-}
-
-uint64_t get_timestamp_us() {
-
-	uint64_t timestamp;
-	struct timeval ts;
-
-	gettimeofday(&ts, NULL);
-	timestamp = (uint64_t)ts.tv_sec * 1000000 + (uint64_t)ts.tv_usec;
-	return timestamp;
-}

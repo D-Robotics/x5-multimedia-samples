@@ -1,6 +1,12 @@
 #include <sys/time.h>
 #include "performance_test_util.h"
 
+const n2d_color_t n2d_blue = N2D_COLOR_BGRA8(0x80, 0x00, 0x00, 0xff);
+const n2d_color_t n2d_black = N2D_COLOR_BGRA8(0x80, 0x00, 0x00, 0x00);
+const n2d_color_t n2d_green = N2D_COLOR_BGRA8(0x80, 0x00, 0xff, 0x00);
+const n2d_color_t n2d_red = N2D_COLOR_BGRA8(0x80, 0xff, 0x00, 0x00);
+const n2d_color_t n2d_white = N2D_COLOR_BGRA8(0x80, 0xff, 0xff, 0xff);
+
 uint64_t get_timestamp_ms()
 {
 
@@ -84,11 +90,11 @@ void print_help(char *test_case)
 {
 	printf("Usage: %s [OPTIONS]\n", test_case);
 	printf("Options:\n");
-	printf("  -m <mode>					Specify running mode(0:sample, 1:performance test)\n");
-	printf("  -c <image_width>			Specify image width(column)\n");
-	printf("  -r <image_height>			Specify image height(row)\n");
-	printf("  -i <iteration_number>		Specify frames per second\n");
-	printf("  -h <help>					Show this help message\n");
+	printf("  -m <mode>              Specify running mode(0:sample, 1:performance test)\n");
+	printf("  -c <image_width>       Specify image width(column)\n");
+	printf("  -r <image_height>      Specify image height(row)\n");
+	printf("  -i <iteration_number>  Specify frames per second\n");
+	printf("  -h <help>              Show this help message\n");
 }
 
 int parser_params(int argc, char **argv, struct PerformanceTestParam *param)
@@ -127,7 +133,7 @@ int parser_params(int argc, char **argv, struct PerformanceTestParam *param)
 		}
 	}
 
-	printf("Run [%s] width*height:%d*%d iteration number:%d.\n",
+	printf("\nRun [%s] width*height:%d*%d iteration number:%d.\n\n",
 		   param->mode ? "performance_test" : "sample",
 		   param->image_width, param->image_height,
 		   param->iteration_number);
@@ -197,6 +203,54 @@ n2d_error_t performance_test_create_buffer_with_rect(struct PerformanceTestParam
 	n2d_uint8_t src_alpha = 0x80;
 	n2d_color_t src_color = N2D_COLOR_BGRA8(src_alpha, 0x00, 0x00, 0xff); // 蓝色
 	error = n2d_fill(src, &src_rect, src_color, N2D_BLEND_NONE);
+	if (N2D_IS_ERROR(error))
+	{
+		printf("n2d_fill buffer error=%d.\n", error);
+		return error;
+	}
+	return N2D_SUCCESS;
+}
+n2d_error_t performance_test_add_rect(struct PerformanceTestParam *param,
+	n2d_buffer_t *src, enum RectRelationPosition position, n2d_color_t color)
+{
+	n2d_error_t error = N2D_SUCCESS;
+	n2d_int32_t x_unity = param->image_width / 8;
+	n2d_int32_t y_unity = param->image_height / 8;
+
+	n2d_rectangle_t src_rect;
+	switch(position){
+		case TOP_LEFT:
+		src_rect.x = x_unity;
+		src_rect.y = y_unity;
+		src_rect.width =x_unity;
+		src_rect.height = y_unity;
+		break;
+
+		case TOP_RIGHT:
+		src_rect.x = x_unity * (8 - 2);
+		src_rect.y = y_unity;
+		src_rect.width =x_unity;
+		src_rect.height = y_unity;
+
+		break;
+		case BOTTOM_LEFT:
+			src_rect.x = x_unity;
+			src_rect.y = y_unity * (8 - 2);
+			src_rect.width =x_unity;
+			src_rect.height = y_unity;
+		break;
+		case BOTTOM_RIGHT:
+			src_rect.x = x_unity * (8 - 2);
+			src_rect.y = y_unity * (8 - 2);
+			src_rect.width =x_unity;
+			src_rect.height = y_unity;
+		break;
+		default:
+
+		break;
+	}
+
+	error = n2d_fill(src, &src_rect, color, N2D_BLEND_NONE);
 	if (N2D_IS_ERROR(error))
 	{
 		printf("n2d_fill buffer error=%d.\n", error);

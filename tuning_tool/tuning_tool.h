@@ -41,6 +41,11 @@ typedef struct tuning_context {
 	hbn_vnode_image_t src_img;
 } tuning_context_t;
 
+typedef struct tuning_cmd_func {
+	char cmd;
+	void (*api_func)(tuning_context_t *ctx);
+} tuning_cmd_func_t;
+
 #define main_while_func_run(func, ctx) {	\
 	unsigned int cmd;			\
 	while ((cmd = getchar()) != EOF)	\

@@ -110,6 +110,11 @@ static void *tuning_main_worker_thread(void *arg)
 	ctx = (tuning_context_t *)arg;
 	pr_tuning("%s run \n", __func__);
 
+	if (ctx->send_raw && BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
+		pr_tuning("Cannot send raw in feedback mode\n");
+		goto out;
+	}
+
 	while (1) {
 		if (ctx->send_raw) {
 			ret = hbn_vnode_getframe(ctx->vnode_fd[0], 0, 1000, &raw_img);
@@ -174,10 +179,14 @@ static void tuning_dump_sif_raw(tuning_context_t *ctx)
 	char file_name[128] = {0};
 	static int32_t raw_stream_cnt = 0;
 
-	// if (!ctx->is_offline) {
-	// 	pr_tuning("cannot dump raw when sif otf isp\n");
-	// 	return ;
-	// }
+	if (!ctx->is_offline) {
+		pr_tuning("cannot dump raw when sif otf isp\n");
+		return ;
+	}
+	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
+		pr_tuning("can not dump raw in feedback mode\n");
+		return;
+	}
 
 	read_p("typing the number to dump: ", "%d", &dump_cnt);
 
@@ -205,7 +214,7 @@ static void tuning_handle_set_expsoure(tuning_context_t *ctx)
 	hbn_isp_exposure_attr_t exp_attr = {0};
 	uint32_t exp_mode;
 
-	read_p("typing the expsoure mode, manual_mode(0)/auto_mode(1): ", "%d", &exp_mode);
+	read_p("typing the expsoure mode, manual(0)/auto(1): ", "%d", &exp_mode);
 
 	if (exp_mode == 0) {
 		exp_attr.mode = HBN_ISP_MODE_MANUAL;
@@ -213,8 +222,7 @@ static void tuning_handle_set_expsoure(tuning_context_t *ctx)
 		read_p("again: ", "%f", &exp_attr.manual_attr.again);
 		read_p("dgain: ", "%f", &exp_attr.manual_attr.dgain);
 		read_p("ispgain: ", "%f", &exp_attr.manual_attr.ispgain);
-	} else {
-		pr_tuning("temp enable ae auto directly!\n");
+	} else if (exp_mode == 1) {
 		VIO_ASSERT_FUNC_EQ(hbn_isp_get_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
 		exp_attr.mode = HBN_ISP_MODE_AUTO;
 		read_p("speed_over: ", "%f", &exp_attr.auto_attr.speed_over);
@@ -223,6 +231,9 @@ static void tuning_handle_set_expsoure(tuning_context_t *ctx)
 		read_p("target: ", "%f", &exp_attr.auto_attr.target);
 		read_p("flicker_freq: ", "%f", &exp_attr.auto_attr.flicker_freq);
 		read_p("anti_flicker_status: ", "%d", &exp_attr.auto_attr.anti_flicker_status);
+	} else {
+		printf("Unknown mode: %d\n", exp_mode);
+		return;
 	}
 
 	VIO_ASSERT_FUNC_EQ(hbn_isp_set_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
@@ -234,23 +245,25 @@ static void tuning_handle_get_expsoure(tuning_context_t *ctx)
 
 	VIO_ASSERT_FUNC_EQ(hbn_isp_get_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
 
-	pr_tuning("exp_time: %f\n", exp_attr.manual_attr.exp_time);
-	pr_tuning("again: %f\n", exp_attr.manual_attr.again);
-	pr_tuning("dgain: %f\n", exp_attr.manual_attr.dgain);
-	pr_tuning("ispgain: %f\n", exp_attr.manual_attr.ispgain);
-	pr_tuning("ae_exp: %d\n",exp_attr.manual_attr.ae_exp);
-	pr_tuning("mode %d\n", exp_attr.auto_attr.mode);
+	printf("Currently AE is in %s mode\n", (exp_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":"auto");
 
-	pr_tuning("exp range %f %f\n", exp_attr.auto_attr.exp_time_range.min, exp_attr.auto_attr.exp_time_range.max);
-	pr_tuning("again range %f %f\n", exp_attr.auto_attr.again_range.min, exp_attr.auto_attr.again_range.max);
-	pr_tuning("dgain range %f %f\n", exp_attr.auto_attr.dgain_range.min, exp_attr.auto_attr.dgain_range.max);
-	pr_tuning("isp dgain range %f %f\n", exp_attr.auto_attr.isp_dgain_range.min, exp_attr.auto_attr.isp_dgain_range.max);
-	pr_tuning("speed_over %f\n", exp_attr.auto_attr.speed_over);
-	pr_tuning("speed_under %f\n", exp_attr.auto_attr.speed_under);
-	pr_tuning("tolerance %f\n", exp_attr.auto_attr.tolerance);
-	pr_tuning("target %f\n", exp_attr.auto_attr.target);
-	pr_tuning("flicker_freq %f\n", exp_attr.auto_attr.flicker_freq);
-	pr_tuning("anti_flicker_status %d\n", exp_attr.auto_attr.anti_flicker_status);
+	printf("exp_time: %f\n", exp_attr.manual_attr.exp_time);
+	printf("again: %f\n", exp_attr.manual_attr.again);
+	printf("dgain: %f\n", exp_attr.manual_attr.dgain);
+	printf("ispgain: %f\n", exp_attr.manual_attr.ispgain);
+	printf("ae_exp: %f\n",exp_attr.manual_attr.ae_exp);
+	printf("mode %d\n", exp_attr.auto_attr.mode);
+
+	printf("exp range %f~%f\n", exp_attr.auto_attr.exp_time_range.min, exp_attr.auto_attr.exp_time_range.max);
+	printf("again range %f~%f\n", exp_attr.auto_attr.again_range.min, exp_attr.auto_attr.again_range.max);
+	printf("dgain range %f~%f\n", exp_attr.auto_attr.dgain_range.min, exp_attr.auto_attr.dgain_range.max);
+	printf("isp dgain range %f~%f\n", exp_attr.auto_attr.isp_dgain_range.min, exp_attr.auto_attr.isp_dgain_range.max);
+	printf("speed_over %f\n", exp_attr.auto_attr.speed_over);
+	printf("speed_under %f\n", exp_attr.auto_attr.speed_under);
+	printf("tolerance %f\n", exp_attr.auto_attr.tolerance);
+	printf("target %f\n", exp_attr.auto_attr.target);
+	printf("flicker_freq %f\n", exp_attr.auto_attr.flicker_freq);
+	printf("anti_flicker_status %d\n", exp_attr.auto_attr.anti_flicker_status);
 }
 
 static void tuning_handle_set_white_balance(tuning_context_t *ctx)
@@ -258,7 +271,7 @@ static void tuning_handle_set_white_balance(tuning_context_t *ctx)
 	hbn_isp_awb_attr_t awb_attr = {0};
 	uint32_t awb_mode;
 
-	read_p("typing the awb mode, manual_mode(0)/auto_mode(1): ", "%d", &awb_mode);
+	read_p("typing the awb mode, manual(0)/auto(1): ", "%d", &awb_mode);
 
 	if (awb_mode == 0) {
 		awb_attr.mode = HBN_ISP_MODE_MANUAL;
@@ -267,10 +280,12 @@ static void tuning_handle_set_white_balance(tuning_context_t *ctx)
 		read_p("grgain: ", "%f", &awb_attr.manual_attr.gain.grgain);
 		read_p("gbgain: ", "%f", &awb_attr.manual_attr.gain.gbgain);
 		read_p("bgain: ", "%f", &awb_attr.manual_attr.gain.bgain);
-	} else {
-		pr_tuning("temp enable awb auto directly!\n");
+	} else if (awb_mode == 1) {
 		VIO_ASSERT_FUNC_EQ(hbn_isp_get_awb_attr(ctx->vnode_fd[1], &awb_attr), 0, return);
 		awb_attr.mode = HBN_ISP_MODE_AUTO;
+	} else {
+		printf("Unknown mode: %d\n", awb_mode);
+		return;
 	}
 
 	VIO_ASSERT_FUNC_EQ(hbn_isp_set_awb_attr(ctx->vnode_fd[1], &awb_attr), 0, return);
@@ -282,10 +297,13 @@ static void tuning_handle_get_white_balance(tuning_context_t *ctx)
 
 	VIO_ASSERT_FUNC_EQ(hbn_isp_get_awb_attr(ctx->vnode_fd[1], &awb_attr), 0, return);
 
-	pr_tuning("rgain %f\n", awb_attr.auto_attr.gain.rgain);
-	pr_tuning("grgain %f\n", awb_attr.auto_attr.gain.grgain);
-	pr_tuning("gbgain %f\n", awb_attr.auto_attr.gain.gbgain);
-	pr_tuning("bgain %f\n", awb_attr.auto_attr.gain.bgain);
+	printf("Currently AWB is in %s mode\n", (awb_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":"auto");
+
+	printf("temper %d\n", awb_attr.auto_attr.temper);
+	printf("rgain %f\n", awb_attr.auto_attr.gain.rgain);
+	printf("grgain %f\n", awb_attr.auto_attr.gain.grgain);
+	printf("gbgain %f\n", awb_attr.auto_attr.gain.gbgain);
+	printf("bgain %f\n", awb_attr.auto_attr.gain.bgain);
 }
 
 static void tuning_hanle_set_ae_table(tuning_context_t *ctx)
@@ -294,12 +312,11 @@ static void tuning_hanle_set_ae_table(tuning_context_t *ctx)
 	hbn_isp_exposure_table_t ae_table_attr = {0};
 
 	for (i = 0; i < CAMDEV_AE_EXP_TABLE_NUM; i++) {
-		pr_tuning("input table %d, type [0] to finish:\n", i);
+		printf("input table %d, typing [0] to finish:\n", i);
 		read_p("exposure_time: ", "%f", &ae_table_attr.exp_table[i].exposure_time);
-		if (ae_table_attr.exp_table[i].exposure_time == 0) {
-			ae_table_attr.exp_table[i].exposure_time = 0;
+		if (ae_table_attr.exp_table[i].exposure_time == 0)
 			break;
-		}
+
 		read_p("again: ", "%f", &ae_table_attr.exp_table[i].again);
 		read_p("dgain: ", "%f", &ae_table_attr.exp_table[i].dgain);
 		read_p("isp_gain: ", "%f", &ae_table_attr.exp_table[i].isp_gain);
@@ -317,11 +334,11 @@ static void tuning_hanle_get_ae_table(tuning_context_t *ctx)
 	VIO_ASSERT_FUNC_EQ(hbn_isp_get_exposure_table(ctx->vnode_fd[1], &ae_table_attr), 0, return);
 
 	for (i = 0; i < ae_table_attr.valid_num; i++) {
-		pr_tuning("---------table %d---------\n", i);
-		pr_tuning("exposure_time: %f\n", ae_table_attr.exp_table[i].exposure_time);
-		pr_tuning("again: %f\n", ae_table_attr.exp_table[i].again);
-		pr_tuning("dgain: %f\n", ae_table_attr.exp_table[i].dgain);
-		pr_tuning("isp_gain: %f\n", ae_table_attr.exp_table[i].isp_gain);
+		printf("---------table %d---------\n", i);
+		printf("exposure_time: %f\n", ae_table_attr.exp_table[i].exposure_time);
+		printf("again: %f\n", ae_table_attr.exp_table[i].again);
+		printf("dgain: %f\n", ae_table_attr.exp_table[i].dgain);
+		printf("isp_gain: %f\n", ae_table_attr.exp_table[i].isp_gain);
 	}
 }
 
@@ -332,77 +349,88 @@ static void tuning_dump_yuv(tuning_context_t *ctx)
 
 static void tuning_get_ae_statistics(tuning_context_t *ctx)
 {
-	int32_t chn, col, row;
+	int32_t col, row;
+	uint32_t *luma;
 	hbn_isp_ae_statistics_t ae_statistics = {0};
 
 	VIO_ASSERT_FUNC_EQ(hbn_isp_get_ae_statistics(ctx->vnode_fd[1], &ae_statistics), 0, return);
 
-	pr_tuning("Ae statistics current frameid: %d, timestamps: %ld\n", ae_statistics.frame_id, ae_statistics.timestamps);
-	pr_tuning("Datatype: %d\n", ae_statistics.datatype);
+	printf("Ae statistics current frameid: %d, timestamps: %ld\n", ae_statistics.frame_id, ae_statistics.timestamps);
+	printf("Datatype: %d\n", ae_statistics.datatype);
 
-	for (chn = 0; chn < HBN_ISP_PIXEL_CHANNEL; chn++) {
-		printf("channel index: %d\n", chn);
+	for (col = 0; col < HBN_ISP_GRID_NUM * HBN_ISP_PIXEL_CHANNEL; col += HBN_ISP_PIXEL_CHANNEL) {
 		for (row = 0; row < HBN_ISP_GRID_NUM; row++) {
-			printf("%d: ", row);
-			for (col = 0; col < HBN_ISP_GRID_NUM; col++) {
-				printf(" %d", ae_statistics.expStat[HBN_ISP_GRID_ITEMS*chn + HBN_ISP_GRID_NUM*row + col]);
-			}
-			printf("\n");
+			luma = &ae_statistics.expStat[HBN_ISP_GRID_NUM * HBN_ISP_PIXEL_CHANNEL * row + col];
+			printf("(%d, %d, %d, %d) ", *luma, *(luma+1), *(luma+2), *(luma+3));
 		}
+		printf("\n");
 	}
 }
 
-static int32_t tuning_api_func(int32_t cmd, tuning_context_t *ctx)
+static void tuning_set_module_control(tuning_context_t *ctx)
 {
-	int32_t ret = 0;
+	hbn_isp_module_ctrl_t module_ctrl = {0};
+	uint32_t key;
 
-	switch (cmd)
-	{
-	case 'a':
-		pr_tuning("xxxx\n");
-		break;
-	case 's':
-		if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
-			pr_tuning("can not dump raw in feedback mode\n");
-			break;
+	printf("Typing [1] to enable, [0] to disable\n");
+	read_p("CCM: ", "%d", &key); module_ctrl.module.u32Key |= key << 0;
+	read_p("CNR: ", "%d", &key); module_ctrl.module.u32Key |= key << 1;
+	read_p("CPROC: ", "%d", &key); module_ctrl.module.u32Key |= key << 2;
+	read_p("DG: ", "%d", &key); module_ctrl.module.u32Key |= key << 3;
+	read_p("Demosaic: ", "%d", &key); module_ctrl.module.u32Key |= key << 4;
+	read_p("DPCC: ", "%d", &key); module_ctrl.module.u32Key |= key << 5;
+	read_p("2DNR: ", "%d", &key); module_ctrl.module.u32Key |= key << 6;
+	read_p("3DNR: ", "%d", &key); module_ctrl.module.u32Key |= key << 7;
+	read_p("EE: ", "%d", &key); module_ctrl.module.u32Key |= key << 8;
+	read_p("LSC: ", "%d", &key); module_ctrl.module.u32Key |= key << 9;
+	read_p("LUT3D: ", "%d", &key); module_ctrl.module.u32Key |= key << 10;
+	read_p("WDR: ", "%d", &key); module_ctrl.module.u32Key |= key << 11;
+	read_p("YNR: ", "%d", &key); module_ctrl.module.u32Key |= key << 12;
+	read_p("GE: ", "%d", &key); module_ctrl.module.u32Key |= key << 13;
+	read_p("WB: ", "%d", &key); module_ctrl.module.u32Key |= key << 14;
+
+	VIO_ASSERT_FUNC_EQ(hbn_isp_set_module_control(ctx->vnode_fd[1], &module_ctrl), 0, return);
+}
+
+static void tuning_get_module_control(tuning_context_t *ctx)
+{
+	hbn_isp_module_ctrl_t module_ctrl = {0};
+	VIO_ASSERT_FUNC_EQ(hbn_isp_get_module_control(ctx->vnode_fd[1], &module_ctrl), 0, return);
+
+	printf("module_ctrl.module.u32Key %d\n", module_ctrl.module.u32Key);
+
+	printf("CCM: %s\n", (module_ctrl.module.u32Key & 1 << 0)?"Enable":"Disable");
+	printf("CNR: %s\n", (module_ctrl.module.u32Key & 1 << 1)?"Enable":"Disable");
+	printf("CPROC: %s\n", (module_ctrl.module.u32Key & 1 << 2)?"Enable":"Disable");
+	printf("DG: %s\n", (module_ctrl.module.u32Key & 1 << 3)?"Enable":"Disable");
+	printf("Demosaic: %s\n", (module_ctrl.module.u32Key & 1 << 4)?"Enable":"Disable");
+	printf("DPCC: %s\n", (module_ctrl.module.u32Key & 1 << 5)?"Enable":"Disable");
+	printf("2DNR: %s\n", (module_ctrl.module.u32Key & 1 << 6)?"Enable":"Disable");
+	printf("3DNR: %s\n", (module_ctrl.module.u32Key & 1 << 7)?"Enable":"Disable");
+	printf("EE: %s\n", (module_ctrl.module.u32Key & 1 << 8)?"Enable":"Disable");
+	printf("LSC: %s\n", (module_ctrl.module.u32Key & 1 << 9)?"Enable":"Disable");
+	printf("LUT3D: %s\n", (module_ctrl.module.u32Key & 1 << 10)?"Enable":"Disable");
+	printf("WDR: %s\n", (module_ctrl.module.u32Key & 1 << 11)?"Enable":"Disable");
+	printf("YNR: %s\n", (module_ctrl.module.u32Key & 1 << 12)?"Enable":"Disable");
+	printf("GE: %s\n", (module_ctrl.module.u32Key & 1 << 13)?"Enable":"Disable");
+	printf("WB: %s\n", (module_ctrl.module.u32Key & 1 << 14)?"Enable":"Disable");
+}
+
+tuning_cmd_func_t cmd_funcs[] = TUNING_CMD_FUNC_LIST;
+static void tuning_api_func(int32_t cmd, tuning_context_t *ctx)
+{
+	int32_t i;
+
+	for (i = 0; i < ARRAY_SIZE(cmd_funcs); i++) {
+		if (cmd_funcs[i].cmd == cmd) {
+			cmd_funcs[i].api_func(ctx);
+			printf("Input cmd:");
+			return;
 		}
-		tuning_dump_sif_raw(ctx);
-		break;
-	case 'e':
-		tuning_handle_set_expsoure(ctx);
-		break;
-	case 'E':
-		tuning_handle_get_expsoure(ctx);
-		break;
-	case 'w':
-		tuning_handle_set_white_balance(ctx);
-		break;
-	case 'W':
-		tuning_handle_get_white_balance(ctx);
-		break;
-	case 't':
-		tuning_hanle_set_ae_table(ctx);
-		break;
-	case 'T':
-		tuning_hanle_get_ae_table(ctx);
-		break;
-	case 'y':
-		tuning_dump_yuv(ctx);
-		return ret;
-	case 'b':
-		tuning_get_ae_statistics(ctx);
-		break;
-	case 'h':
-		valid_cmd_print();
-		break;
-	default:
-		pr_tuning("Unknown cmd: %d\n", cmd);
-		valid_cmd_print();
-		break;
 	}
-	pr_tuning("Input cmd:");
 
-	return ret;
+	valid_cmd_print();
+	printf("Input cmd:");
 }
 
 static void *tuning_api_worker_thread(void *arg)

@@ -17,6 +17,7 @@
 #define osd_pr_warp(p_func_, fmt, ...) do { p_func_(osd_fmt(fmt), __func__, ##__VA_ARGS__); } while(0)
 #define pr_tuning(fmt, ...) osd_pr_warp(printf, fmt, ##__VA_ARGS__)
 #define BIT_ENABLE(val, shift) ((val) & (1 << (shift)))
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #define TUNING_PRINT_SIZE_MAX	128
 

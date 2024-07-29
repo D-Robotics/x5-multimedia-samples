@@ -9,7 +9,7 @@ static mipi_config_t sc035hgs_mipi_config = {
 	.rx_enable = 1,
 	.rx_attr = {
 		.phy = 0,
-		.lane = 1,
+		.lane = 2,
 		.datatype = RAW10,
 		.fps = SENSOE_FPS,
 		.mclk = 1,
@@ -19,14 +19,14 @@ static mipi_config_t sc035hgs_mipi_config = {
 		.linelenth = 1600,
 		.framelenth = 1250,
 		.settle = 20,
-		.channel_num = 1, // ipi channel
-		.channel_sel = {0},
+		.channel_num = 2, // ipi channel
+		.channel_sel = {0, 1},
 	},
 };
 
 static camera_config_t sc035hgs_camera_config = {
 	.name = "sc035hgs",
-	.addr = 0x30, // 0x31
+	.addr = 0x30,
 	.sensor_mode = 1,
 	.fps = SENSOE_FPS,
 	.format = RAW10,
@@ -42,7 +42,7 @@ static vin_node_attr_t sc035hgs_vin_node_attr = {
 	.cim_attr = {
 		.mipi_rx = 0,
 		.vc_index = 0,
-		.ipi_channel = 1,
+		.ipi_channel = 2,
 		.cim_isp_flyby = 1,
 		.func = {
 			.enable_frame_id = 1,
@@ -110,7 +110,7 @@ static vin_ochn_attr_t sc035hgs_vin_ochn_attr = {
 };
 
 static isp_attr_t sc035hgs_isp_attr = {
-	.input_mode = 0,
+	.input_mode = 1,
 	.sensor_mode= ISP_NORMAL_M,
 	.crop = {
 		.x = 0,
@@ -133,11 +133,11 @@ static isp_ochn_attr_t sc035hgs_isp_ochn_attr = {
 	.bit_width = 8,
 };
 
-vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_1lane = {
+vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc0 = {
 	.chip_id_reg = 0x3107,
 	.chip_id = 0x0035,
-	.sensor_name = "sc035hgs",
-	.config_file = "linear_640x480_raw10_30fps_1lane.c",
+	.sensor_name = "sc035hgs-vc0",
+	.config_file = "linear_640x480_raw10_30fps_2lane_vc0.c",
 	.camera_config = &sc035hgs_camera_config,
 	.vin_ichn_attr = &sc035hgs_vin_ichn_attr,
 	.vin_node_attr = &sc035hgs_vin_node_attr,

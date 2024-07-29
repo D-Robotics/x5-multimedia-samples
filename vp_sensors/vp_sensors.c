@@ -165,6 +165,14 @@ static int enable_sensor_pin(int gpio_number, int active)
 
 	/* gpio level should be keep same with sensor driver power_on api */
 
+	// Set GPIO value to active
+	if (gpio_set_value(gpio_number, active) != 0) {
+		printf("Failed to set GPIO value\n");
+		return -1;
+	}
+
+	usleep(30 * 1000);
+
 	// Set GPIO value to 1 - active
 	if (gpio_set_value(gpio_number,  (1 - active)) != 0) {
 		printf("Failed to set GPIO value\n");

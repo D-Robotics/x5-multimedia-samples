@@ -20,27 +20,25 @@
 
 #include "performance_test_util.h"
 
-struct PerformanceTestParam g_resize_sample = {
+struct PerformanceTestParam g_copy_sample = {
 	.mode = 0,
 	.iteration_number = 10000,
 	.image_width = 640,
 	.image_height = 480,
-	.test_case = "resize"
+	.test_case = "copy"
 };
 
-void resize_performance_test(struct PerformanceTestParam *param, float rate)
+void copy_performance_test(struct PerformanceTestParam *param)
 {
 
 	n2d_buffer_t src = {0};
 	n2d_buffer_t dst = {0};
 	n2d_error_t error = N2D_SUCCESS;
 
-	// 原图: 黑底(宽高 根据输入参数决定)
-	N2D_ON_ERROR(performance_test_create_buffer_black(param, N2D_BGRA8888, &src));
+	//1. 创建输入图片
+	N2D_ON_ERROR(performance_test_create_buffer_with_rect(param, N2D_BGRA8888, &src));
 
-	// resize后的图片：长宽各放大2倍
-	dst.width = src.width * rate;
-	dst.height = src.height * rate;
+	//2. 创建输出图片
 	N2D_ON_ERROR(performance_test_create_buffer_black(param, N2D_BGRA8888, &dst));
 
 	struct ResolutionInformation res_info = {
@@ -50,7 +48,6 @@ void resize_performance_test(struct PerformanceTestParam *param, float rate)
 		.output_width = dst.width,
 		.output_height = dst.height,
 	};
-
 	int run_count = 0;
 	performance_test_start(param);
 	while (run_count < param->iteration_number)
@@ -63,7 +60,7 @@ void resize_performance_test(struct PerformanceTestParam *param, float rate)
 
 	char performance_test_file_name[128];
 	memset(performance_test_file_name, 0, sizeof(performance_test_file_name));
-	sprintf(performance_test_file_name, "%d_%d_resize_to_%d_%d",
+	sprintf(performance_test_file_name, "%d_%d_copy_to_%d_%d",
 		src.width, src.height, dst.width, dst.height);
 	performance_test_save_to_file_width_name(param, &dst, performance_test_file_name);
 
@@ -79,7 +76,7 @@ on_error:
 	}
 }
 
-n2d_error_t resize_sample()
+n2d_error_t copy_sample()
 {
 	n2d_error_t error = N2D_SUCCESS;
 	n2d_buffer_t src = {0};
@@ -94,16 +91,12 @@ n2d_error_t resize_sample()
 		goto on_loadfile_failed;
 	}
 
-	n2d_rectangle_t srcrect;
-	srcrect.x = 0;
-    srcrect.y = 0;
-    srcrect.width  = src.width;
-    srcrect.height = src.height;
-
-	// 创建存储 resize后的buffer
+	// 创建存储 copy后的buffer
+	int dst_width = src.width;
+	int dst_height = src.height;
 	error = n2d_util_allocate_buffer(
-		src.width * 2,
-		src.height * 2,
+		dst_width,
+		dst_height,
 		N2D_BGRA8888,
 		N2D_0,
 		N2D_LINEAR,
@@ -114,20 +107,20 @@ n2d_error_t resize_sample()
 		printf("load buffer from file %s failed! error=%d.\n", input_file_name, error);
 		goto on_free_src;
 	}
-	n2d_rectangle_t dstrect;
-	dstrect.x = 0;
-    dstrect.y = 0;
-    dstrect.width  = dst.width;
-    dstrect.height = dst.height;
+	n2d_rectangle_t src_rect;
+	src_rect.x = 0;
+    src_rect.y = 0;
+    src_rect.width  = dst.width;
+    src_rect.height = dst.height;
 
-	//注意: dstrect 和 srcrect 必须指定
-	N2D_ON_ERROR(n2d_filterblit(&dst, &dstrect, N2D_NULL, &src, &srcrect, N2D_BLEND_NONE));
+	//从src图中裁剪矩形框（src_rect）到 dst中
+	N2D_ON_ERROR(n2d_blit(&dst, N2D_NULL, &src, &src_rect, N2D_BLEND_NONE));
 	N2D_ON_ERROR(n2d_commit());
 
 	// 保存图片
 	char output_file_name[128];
 	memset(output_file_name, 0, sizeof(output_file_name));
-	sprintf(output_file_name, "./resize_sample_%d_%d.bmp", dst.width, dst.height);
+	sprintf(output_file_name, "./copy_sample_%d_%d.bmp", dst.width, dst.height);
 	error = n2d_util_save_buffer_to_file(&dst, output_file_name);
 	if (N2D_IS_ERROR(error))
 	{
@@ -135,7 +128,7 @@ n2d_error_t resize_sample()
 		goto on_error;
 	}
 
-	printf("Resize input file %s [%d*%d] ==> output file %s [%d*%d]\n",
+	printf("copy input file %s [%d*%d] ==> output file %s [%d*%d]\n",
 		input_file_name, src.width, src.height,
 		output_file_name, dst.width, dst.height);
 on_error:
@@ -148,7 +141,7 @@ on_loadfile_failed:
 
 int main(int argc, char **argv)
 {
-	int ret = parser_params(argc, argv, &g_resize_sample);
+	int ret = parser_params(argc, argv, &g_copy_sample);
 	if (ret != 0)
 	{
 		return -1;
@@ -166,9 +159,9 @@ int main(int argc, char **argv)
 	N2D_ON_ERROR(n2d_switch_device(N2D_DEVICE_0));
 	N2D_ON_ERROR(n2d_switch_core(N2D_CORE_0));
 
-	if (g_resize_sample.mode == 0)
+	if (g_copy_sample.mode == 0)
 	{
-		error = resize_sample();
+		error = copy_sample();
 		if (N2D_IS_ERROR(error))
 		{
 			goto on_close;
@@ -176,8 +169,7 @@ int main(int argc, char **argv)
 	}
 	else
 	{
-		resize_performance_test(&g_resize_sample, 2);
-		resize_performance_test(&g_resize_sample, 0.5);
+		copy_performance_test(&g_copy_sample);
 	}
 on_close:
 	/* Close the context. */

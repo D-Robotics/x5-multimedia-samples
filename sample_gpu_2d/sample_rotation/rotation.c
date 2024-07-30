@@ -20,16 +20,6 @@
 
 #include "performance_test_util.h"
 
-// static n2d_orientation_t orientations[] =
-// {
-//	 N2D_0,
-//	 N2D_90,
-//	 N2D_180,
-//	 N2D_270,
-//	 N2D_FLIP_X,
-//	 N2D_FLIP_Y,
-// };
-
 struct PerformanceTestParam g_rotation_sample = {
 	.mode = 0,
 	.iteration_number = 10000,
@@ -54,7 +44,6 @@ void rotation_performance_test(struct PerformanceTestParam *param){
 	int run_count = 0;
 	performance_test_start(param);
 	while (run_count < param->iteration_number){
-		//旋转90度
 		src.orientation = N2D_0;
 		dst.orientation = N2D_90;
 
@@ -151,7 +140,15 @@ int main(int argc, char **argv)
 		goto on_free_src;
 	}
 	if(g_rotation_sample.mode == 0){
-		/* Run the test case. */
+		/*
+			Run the test case.
+			N2D_0,			// 不旋转
+			N2D_90,			// 顺时针旋转90度
+			N2D_180,		// 顺时针旋转180度
+			N2D_270,		// 顺时针旋转270度
+			N2D_FLIP_X,		// X 轴镜像
+			N2D_FLIP_Y,		// Y 轴镜像
+		*/
 		error = rotation_sample(&src, &dst, N2D_90);
 		if (N2D_IS_ERROR(error))
 		{

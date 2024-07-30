@@ -37,16 +37,30 @@ extern const n2d_color_t n2d_black;
 extern const n2d_color_t n2d_green;
 extern const n2d_color_t n2d_red;
 extern const n2d_color_t n2d_white;
+extern const n2d_color_t n2d_grey;
+extern const n2d_color_t n2d_light_grey;
+
+struct ResolutionInformation{
+	int input_batch;
+	int input_width;
+	int input_height;
+	int output_width;
+	int output_height;
+};
 
 void print_help(char *test_case);
 int parser_params(int argc, char** argv, struct PerformanceTestParam *param);
 
 void performance_test_stop(struct PerformanceTestParam *param);
 void performance_test_start(struct PerformanceTestParam *param);
-void performance_test_stop_with_name(struct PerformanceTestParam *param, char* test_case);
+void performance_test_stop_with_resolution_info(struct PerformanceTestParam *param,
+	struct ResolutionInformation* resolution_info);
 
 n2d_error_t performance_test_create_buffer_black(struct PerformanceTestParam *param,
 	n2d_buffer_format_t format, n2d_buffer_t *src);
+n2d_error_t performance_test_create_buffer_with_color(struct PerformanceTestParam *param,
+												 n2d_buffer_format_t format, n2d_buffer_t *src,
+												 n2d_color_t color);
 n2d_error_t performance_test_create_buffer_with_rect(struct PerformanceTestParam *param,
 	n2d_buffer_format_t format, n2d_buffer_t *src);
 

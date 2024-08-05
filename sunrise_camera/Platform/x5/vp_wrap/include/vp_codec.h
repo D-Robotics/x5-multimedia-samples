@@ -49,6 +49,7 @@ int32_t vp_codec_start(media_codec_context_t *context);
 int32_t vp_codec_stop(media_codec_context_t *context);
 int32_t vp_codec_restart(media_codec_context_t *context);
 
+int32_t vp_codec_encoder_set_input(media_codec_context_t *context, ImageFrame *vse_frame);
 int32_t vp_codec_set_input(media_codec_context_t *context, ImageFrame *frame, int32_t eos);
 int32_t vp_codec_get_output(media_codec_context_t *context, ImageFrame *frame, int32_t timeout);
 int32_t vp_codec_release_output(media_codec_context_t *context, ImageFrame *frame);

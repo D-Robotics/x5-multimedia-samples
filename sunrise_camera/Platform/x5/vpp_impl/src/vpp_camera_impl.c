@@ -48,8 +48,11 @@ typedef struct
 	bpu_handle_t	m_bpu_handle;
 
 	shm_stream_t 	*venc_shm; /* H264 H265 码流，最大可能是32路 */
-	tsThread 		m_venc_thread; /* 图像编码、输出给vo、算法图像前处理 */
-	tsThread		m_osd_thread;
+	tsThread 		m_vse_thread; /* 从vse获取图像，送入编码 */
+	tsThread 		m_venc_thread; /*从编码器获取图像，送入共享内存 */
+	tsQueue			m_vse_to_enc_queue;
+	tsQueue			m_enc_to_vse_queue;
+
 	tsThread		m_bpu_thread;
 } vpp_camera_t;
 
@@ -99,54 +102,125 @@ static void update_osd_info(vp_vflow_contex_t* vp_vflow_contex, uint64_t *next_u
 		*next_update_time_ms = (current_time_ms / 1000) * 1000 + 1000;
 	}
 }
-/******************************************************************************
- * funciton : get stream from each channels
- ******************************************************************************/
 static void* venc_get_stream_proc(void *ptr)
 {
-	tsThread *privThread = (tsThread*)ptr;
 	int32_t ret = 0;
-	ImageFrame vse_frame = {0};
-	ImageFrame encode_frame = {0};
-	ImageFrame encode_stream = {0};
-	hbn_vnode_image_t *hbn_vnode_image = NULL;
-
+	tsThread *privThread = (tsThread*)ptr;
 	vpp_camera_t *vpp_camera = (vpp_camera_t *)privThread->pvThreadData;
 
-	if (vp_allocate_image_frame(&vse_frame) == NULL) {
-		SC_LOGE("vp_allocate_image_frame for vse_frame failed, so exit program.");
-		exit(-1);
-	}
-	if (vp_allocate_image_frame(&encode_frame) == NULL) {
-		SC_LOGE("vp_allocate_image_frame for encode_frame failed, so exit program.");
-		exit(-1);
-	}
+	ImageFrame encode_stream = {0};
 	if (vp_allocate_image_frame(&encode_stream) == NULL) {
 		SC_LOGE("vp_allocate_image_frame for encode_stream failed, so exit program.");
 		exit(-1);
 	}
+	teQueueStatus status = E_QUEUE_OK;
+	ImageFrame vse_frame = {0};
+	hbn_vnode_image_t *hbn_vnode_image = NULL;
 
-	hbn_vnode_image = (hbn_vnode_image_t *)vse_frame.hbn_vnode_image;
+	int dequeue_enc_count = 0;
+	int enqueue_vse_count = 0;
+	//线程退出时，保证hbn_vnode_image 已经处理完： 放到 m_enc_to_vse_queue
+	while (privThread->eState == E_THREAD_RUNNING){
+		status = mQueueDequeueTimed(&vpp_camera->m_vse_to_enc_queue, 2000, (void **)&hbn_vnode_image);
+		if(status != E_QUEUE_OK){
+			SC_LOGE("channel %d dequeue from enc_to_vse_queue failed:%d\n", vpp_camera->pipline_id ,status);
+			continue;
+		}
+		dequeue_enc_count++;
 
-	mThreadSetName(privThread, __func__);
-#if 0
-	int is_a = 0;
-	uint64_t start_time = -1;
-	char *current_file_name = NULL;
+		// 送进编码器
+		vse_frame.hbn_vnode_image = hbn_vnode_image;
+		ret = vp_codec_encoder_set_input(&vpp_camera->m_encode_context, &vse_frame);
+		if(ret != 0){
+			if (privThread->eState == E_THREAD_RUNNING) {
+				SC_LOGE("vp_codec_set_input failed.");
+			}
+			break;
+		}
 
-	char enc_file_name_a [100];
-	char enc_file_name_b [100];
-	sprintf(enc_file_name_a, "/userdata/ch_%d_a.h264", vpp_camera->pipline_id);
-	sprintf(enc_file_name_b, "/userdata/ch_%d_b.h264", vpp_camera->pipline_id);
+		// 从编码器获取码流
+		ret = vp_codec_get_output(&vpp_camera->m_encode_context, &encode_stream, 2000);
+		if(ret != 0){
+			if (privThread->eState == E_THREAD_RUNNING) {
+				SC_LOGE("vp_codec_get_output failed.");
+			}
+			break;
+		}
 
-	FILE *enc_data_file = NULL;
-#endif
+		// 编码器用完VSE的数据 就释放
+		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
+		if (ret != 0) {
+			SC_LOGE("vp_vse_release_frame failed.");
+			break;
+		}
+
+		// 编码器用完VnodeBuffer,就归还给 VSE
+		while(privThread->eState == E_THREAD_RUNNING){
+			status = mQueueEnqueueEx(&vpp_camera->m_enc_to_vse_queue, hbn_vnode_image);
+			if (status != E_QUEUE_OK){
+				SC_LOGE("channel %d enqueue from enc_to_vse_queue failed:%d\n", vpp_camera->pipline_id ,status);
+				sleep(1);
+				continue;
+			}
+			hbn_vnode_image = NULL;
+			enqueue_vse_count++;
+			break;
+		}
+
+
+		vpp_camera_push_stream(vpp_camera, &encode_stream);
+		ret = vp_codec_release_output(&vpp_camera->m_encode_context, &encode_stream);
+		if (ret != 0) {
+			SC_LOGE("vp_codec_release_output failed.");
+			break;
+		}
+	}
+
+	int free_dissociate_count = 0;
+	if(hbn_vnode_image != NULL){
+		free(hbn_vnode_image);
+		free_dissociate_count = 1;
+	}
+	SC_LOGI("channel %d dequeue enc %d = enqueue vse %d + free_dissociate_count %d.\n",
+		vpp_camera->pipline_id , dequeue_enc_count, enqueue_vse_count, free_dissociate_count);
+
+
+	vp_free_image_frame(&encode_stream);
+	mThreadFinish(privThread);
+	return NULL;
+}
+
+/******************************************************************************
+ * funciton : get stream from each channels
+ ******************************************************************************/
+static void* vse_get_stream_proc(void *ptr)
+{
+	int32_t ret = 0;
+
+	tsThread *privThread = (tsThread*)ptr;
+	vpp_camera_t *vpp_camera = (vpp_camera_t *)privThread->pvThreadData;
+	mThreadSetNameWidthIndex(privThread, __func__, vpp_camera->pipline_id);
+
+	teQueueStatus status = E_QUEUE_OK;
+	ImageFrame vse_frame = {0};
+	hbn_vnode_image_t *hbn_vnode_image = NULL;
 
 	uint64_t next_update_time_ms = ((get_timestamp_ms() + 999) / 1000) * 1000;
 	struct TimeStatistics time_statistics;
-	while (privThread->eState == E_THREAD_RUNNING)
-	{
+
+	int dequeue_vse_count = 0;
+	int enqueue_enc_count = 0;
+
+	while (privThread->eState == E_THREAD_RUNNING){
 		time_statistics_at_beginning_of_loop(&time_statistics);
+		status = mQueueDequeueTimed(&vpp_camera->m_enc_to_vse_queue, 2000, (void **)&hbn_vnode_image);
+		if (status != E_QUEUE_OK){
+			SC_LOGW("channel %d dequeue from enc_to_vse_queue failed:%d\n", vpp_camera->pipline_id ,status);
+			continue;
+		}
+		dequeue_vse_count++;
+
+		vse_frame.hbn_vnode_image = hbn_vnode_image;
 		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
 		if (ret != 0) {
 			// 当线程接收到退出信号时，getframe 接口会立即报超时退出
@@ -156,105 +230,32 @@ static void* venc_get_stream_proc(void *ptr)
 			}
 			break;
 		}
+
+		while(privThread->eState == E_THREAD_RUNNING){
+			status = mQueueEnqueueEx(&vpp_camera->m_vse_to_enc_queue, hbn_vnode_image);
+			if (status != E_QUEUE_OK){
+				printf("channel %d enqueue from enc_to_vse_queue failed:%d\n", vpp_camera->pipline_id ,status);
+				sleep(1);
+				continue;
+			}
+			hbn_vnode_image = NULL;
+			enqueue_enc_count++;
+			break;
+		}
+
 		update_osd_info(&vpp_camera->vp_vflow_contex, &next_update_time_ms);
-		// vp_vin_print_hbn_vnode_image_t(hbn_vnode_image);
-
-		// 送进编码器
-		encode_frame.data[0] = hbn_vnode_image->buffer.virt_addr[0];
-		if (hbn_vnode_image->buffer.plane_cnt == 1) {
-			encode_frame.data_size[0] = hbn_vnode_image->buffer.size[0];
-		} else if (hbn_vnode_image->buffer.plane_cnt == 2) {
-			encode_frame.data_size[0] = hbn_vnode_image->buffer.size[0] + hbn_vnode_image->buffer.size[1];
-		}
-		encode_frame.image_timestamp = vse_frame.hbn_vnode_image->info.timestamps / 1000;
-		ret = vp_codec_set_input(&vpp_camera->m_encode_context, &encode_frame, 0);
-		if(ret != 0){
-			SC_LOGE("vp_codec_set_input failed.");
-			break;
-		}
-		// 从编码器获取码流
-		ret = vp_codec_get_output(&vpp_camera->m_encode_context, &encode_stream, 2000);
-		if(ret != 0){
-			SC_LOGE("vp_codec_get_output failed.");
-			break;
-		}
-
-
-		//for debug
-		{
-			#if 0
-			uint64_t current_time = get_timestamp_ms();
-			if((current_time - start_time) > 2 * 60 * 1000){
-				start_time = current_time;
-
-				if(enc_data_file != NULL){
-					fclose(enc_data_file);
-					enc_data_file = NULL;
-				}
-
-				if(is_a){
-					is_a = 0;
-					current_file_name = enc_file_name_b;
-				}else{
-					is_a = 1;
-					current_file_name = enc_file_name_a;
-				}
-
-				if (access(current_file_name, F_OK) == 0) {
-					ret = unlink(current_file_name);
-					SC_LOGI("remove old file: %s, ret:%d", current_file_name, ret);
-				}
-			}
-			if(enc_data_file == NULL){
-				unsigned char* start_tmp = (unsigned char*)encode_stream.frame_buffer->vstream_buf.vir_ptr;
-				int len_tmp = encode_stream.frame_buffer->vstream_buf.size;
-				NALU_t nalu_tmp;
-				ret = get_annexb_nalu(start_tmp, len_tmp, &nalu_tmp, 0);
-				if (ret < 0) {
-					SC_LOGE("get_annexb_nalu failed.");
-				}else{
-					if(nalu_tmp.nal_unit_type == 7){
-						enc_data_file = fopen(current_file_name, "wb");
-						if(enc_data_file == NULL){
-							SC_LOGE("open file %s failed.", (char *)current_file_name);
-						}
-					}else{
-						SC_LOGI("ingore %d", nalu_tmp.nal_unit_type);
-					}
-
-				}
-			}
-			if(enc_data_file != NULL){
-				size_t elementsWritten = fwrite((unsigned char*)encode_stream.frame_buffer->vstream_buf.vir_ptr,
-					1, encode_stream.frame_buffer->vstream_buf.size, enc_data_file);
-				if (elementsWritten != encode_stream.frame_buffer->vstream_buf.size) {
-					SC_LOGE("write file %s failed, size %d, return %d.",
-						(char *)current_file_name, encode_stream.frame_buffer->vstream_buf.size, elementsWritten);
-				}
-			}
-			#endif
-		}
-		vpp_camera_push_stream(vpp_camera, &encode_stream);
-
-		ret = vp_codec_release_output(&vpp_camera->m_encode_context, &encode_stream);
-		if (ret != 0) {
-			SC_LOGE("vp_codec_release_output failed.");
-			break;
-		}
-		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
-		if (ret != 0) {
-			SC_LOGE("vp_vse_release_frame failed.");
-			break;
-		}
 
 		time_statistics_at_ending_of_loop(&time_statistics);
 		time_statistics_info_show(&time_statistics, "read_camera", false);
 	}
+	int free_dissociate_count = 0;
+	if(hbn_vnode_image != NULL){
+		free(hbn_vnode_image);
+		free_dissociate_count = 1;
+	}
 
-	vp_free_image_frame(&vse_frame);
-	vp_free_image_frame(&encode_frame);
-	vp_free_image_frame(&encode_stream);
-
+	SC_LOGI("channel %d dequeue vse %d = enqueue enc %d + free_dissociate_count %d.\n",
+		vpp_camera->pipline_id , dequeue_vse_count, enqueue_enc_count, free_dissociate_count);
 	mThreadFinish(privThread);
 	return NULL;
 }
@@ -273,8 +274,7 @@ static void *send_yuv_to_bpu(void *ptr) {
 		SC_LOGE("vp_allocate_image_frame for vse_frame failed, so exit program.");
 		exit(-1);
 	};
-
-	mThreadSetName(privThread, __func__);
+	mThreadSetNameWidthIndex(privThread, __func__, vpp_camera->pipline_id);
 
 	while(privThread->eState == E_THREAD_RUNNING) {
 		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 1, &vse_frame);
@@ -526,6 +526,35 @@ int32_t vpp_camera_start(void)
 		g_vpp_camera[i].pipline_id = i;
 		vp_vflow_contex = &g_vpp_camera[i].vp_vflow_contex;
 
+		//队列的个数根据 vse 输出buffer的个数设置
+		int codec_buffer_count = 6;
+		teQueueStatus status = mQueueCreate(&g_vpp_camera[i].m_vse_to_enc_queue, codec_buffer_count + 1); //必须是加1的
+		if(status != E_QUEUE_OK){
+			SC_LOGE("mqueue create failed %d, for channle:%d.", status, i);
+			continue;
+		}
+		int vse_buffer_count = 6;
+		status = mQueueCreate(&g_vpp_camera[i].m_enc_to_vse_queue, vse_buffer_count + 1);
+		if(status != E_QUEUE_OK){
+			SC_LOGE("mqueue create failed %d, for channle:%d.", status, i);
+			continue;
+		}
+
+		for (size_t j = 0; j < vse_buffer_count; j++){
+			hbn_vnode_image_t *hbn_vnode_image = (hbn_vnode_image_t *)malloc(sizeof(hbn_vnode_image_t));
+			if (hbn_vnode_image == NULL){
+				SC_LOGE("malloc failed\n");
+				exit(-1);
+			}
+			memset(hbn_vnode_image, 0, sizeof(hbn_vnode_image_t));
+
+			teQueueStatus status = mQueueEnqueue(&g_vpp_camera[i].m_enc_to_vse_queue, (void *)hbn_vnode_image);
+			if (status != E_QUEUE_OK){
+				printf("mqueue enqueue failed:%d\n", status);
+				return -1;
+			}
+		}
+
 		ret = vp_codec_start(&g_vpp_camera[i].m_encode_context);
 		if (ret != 0)
 		{
@@ -572,6 +601,9 @@ int32_t vpp_camera_start(void)
 			exit(-1);
 		}
 
+		g_vpp_camera[i].m_vse_thread.pvThreadData = (void*)&g_vpp_camera[i];
+		mThreadStart(vse_get_stream_proc, &g_vpp_camera[i].m_vse_thread, E_THREAD_JOINABLE);
+
 		g_vpp_camera[i].m_venc_thread.pvThreadData = (void*)&g_vpp_camera[i];
 		mThreadStart(venc_get_stream_proc, &g_vpp_camera[i].m_venc_thread, E_THREAD_JOINABLE);
 
@@ -609,10 +641,43 @@ int32_t vpp_camera_stop(void)
 
 		vp_vflow_contex = &g_vpp_camera[i].vp_vflow_contex;
 		mThreadStop(&g_vpp_camera[i].m_venc_thread);
+		mThreadStop(&g_vpp_camera[i].m_vse_thread);
 		if(g_vpp_camera[i].venc_shm != NULL){
 			shm_stream_destory(g_vpp_camera[i].venc_shm);
 			g_vpp_camera[i].venc_shm = NULL;
 		}
+
+		int enc_remain_count = 0;
+		int vse_remain_count = 0;
+		teQueueStatus status = E_QUEUE_OK;
+		while(!mQueueIsEmpty(&g_vpp_camera[i].m_vse_to_enc_queue)){
+			hbn_vnode_image_t *hbn_vnode_image = NULL;
+			status = mQueueDequeueTimed(&g_vpp_camera[i].m_vse_to_enc_queue, 0, (void **)&hbn_vnode_image);
+			if(status != E_QUEUE_OK){
+				SC_LOGE("mqueue clear failed %d, for channle:%d.", status, i);
+				break;
+			}
+			free(hbn_vnode_image);
+			enc_remain_count++;
+		}
+		status = mQueueDestroy(&g_vpp_camera[i].m_vse_to_enc_queue);
+		if(status != E_QUEUE_OK){
+			SC_LOGE("mqueue destroy failed %d, for channle:%d.", status, i);
+		}
+
+		while(!mQueueIsEmpty(&g_vpp_camera[i].m_enc_to_vse_queue)){
+			hbn_vnode_image_t *hbn_vnode_image = NULL;
+			status = mQueueDequeueTimed(&g_vpp_camera[i].m_enc_to_vse_queue, 0, (void **)&hbn_vnode_image);
+			if(status != E_QUEUE_OK){
+				SC_LOGE("mqueue clear failed %d, for channle:%d.", status, i);
+				break;
+			}
+			free(hbn_vnode_image);
+			vse_remain_count++;
+		}
+		SC_LOGI("channel %d enc queue remain %d, vse queue remain %d .\n",
+				&g_vpp_camera[i].pipline_id , enc_remain_count, vse_remain_count);
+
 		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) == 0)
 			continue;
 		mThreadStop(&g_vpp_camera[i].m_bpu_thread);

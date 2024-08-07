@@ -68,6 +68,8 @@ char* get_program_name();
 void configure_vse_max_resolution(int32_t channel, uint32_t input_width, uint32_t input_height,
 	uint32_t *output_width, uint32_t *output_height);
 
+int read_nv12_image_to_graphic_buffer(const char *file_path, hb_mem_graphic_buf_t *src_buf, int width, int height);
+int read_nv12_image_to_common_buffer(const char *file_path, hb_mem_common_buf_t *src_buf, int width, int height);
 #ifdef __cplusplus
 	}
 #endif	/* __cplusplus */

@@ -14,3 +14,4 @@ sample_crop/crop
 sample_copy/copy
 sample_stitch/stitch
 sample_multi_source_alphablend/multi_source_alphablend
+sample_create_n2d_buffer/create_n2d_buffer

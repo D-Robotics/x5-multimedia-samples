@@ -166,6 +166,49 @@ int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, uint32_t width, uint32_t he
 
 	return ret;
 }
+int read_nv12_image_to_common_buffer(const char *file_path, hb_mem_common_buf_t *src_buf, int width, int height)
+{
+    FILE *file = fopen(file_path, "rb");
+    if (!file)
+    {
+        fprintf(stderr, "Failed to open file: %s\n", file_path);
+        return -1;
+    }
+
+    size_t read_size = fread(src_buf->virt_addr, 1, width * height * 1.5, file);
+    fclose(file);
+
+    if (read_size != width * height * 1.5)
+    {
+        fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
+        return -1;
+    }
+
+    return 0;
+}
+
+
+
+int read_nv12_image_to_graphic_buffer(const char *file_path, hb_mem_graphic_buf_t *src_buf, int width, int height)
+{
+    FILE *file = fopen(file_path, "rb");
+    if (!file)
+    {
+        fprintf(stderr, "Failed to open file: %s\n", file_path);
+        return -1;
+    }
+
+    size_t read_size = fread(src_buf->virt_addr[0], 1, width * height * 1.5, file);
+    fclose(file);
+
+    if (read_size != width * height * 1.5)
+    {
+        fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
+        return -1;
+    }
+
+    return 0;
+}
 
 int32_t read_yuvv_nv12_file(const char *filename, char *addr0, char *addr1, uint32_t y_size)
 {

@@ -31,7 +31,22 @@ PLATFORM_SAMPLES_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))
 HR_TOP_DIR = $(shell realpath ${PLATFORM_SAMPLES_DIR}/../../../)
 ifeq ($(HR_BUILD_OUTPUT_DIR),)
 HR_BUILD_OUTPUT_DIR = ${HR_TOP_DIR}/out
+$(info HR_BUILD_OUTPUT_DIR not set so use default path: [$(HR_BUILD_OUTPUT_DIR)])
 endif
+
+ifneq ($(MAKECMDGOALS), clean)
+ifeq ($(wildcard $(HR_BUILD_OUTPUT_DIR)),)
+    $(info HR_BUILD_OUTPUT_DIR [$(HR_BUILD_OUTPUT_DIR)], is not exit. )
+    $(info -  The meaning of HR_BUILD_OUTPUT_DIR is the directory where the SDK compiles the output results)
+    $(info -  Two methods to solve it:)
+    $(info -    1. export HR_BUILD_OUTPUT_DIR=...)
+    $(info -    2. Directly modify the default value of HR_BUILD_OUTPUT_DIR in line 33 of this document.)
+    $(error exit)
+else
+    $(info HR_BUILD_OUTPUT_DIR directory is exit: [$(HR_BUILD_OUTPUT_DIR)])
+endif
+endif
+
 
 ifeq ($(APP_DEPLOY_DIR),)
 APP_DEPLOY_DIR = ${HR_BUILD_OUTPUT_DIR}/deploy/app

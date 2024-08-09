@@ -50,9 +50,6 @@ n2d_error_t create_n2d_buffer_from_hbm_graphic(n2d_buffer_t *n2d_buffer, hb_mem_
 	// n2d_buffer->memory = hbm_buffer->virt_addr[0];
 	// n2d_buffer->uv_memory[0] = hbm_buffer->virt_addr[0];
 	// n2d_buffer->uv_memory[1] = hbm_buffer->virt_addr[1];
-
-
-
 	return error;
 }
 
@@ -71,4 +68,36 @@ n2d_error_t create_n2d_buffer_from_hbm_common(n2d_buffer_t *n2d_buffer,
 	// n2d_buffer->stride = width;
 
 	return error;
+}
+
+int create_hbm_graphic_buffer_from_normal_memory(hb_mem_graphic_buf_t *hbn_mem_src,
+	int width, int height, mem_pixel_format_t format , void *virt_addr){
+
+	if(format != MEM_PIX_FMT_NV12){
+		printf("create_hbm_graphic_buffer_from_normal_memory failed not support format %d\n", format);
+		return -1;
+	}
+	int64_t flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN
+				| HB_MEM_USAGE_CACHED |HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
+	int ret = hb_mem_alloc_graph_buf(width, height, MEM_PIX_FMT_NV12, flags, 0, 0, hbn_mem_src);
+	if(ret != 0){
+		printf("hb_mem_alloc_graph_buf failed :%d\n", ret);
+		return -1;
+	}
+
+	memcpy(hbn_mem_src->virt_addr[0], virt_addr, width * height * 1.5);
+
+	ret = hb_mem_flush_buf_with_vaddr((uint64_t)hbn_mem_src->virt_addr[0], hbn_mem_src->size[0]);
+	if (ret < 0) {
+		hb_mem_free_buf(hbn_mem_src->fd[0]);
+		printf("hb_mem_flush_buf_with_vaddr[0] failed :%d\n", ret);
+		return -1;
+	}
+	ret = hb_mem_flush_buf_with_vaddr((uint64_t)hbn_mem_src->virt_addr[1], hbn_mem_src->size[1]);
+	if (ret < 0) {
+		hb_mem_free_buf(hbn_mem_src->fd[0]);
+		printf("hb_mem_flush_buf_with_vaddr[1] failed :%d\n", ret);
+		return -1;
+	}
+	return 0;
 }

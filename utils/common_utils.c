@@ -210,6 +210,27 @@ int read_nv12_image_to_graphic_buffer(const char *file_path, hb_mem_graphic_buf_
     return 0;
 }
 
+int read_nv12_image_to_normal_memory(const char *file_path, uint8_t*virt_addr, int width, int height)
+{
+    FILE *file = fopen(file_path, "rb");
+    if (!file)
+    {
+        fprintf(stderr, "Failed to open file: %s\n", file_path);
+        return -1;
+    }
+
+    size_t read_size = fread(virt_addr, 1, width * height * 1.5, file);
+    fclose(file);
+
+    if (read_size != width * height * 1.5)
+    {
+        fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
+        return -1;
+    }
+
+    return 0;
+}
+
 int32_t read_yuvv_nv12_file(const char *filename, char *addr0, char *addr1, uint32_t y_size)
 {
 	if (filename == NULL || addr0 == NULL || y_size == 0) {

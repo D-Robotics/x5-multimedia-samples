@@ -14,6 +14,7 @@
 #include <pthread.h>
 
 #include "common_utils.h"
+#include "hbn_isp_api.h"
 
 /* Defined at vp_sensor/dummy_sensor */
 extern vp_sensor_config_t dummy_sensor_config;
@@ -40,6 +41,7 @@ static void command_help() {
 	printf("***************  Command Lists  ***************\n");
 	printf(" g	-- get single frame \n");
 	printf(" l	-- get a set frames \n");
+	printf(" e	-- get a set frames and backfill ae, awb\n");
 	printf(" q	-- quit  \n");
 	printf(" h	-- print help message\n");
 }
@@ -50,6 +52,7 @@ static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 	vp_sensor_config_t *dummy_sensor_config)
 {
+	int ret;
 	vp_sensor_config_t *vin_sensor_config = vin_isp_contex->sensor_config;
 
 	camera_config_t *camera_config = dummy_sensor_config->camera_config;
@@ -78,11 +81,21 @@ static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 	strcpy(camera_config->name, "dummy");
 	camera_config->addr = 0xFF;
 	camera_config->mipi_cfg->rx_enable = 0;
-	camera_config->gpio_enable_bit = 0,
-	camera_config->gpio_level_bit = 0,
+	camera_config->gpio_enable_bit = 0;
+	camera_config->gpio_level_bit = 0;
 	/* 此处可以调整使用不用的 isp tuning 文件 */
 	/* 示例代码中使用实际 Camera Sensor 调校好的 tuning 文件 */
-	strcpy(camera_config->calib_lname, vin_sensor_config->camera_config->name);
+	if (strcmp(vin_sensor_config->camera_config->name, "sc230ai") == 0) {
+		ret = snprintf(camera_config->calib_lname, sizeof(camera_config->calib_lname),
+				"%s_tuning.json", vin_sensor_config->camera_config->name);
+		if (ret >= sizeof(camera_config->calib_lname)) {
+			printf("Buffer truncated\n");
+			return ret;
+		}
+		printf("dummy use calib %s\n", camera_config->calib_lname);
+	} else {
+		strcpy(camera_config->calib_lname, vin_sensor_config->camera_config->name);
+	}
 
 	/* 修改 dummy_camera_config 的 vin_node_attr_t 中 cim_attr.mipi_rx
 	 * 这个参数必须设置为与实际使用的mipi host不一样
@@ -303,7 +316,68 @@ int create_and_run_isp_vflow(pipe_contex_t *pipe_contex) {
 	return 0;
 }
 
-void isp_dump_func(hbn_vnode_handle_t isp_node_handle) {
+int dump_awb_attr(hbn_vnode_handle_t isp_node_handle)
+{
+	int ret;
+	hbn_isp_awb_attr_t awb_attr;
+
+	ret = hbn_isp_get_awb_attr(isp_node_handle, &awb_attr);
+	ERR_CON_EQ(ret, 0);
+
+	printf("(%s)handle %ld "
+		"awb: version %u mode %d"
+		"manual_attr: gain: "
+		"rgain: %f"
+		"grgain: %f"
+		"gbgain: %f"
+		"bgain: %f\n"
+		, __func__, isp_node_handle
+		, awb_attr.version, awb_attr.mode
+		, awb_attr.manual_attr.gain.rgain
+		, awb_attr.manual_attr.gain.grgain
+		, awb_attr.manual_attr.gain.gbgain
+		, awb_attr.manual_attr.gain.bgain
+		);
+
+	return 0;
+}
+
+int dump_exp_attr(hbn_vnode_handle_t isp_node_handle)
+{
+	int ret;
+	hbn_isp_exposure_attr_t exp_attr;
+
+	ret = hbn_isp_get_exposure_attr(isp_node_handle, &exp_attr);
+	ERR_CON_EQ(ret, 0);
+
+	printf("(%s)handle %ld "
+		"exp: version %u mode %d"
+		"manual_attr: gain: "
+		"exp_time: %f"
+		"again: %f"
+		"dgain: %f"
+		"ispgain: %f"
+		"ae_exp: %f"
+		"cur_lux %u"
+		// "frame_id %u"
+		// "timestamps %lu"
+		"\n"
+		, __func__, isp_node_handle
+		, exp_attr.version, exp_attr.mode
+		, exp_attr.manual_attr.exp_time
+		, exp_attr.manual_attr.again
+		, exp_attr.manual_attr.dgain
+		, exp_attr.manual_attr.ispgain
+		, exp_attr.manual_attr.ae_exp
+		, exp_attr.manual_attr.cur_lux
+		// , exp_attr.manual_attr.frame_id
+		// , exp_attr.manual_attr.timestamps
+		);
+
+	return 0;
+}
+
+void isp_dump_func(hbn_vnode_handle_t isp_node_handle, int is_get_2a) {
 	int ret;
 	char dst_file[128];
 	uint32_t chn_id = 0;
@@ -315,6 +389,11 @@ void isp_dump_func(hbn_vnode_handle_t isp_node_handle) {
 	if (ret != 0) {
 		printf("hbn_vnode_getframe from isp chn:%d failed(%d)\n", chn_id, ret);
 		return;
+	}
+
+	if (is_get_2a != 0) {
+		dump_awb_attr(isp_node_handle);
+		dump_exp_attr(isp_node_handle);
 	}
 
 	// 将帧数据写入文件
@@ -341,21 +420,60 @@ void isp_dump_func(hbn_vnode_handle_t isp_node_handle) {
 	hbn_vnode_releaseframe(isp_node_handle, chn_id, &out_img);
 }
 
+int isp_backfill_2a(hbn_vnode_handle_t master_handle, hbn_vnode_handle_t slave_handle)
+{
+	int ret;
+	hbn_isp_awb_attr_t awb_attr;
+	hbn_isp_exposure_attr_t exp_attr;
+
+	printf(">>> awb backfill...\n");
+	ret = hbn_isp_get_awb_attr(master_handle, &awb_attr);
+	if (ret != 0) {
+		printf("%s(%d) failed\n", "hbn_isp_get_awb_attr", ret);
+		return ret;
+	}
+	awb_attr.mode = HBN_ISP_MODE_MANUAL;
+	ret = hbn_isp_set_awb_attr(slave_handle, &awb_attr);
+	if (ret != 0) {
+		printf("%s(%d) failed\n", "hbn_isp_set_awb_attr", ret);
+		return ret;
+	}
+	printf(">>> ae backfill...\n");
+	ret = hbn_isp_get_exposure_attr(master_handle, &exp_attr);
+	if (ret != 0) {
+		printf("%s(%d) failed\n", "hbn_isp_get_exposure_attr", ret);
+		return ret;
+	}
+	exp_attr.mode = HBN_ISP_MODE_MANUAL;
+	ret = hbn_isp_set_exposure_attr(slave_handle, &exp_attr);
+	if (ret != 0) {
+		printf("%s(%d) failed\n", "hbn_isp_set_exposure_attr", ret);
+		return ret;
+	}
+
+	return ret;
+}
 
 void vin_dump_func(hbn_vnode_handle_t vin_node_handle,
-	hbn_vnode_handle_t isp_node_handle)
+	hbn_vnode_handle_t isp_node_handle_master, hbn_vnode_handle_t isp_node_handle)
 {
 	int ret;
 	char dst_file[128];
 	uint32_t chn_id = 0;
 	uint32_t timeout = 2000;
 	hbn_vnode_image_t out_img;
+	int is_get_2a = 0;
 
 	// 调用hbn_vnode_getframe获取帧数据
 	ret = hbn_vnode_getframe_cond(vin_node_handle, chn_id, timeout, 0, &out_img);
 	if (ret != 0) {
 		printf("hbn_vnode_getframe from vin chn:%d failed(%d)\n", chn_id, ret);
 		return;
+	}
+
+	if (isp_node_handle_master != 0) {
+		isp_backfill_2a(isp_node_handle_master, isp_node_handle);
+		is_get_2a = 1;
 	}
 
 	// 将帧数据写入文件
@@ -382,7 +500,7 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle,
 		return;
 	}
 
-	isp_dump_func(isp_node_handle);
+	isp_dump_func(isp_node_handle, is_get_2a);
 
 	// 释放帧数据
 	hbn_vnode_releaseframe(vin_node_handle, chn_id, &out_img);
@@ -409,13 +527,21 @@ static int handle_user_command(pipe_contex_t *vin_isp_contex,
 				running = 0;
 				return 0;
 			case 'g':
-				isp_dump_func(vin_isp_contex->isp_node_handle);
-				vin_dump_func(vin_node_handle, isp_node_handle);
+				isp_dump_func(vin_isp_contex->isp_node_handle, 0);
+				vin_dump_func(vin_node_handle, 0, isp_node_handle);
 				break;
 			case 'l': // 循环获取，用于计算帧率
 				for (i = 0; i < 12; i++) {
-					isp_dump_func(vin_isp_contex->isp_node_handle);
-					vin_dump_func(vin_node_handle, isp_node_handle);
+					isp_dump_func(vin_isp_contex->isp_node_handle, 0);
+					vin_dump_func(vin_node_handle, 0, isp_node_handle);
+				}
+				break;
+			case 'e': // 循环获取，同时从路回灌ae,awb
+				for (i = 0; i < 12; i++) {
+					isp_dump_func(vin_isp_contex->isp_node_handle, 1);
+					vin_dump_func(vin_node_handle
+						, vin_isp_contex->isp_node_handle
+						, isp_node_handle);
 				}
 				break;
 			case 'h':

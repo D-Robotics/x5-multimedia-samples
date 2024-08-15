@@ -4,7 +4,7 @@ RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DI
 
 TARGET = sample_codec
 
-SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
+SRCS := $(foreach cf, $(CUR_DIR), $(wildcard $(cf)/*.c))
 OBJS :=  $(SRCS:.c=.o)
 
 INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/

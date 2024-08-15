@@ -94,11 +94,6 @@ int extract_jpeg(FILE *file, uint8_t **image_data, size_t *image_size) {
 	}
 
 	while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0 || !feof(file)) {
-		if (feof(file)) {
-			if (jpeg_data)
-				free(jpeg_data);
-			return -1;
-		}
 		for (size_t i = 0; i < bytes_read; i++) {
 			// Check for JPEG start marker
 			if (i < bytes_read - 1 && MAKEWORD(buffer[i], buffer[i + 1]) == JPEG_START_MARKER) {
@@ -123,8 +118,16 @@ int extract_jpeg(FILE *file, uint8_t **image_data, size_t *image_size) {
 			if (i > 0 && MAKEWORD(buffer[i - 1], buffer[i]) == JPEG_END_MARKER && in_jpeg) {
 				*image_data = jpeg_data;
 				*image_size = jpeg_size;
+
+				// Reset file position to start of the next JPEG
+				fseek(file, -(long)(bytes_read - i - 1), SEEK_CUR);
 				return 0;
 			}
+		}
+		if (feof(file)) {
+			if (jpeg_data)
+				free(jpeg_data);
+			return -1;
 		}
 	}
 
@@ -1037,7 +1040,6 @@ int32_t vp_codec_restart(media_codec_context_t *context)
 int32_t vp_codec_set_input(media_codec_context_t *context,
 	media_codec_buffer_t *frame_buffer, uint8_t *data,
 	uint32_t data_size, int32_t eos)
-// int32_t vp_codec_set_input(media_codec_context_t *context, ImageFrame *frame, int32_t eos)
 {
 	int32_t ret = 0;
 	media_codec_buffer_t *buffer = NULL;

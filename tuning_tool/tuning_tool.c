@@ -534,6 +534,9 @@ static int32_t tuning_case_run(tuning_context_t *ctx)
 	}
 	hbn_vflow_start(vflow_fd);
 
+	if (BIT_ENABLE(ctx->work_mode, START_DUMP_MASK))
+		ctx->yuv_dump_cnt = 50;
+
 	VIO_ASSERT_FUNC_EQ(pthread_create(&ctx->main_thid, NULL, tuning_main_worker_thread, (void *)(ctx)), 0, goto destroy);
 	VIO_ASSERT_FUNC_EQ(pthread_create(&ctx->api_thid, NULL, tuning_api_worker_thread, (void *)(ctx)), 0, goto destroy);
 

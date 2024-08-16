@@ -15,6 +15,8 @@ function print_usage() {
 	echo "run_tuning.sh --run [case_index]: run this case"
 	echo "run_tuning.sh --vpm [case_index]: edit this case's vpm json"
 	echo "run_tuning.sh --tune 1: open tuning_server"
+	echo "run with [-w 2]: dump 50 yuv from the start"
+	echo "run with [-r 1]: send raw to hbplayer"
 	exit 1
 }
 
@@ -48,7 +50,7 @@ function get_case() {
 	fi
 
 	if [ "$1" -ge ${#case_list[@]} ]; then
-		ehco "index $1 not support"
+		echo "index $1 not support"
 		exit -1
 	fi
 
@@ -57,47 +59,48 @@ function get_case() {
 
 function suit_case_run() {
 	get_case "$@"
+	shift 1
 
 	local vpm_json_path=${TUNING_CFG_PATH}/${run_case}/${VPM_JSON_NAME}
 	local cam_json_path=${TUNING_CFG_PATH}/${run_case}/${CAM_JSON_NAME}
 
 	if test "$run_case" == "sc1330t_rx0"; then
 		echo "Run $run_case"
-		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}"
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"
 
 	elif test "$run_case" == "sc230ai_rx1"; then
 		echo "Run $run_case"
-		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}"
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"
 
 	elif test "$run_case" == "sc132gs_rx2"; then
 		echo "Run $run_case"
-		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}"
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"
 
 	elif test "$run_case" == "sc035hgs_rx0"; then
 		echo "Run $run_case"
-		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}"
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"
 
 	elif test "$run_case" == "evb_sc230ai_rx3"; then
 		echo "Run $run_case"
-		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}"
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"
 
 	elif test "$run_case" == "evb_f37_rx3"; then
 		echo "Run $run_case"
-		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}"
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"
 
 	elif test "$run_case" == "sc202cs_rx0"; then
 		echo "Run $run_case"
-		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}"
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"
 
 	elif test "$run_case" == "imx415_rx0"; then
 		echo "Run $run_case"
-		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}"
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"
 
 	elif test "$run_case" == "feedback_case"; then
 		echo "Run $run_case"
 		echo "Notice: this script just support feedback 1080p raw now!!"
 		get_first_raw_file
-		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -f "${COMMON_DIR}/${first_file}" -c "${cam_json_path}"
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -f "${COMMON_DIR}/${first_file}" -c "${cam_json_path}" "$@"
 
 	fi
 }

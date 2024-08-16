@@ -18,6 +18,7 @@
 
 #define HBPLAYER_EN 1
 #define FEEDBACK_MASK 0
+#define START_DUMP_MASK 1
 
 typedef struct tuning_context {
 	char cam_json[128];

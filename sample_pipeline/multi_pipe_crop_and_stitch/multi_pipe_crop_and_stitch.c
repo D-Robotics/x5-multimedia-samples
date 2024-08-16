@@ -329,7 +329,7 @@ void *get_stitch_data(void *context){
 			}
 		}
 
-		ret = gpu_2d_fill(&dst_rgba8888_n2d, n2d_black);
+		ret = gpu_2d_fill(&dst_rgba8888_n2d, n2d_black_opaque);
 		if(ret != 0){
 				printf("gpu_2d_stitch_multi_source failed, croped_image_count=%d.\n", croped_image_count);
 				break;

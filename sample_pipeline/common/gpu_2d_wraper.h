@@ -4,6 +4,7 @@
 #include "GC820/nano2D_util.h"
 extern const n2d_color_t n2d_blue;
 extern const n2d_color_t n2d_black;
+extern const n2d_color_t n2d_black_opaque;
 extern const n2d_color_t n2d_green;
 extern const n2d_color_t n2d_red;
 extern const n2d_color_t n2d_white;

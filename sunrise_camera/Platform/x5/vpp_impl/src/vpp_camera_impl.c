@@ -29,6 +29,8 @@
 #include "vp_wrap.h"
 #include "vp_codec.h"
 #include "vp_sensors.h"
+#include "vp_display.h"
+
 #include "vp_gdc.h"
 
 #include "solution_handle.h"
@@ -42,6 +44,8 @@
 typedef struct
 {
 	int pipline_id;
+	int drm_init_succesed;
+	vp_drm_context_t *drm_context;
 	vp_vflow_contex_t vp_vflow_contex;
 	media_codec_context_t m_encode_context;
 
@@ -56,6 +60,7 @@ typedef struct
 	tsThread		m_bpu_thread;
 } vpp_camera_t;
 
+static vp_drm_context_t g_drm_context;
 static vpp_camera_t g_vpp_camera[VPP_CAM_MAX_CHANNELS];
 
 static void vpp_camera_push_stream(vpp_camera_t *vpp_camera, ImageFrame *stream)
@@ -230,7 +235,6 @@ static void* vse_get_stream_proc(void *ptr)
 			}
 			break;
 		}
-
 		while(privThread->eState == E_THREAD_RUNNING){
 			status = mQueueEnqueueEx(&vpp_camera->m_vse_to_enc_queue, hbn_vnode_image);
 			if (status != E_QUEUE_OK){
@@ -244,6 +248,12 @@ static void* vse_get_stream_proc(void *ptr)
 		}
 
 		update_osd_info(&vpp_camera->vp_vflow_contex, &next_update_time_ms);
+		if((vpp_camera->drm_context != NULL) && (vpp_camera->drm_init_succesed != 0)){
+			ret = vp_display_set_frame(vpp_camera->drm_context, vse_frame.hbn_vnode_image);
+			if(ret != 0){
+				SC_LOGW("vp_display_set_frame chn failed(%d).", ret);
+			}
+		}
 
 		time_statistics_at_ending_of_loop(&time_statistics);
 		time_statistics_info_show(&time_statistics, "read_camera", false);
@@ -325,6 +335,7 @@ int32_t vpp_camera_init_param(void)
 		g_vpp_camera[i].m_encode_context.codec_id = MEDIA_CODEC_ID_NONE;
 	}
 	int vpp_camera_index = 0;
+	int hdmi_display_channel = -1;
 	int pipeline_count = g_solution_config.cam_solution.pipeline_count;
 	// 根据camera solution的配置设置vin、vse、venc、bpu模块的使能和参数
 	for (i = 0; i < g_solution_config.cam_solution.max_pipeline_count; i++) {
@@ -420,6 +431,13 @@ int32_t vpp_camera_init_param(void)
 		g_vpp_camera[i].vp_vflow_contex.gdc_info.input_height = input_height;
 		strcpy(g_vpp_camera[i].vp_vflow_contex.gdc_info.sensor_name, sensor_name);
 		g_vpp_camera[i].vp_vflow_contex.gdc_info.status = g_solution_config.cam_solution.cam_vpp[i].gdc_status;
+
+		if(hdmi_display_channel == -1){
+			g_vpp_camera[i].drm_context = &g_drm_context;
+			hdmi_display_channel = g_vpp_camera[i].pipline_id;
+			SC_LOGI("channel %d enable hdmi display", hdmi_display_channel);
+		}
+
 		vpp_camera_index++;
 	}
 
@@ -452,6 +470,30 @@ int32_t vpp_camera_init(void)
 			SC_LOGE("pipeline init failed for channel %d error", i);
 			continue;
 		}
+
+		g_vpp_camera[i].drm_init_succesed = 0;
+		if(g_vpp_camera[i].drm_context != NULL){
+			vp_vse_output_info_t vp_vse_output_info;
+			int vse_ret = vp_vse_get_output_info(vp_vflow_contex, 0, &vp_vse_output_info);
+			if(vse_ret != 0){
+				SC_LOGE("vp_vse_get_output_info failed for channel %d error", i);
+			}else{
+				int width = vp_vse_output_info.width;
+				int height = vp_vse_output_info.height;
+				SC_LOGI("channel %d init hdmi display width:%d height %d",
+					g_vpp_camera[i].pipline_id, width, height);
+				//g_vpp_camera[i].vp_vflow_contex.sensor_config->camera_config
+				vse_ret = vp_display_init(g_vpp_camera[i].drm_context, width, height);
+				if(vse_ret != 0){
+					SC_LOGW("channel %d init hdmi display width:%d height %d failed.",
+					g_vpp_camera[i].pipline_id, width, height);
+				}else{
+					g_vpp_camera[i].drm_init_succesed = 1;
+				}
+			}
+		}
+
+
 
 		ret = vp_codec_init(&g_vpp_camera[i].m_encode_context);
 		if (ret != 0){
@@ -497,6 +539,13 @@ int32_t vpp_camera_uninit(void)
 		ret |= vp_isp_deinit(vp_vflow_contex);
 		ret |= vp_vin_deinit(vp_vflow_contex);
 
+		if(g_vpp_camera[i].drm_context != NULL){
+			if(g_vpp_camera[i].drm_init_succesed){
+				SC_LOGI("channel %d deinit hdmi display", g_vpp_camera[i].pipline_id);
+				ret |= vp_display_deinit(g_vpp_camera[i].drm_context);
+			}
+
+		}
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_uninit");
 
 		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) == 0)

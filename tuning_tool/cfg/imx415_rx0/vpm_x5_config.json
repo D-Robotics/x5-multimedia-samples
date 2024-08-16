@@ -3,7 +3,7 @@
 		"bind": [
 			{
 				"source": "vin_node0",
-				"src_out_channel": 1,
+				"src_out_channel": 0,
 				"destination": "isp_node0",
 				"dst_input_channel": 0
 			}
@@ -35,7 +35,7 @@
 				},
 				"output": {
 					"cim_isp": {
-						"cim_isp_flyby": 1,
+						"cim_isp_flyby": 0,
 						"ddr_enable": 1,
 						"buf_num": 6,
 						"format": 43,
@@ -87,7 +87,7 @@
 			}
 		},
 		"isp_node0": {
-			"input_mode": 0,
+			"input_mode": 2,
 			"sched_mode": 0,
 			"sensor_mode": 0,
 			"width": 3840,

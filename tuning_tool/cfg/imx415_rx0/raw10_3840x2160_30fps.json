@@ -17,6 +17,9 @@
 		"hsd": 0,
 		"vc_num": 1,
 		"vc0_index": 0,
-		"vc1_index_not_used": 1
+		"param": {
+                        "stop_check_instart": 1
+                }
 	}
+
 }

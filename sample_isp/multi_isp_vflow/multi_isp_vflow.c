@@ -84,7 +84,12 @@ static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 	camera_config->gpio_enable_bit = 0;
 	camera_config->gpio_level_bit = 0;
 	/* 此处可以调整使用不用的 isp tuning 文件 */
-	/* 示例代码中使用实际 Camera Sensor 调校好的 tuning 文件 */
+	/* 示例代码中使用实际 Camera Sensor 调校好的 tuning 文件 ,目前这个实例只支持跑以sc230ai*/
+	/* 如果使用的实际 Camera Sensor 调校好的 tuning 文件中开启了自动AE,那么这个程序无法运行,如果想要运行这个程序需要开启手动AE
+	 * 以sc202 sensor为例，请参考以下步骤：
+	 * 1. 修改 sc202_tuning.json 中的 EC_2节点下的state =1
+	 * 2. 修改 sc202_tuning.json 中的 WB_1_1节点下的state =1
+	*/
 	if (strcmp(vin_sensor_config->camera_config->name, "sc230ai") == 0) {
 		ret = snprintf(camera_config->calib_lname, sizeof(camera_config->calib_lname),
 				"%s_tuning.json", vin_sensor_config->camera_config->name);
@@ -95,6 +100,8 @@ static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 		printf("dummy use calib %s\n", camera_config->calib_lname);
 	} else {
 		strcpy(camera_config->calib_lname, vin_sensor_config->camera_config->name);
+		printf("Only supported sensor sc230ai, please check!! \n");
+		exit(-1);
 	}
 
 	/* 修改 dummy_camera_config 的 vin_node_attr_t 中 cim_attr.mipi_rx

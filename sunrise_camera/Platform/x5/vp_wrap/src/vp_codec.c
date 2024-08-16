@@ -368,7 +368,7 @@ static int32_t get_rc_params(media_codec_context_t *context,
 }
 
 int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
-	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate)
+	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, bool external_frame_buf)
 {
 	mc_video_codec_enc_params_t *params;
 
@@ -381,7 +381,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
 	SC_LOGD("params->bitstream_buf_size: %d", params->bitstream_buf_size);
 	params->frame_buf_count = 5;
-	params->external_frame_buf = true;
+	params->external_frame_buf = external_frame_buf;
 	params->bitstream_buf_count = 5;
 	/* Hardware limitations of x5 wave521cl:
 	 * - B-frame encoding is not supported.

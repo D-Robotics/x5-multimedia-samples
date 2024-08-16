@@ -39,7 +39,7 @@ extern "C" {
 
 
 int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
-	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate);
+	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, bool external_frame_buf);
 int32_t vp_decode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
 	int32_t width, int32_t height);
 

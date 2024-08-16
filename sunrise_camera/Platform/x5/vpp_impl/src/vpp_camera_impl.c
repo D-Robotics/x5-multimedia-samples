@@ -429,7 +429,8 @@ int32_t vpp_camera_init_param(void)
 		ret = vp_encode_config_param(&g_vpp_camera[i].m_encode_context,
 			VP_GET_MD_CODEC_TYPE(g_solution_config.cam_solution.cam_vpp[i].encode_type),
 			input_width, input_height, camera_config->fps,
-			g_solution_config.cam_solution.cam_vpp[i].encode_bitrate);
+			g_solution_config.cam_solution.cam_vpp[i].encode_bitrate,
+			true);
 		if (ret != 0)
 		{
 			SC_LOGE("Encode config param error");

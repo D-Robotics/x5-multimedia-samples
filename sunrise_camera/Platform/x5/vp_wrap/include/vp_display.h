@@ -74,6 +74,7 @@ int32_t vp_display_deinit(vp_drm_context_t *drm_ctx);
 int32_t vp_display_set_frame(vp_drm_context_t *drm_ctx,
 	hbn_vnode_image_t *image_frame);
 
+int32_t vp_display_check_hdmi_is_connected();
 #ifdef __cplusplus
 }
 #endif /* extern "C" */

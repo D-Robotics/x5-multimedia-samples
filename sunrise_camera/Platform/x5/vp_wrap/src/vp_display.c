@@ -353,6 +353,22 @@ static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t he
 	drm_ctx->buffer_count = 0;
 }
 
+int32_t vp_display_check_hdmi_is_connected(){
+	int drm_fd = drmOpen("vs-drm", NULL);
+		if (drm_fd < 0) {
+		perror("drmOpen failed");
+		return 0;
+	}
+
+	drmModeConnectorPtr connector = find_connector(drm_fd);
+	if (connector == NULL) {
+		close(drm_fd);
+		return 0;
+	}
+
+	close(drm_fd);
+	return 1;
+}
 int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height)
 {
 	int32_t ret = 0;

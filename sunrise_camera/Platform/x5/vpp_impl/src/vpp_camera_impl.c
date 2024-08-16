@@ -337,6 +337,13 @@ int32_t vpp_camera_init_param(void)
 	int vpp_camera_index = 0;
 	int hdmi_display_channel = -1;
 	int pipeline_count = g_solution_config.cam_solution.pipeline_count;
+	int hdmi_is_connected = vp_display_check_hdmi_is_connected();
+	if(hdmi_is_connected){
+		SC_LOGI("hdmi is connected");
+	}else{
+		SC_LOGI("hdmi is not connected");
+	}
+
 	// 根据camera solution的配置设置vin、vse、venc、bpu模块的使能和参数
 	for (i = 0; i < g_solution_config.cam_solution.max_pipeline_count; i++) {
 		// 1. 配置 vin
@@ -432,7 +439,8 @@ int32_t vpp_camera_init_param(void)
 		strcpy(g_vpp_camera[i].vp_vflow_contex.gdc_info.sensor_name, sensor_name);
 		g_vpp_camera[i].vp_vflow_contex.gdc_info.status = g_solution_config.cam_solution.cam_vpp[i].gdc_status;
 
-		if(hdmi_display_channel == -1){
+		if((hdmi_is_connected) && (hdmi_display_channel == -1)){
+
 			g_vpp_camera[i].drm_context = &g_drm_context;
 			hdmi_display_channel = g_vpp_camera[i].pipline_id;
 			SC_LOGI("channel %d enable hdmi display", hdmi_display_channel);

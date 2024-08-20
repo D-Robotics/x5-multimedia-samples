@@ -23,8 +23,8 @@ typedef struct {
 }sensor_param_config_t;
 
 typedef struct {
-	char output_file[256];
-
+	char output[256];
+	char *output_file_name;
 	int verbose_flag;
 	int sensor_config_count;
 	sensor_param_config_t sensor_param_config[MAX_PIPE_NUM];

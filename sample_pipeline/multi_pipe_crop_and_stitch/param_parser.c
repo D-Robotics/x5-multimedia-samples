@@ -1,7 +1,4 @@
 #include "param_parser.h"
-
-
-
 static int is_number(const char *str) {
 	while (*str) {
 		if (!isdigit(*str)) return 0;
@@ -54,6 +51,7 @@ static void print_help(void) {
 	printf("\t\tConfigure parameters for each video pipeline, can be repeated up to %d times.\n", MAX_PIPE_NUM);
 	printf("\t\tsensor   --  Sensor index,can have multiple parameters, reference sensor list.\n");
 #endif
+	printf("-o, --output=\"file or hdmi\n");
 	printf("-v, --verbose\tEnable verbose mode\n");
 	printf("-h, --help\tShow help message\n");
 
@@ -62,10 +60,16 @@ static void print_help(void) {
 	printf("Support sensor list:\n");
 	vp_show_sensors_list();
 
+#if 1
+	printf("\n\nExample:(only support 2 cameras .)\n");
+	printf("2 cameras:  ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\"\n");
+#else
 	printf("\n\nExample:(only support 2 cameras and 4 cameras)\n");
 	printf("2 cameras:  ./multi_pipe_crop_and_stitch -c \"sensor=7\" -c \"sensor=3\"\n");
 	printf("4 cameras:  ./multi_pipe_crop_and_stitch -c \"sensor=7\" -c \"sensor=3\" -c \"sensor=3\" -c \"sensor=3\"\n");
+#endif
 	printf("\n\n");
+
 }
 // 分割字符串并返回数组的个数
 static int split_string(const char *str, const char *delim, char *out[], int max_parts) {
@@ -167,14 +171,19 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 
 	static struct option const long_options[] = {
 		{"config", required_argument, NULL, 'c'},
+		{"output", no_argument, NULL, 'o'},
 		{"verbose", no_argument, NULL, 'v'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
 	};
 
+	//output default is file.
+	strcpy(param_config->output, "file");
+	param_config->output_file_name = "output.h265";
+
 	int c = 0;
 	int32_t total_pipeline_num = 0;
-	while ((c = getopt_long(argc, argv, "c:m:vh", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "c:o:vh", long_options, NULL)) != -1) {
 		switch (c) {
 		case 'c':
 			if (total_pipeline_num >= MAX_PIPE_NUM) {
@@ -185,7 +194,15 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 			parse_config(&param_config->sensor_param_config[total_pipeline_num], optarg);
 			total_pipeline_num++;
 			break;
-
+		case 'o':
+			if(strcmp("file", optarg) == 0){
+				strcpy(param_config->output, "file");
+			}else if(strcmp("hdmi", optarg) == 0){
+				strcpy(param_config->output, "hdmi");
+			}else{
+				printf("output form only support [%s]: file and hdmi\n", param_config->output);
+				return -1;
+			}
 		case 'v':
 			param_config->verbose_flag = 1;
 			break;
@@ -195,15 +212,37 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 			return -1;
 		}
 	}
-
+#if 1
+	if(total_pipeline_num != 2){
+	printf("\n[%s] only support 2 cameras as input, current input %d cameras.\n\n",
+		argv[0], total_pipeline_num);
+#else
 	if((total_pipeline_num != 2) && (total_pipeline_num != 4)){
 		printf("\n[%s] only support 2 or 4 cameras as input, current input %d cameras.\n\n",
-			argv[0], total_pipeline_num);
-
+		argv[0], total_pipeline_num);
+#endif
 		print_help();
 		return -1;
 	}
-
 	param_config->sensor_config_count = total_pipeline_num;
+	// 处理后的参数在这里可以使用
+	printf("\n\n Show sensor info:\n");
+	for (int i = 0; i < param_config->sensor_config_count; i++) {
+		param_config->sensor_param_config[i].vse_bind_n2d_chn = 5; 					//vse resize to 4K
+
+		printf("  Pipeline index %d:\n", i);
+		printf("\tSensor index: %d\n", param_config->sensor_param_config[i].select_sensor_id);
+		printf("\tSensor name: %s\n", param_config->sensor_param_config[i].sensor_config->sensor_name);
+		printf("\tActive mipi host: %d\n", param_config->sensor_param_config[i].active_mipi_host);
+		printf("\tVse Channel: %d\n", param_config->sensor_param_config[i].vse_bind_n2d_chn);
+	}
+
+	printf("\n\n Show output info:\n");
+	printf("\t Output Form: %s\n", param_config->output);
+	if(strcmp(param_config->output, "file") == 0){
+		printf("\t Output filename:%s\n", param_config->output_file_name);
+	}
+	printf("\n\n");
+
 	return 0;
 }

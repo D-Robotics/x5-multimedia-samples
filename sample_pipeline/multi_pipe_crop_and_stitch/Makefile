@@ -10,8 +10,11 @@ OBJS :=  $(SRCS:.c=.o)
 
 .PHONY: all clean install
 
-LIBS += -lNano2Dutil -lNano2D -lm
+LIBS += -lNano2Dutil -lNano2D -lm -ldrm
 INCS += -I $(CUR_DIR)/../common/
+INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
+INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+
 %.o:%.c
 	@mkdir -p $(abspath $(dir $@))
 	$(CC) $(INCS) $(CFLAGS) -c $< $(LIBS) $(LIBSDIR) -o $@

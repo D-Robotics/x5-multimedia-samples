@@ -178,8 +178,11 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index, camer
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN
 		| HB_MEM_USAGE_CACHED |HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
 
-	printf("hbn_vnode_set_ochn_attr: %dx%d fps:%d\n", vse_ochn_attr[vse_bind_index].target_w,
-		vse_ochn_attr[vse_bind_index].target_h, output_info->fps);
+	printf("hbn_vnode_set_ochn_attr :vse channel %d, %dx%d fps:%d\n",
+		vse_bind_index,
+		vse_ochn_attr[vse_bind_index].target_w,
+		vse_ochn_attr[vse_bind_index].target_h,
+		output_info->fps);
 	ret = hbn_vnode_set_ochn_attr(*vse_node_handle, vse_bind_index, &vse_ochn_attr[vse_bind_index]);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vnode_set_ochn_buf_attr(*vse_node_handle, vse_bind_index, &alloc_attr);
@@ -263,4 +266,108 @@ int vp_destroy_and_stop_pipeline(pipe_contex_t *pipe_contex){
 	hbn_camera_destroy(pipe_contex->cam_fd);
 
     return ret;
+}
+int vp_create_stop_vse_feedback_pieline(pipe_contex_t *pipe_contex){
+    int ret = 0;
+
+    ret = hbn_vflow_stop(pipe_contex->vflow_fd);
+	ERR_CON_EQ(ret, 0);
+	hbn_vflow_destroy(pipe_contex->vflow_fd);
+
+    hbn_vnode_close(pipe_contex->vse_node_handle);
+
+    return ret;
+}
+
+int vp_create_start_vse_feedback_pieline(pipe_contex_t *pipe_contex, vp_vse_feedback_pipeline_info_t *pipeline_info){
+
+	int ret = 0;
+	hbn_vnode_handle_t *vse_node_handle = &pipe_contex->vse_node_handle;
+	vse_attr_t vse_attr = {0};
+	vse_ichn_attr_t vse_ichn_attr = {0};
+	vse_ochn_attr_t vse_ochn_attr[VSE_MAX_CHANNELS] = {0};
+	uint32_t chn_id = 0;
+	uint32_t hw_id = 0;
+
+	hbn_buf_alloc_attr_t alloc_attr = {0};
+	int vse_bind_index = pipeline_info->vse_channel;
+
+	vse_ichn_attr.width = pipeline_info->input_width;
+	vse_ichn_attr.height = pipeline_info->input_height;
+	vse_ichn_attr.fmt = FRM_FMT_NV12;
+	vse_ichn_attr.bit_width = 8;
+
+	vse_ochn_attr[vse_bind_index].chn_en = 1;
+	vse_ochn_attr[vse_bind_index].roi.x = 0;
+	vse_ochn_attr[vse_bind_index].roi.y = 0;
+	vse_ochn_attr[vse_bind_index].roi.w = 0;
+	vse_ochn_attr[vse_bind_index].roi.h = 0;
+	vse_ochn_attr[vse_bind_index].fmt = FRM_FMT_NV12;
+	vse_ochn_attr[vse_bind_index].bit_width = 8;
+
+	// 输出原分辨率
+	vse_ochn_attr[vse_bind_index].target_w = pipeline_info->output_width;
+	vse_ochn_attr[vse_bind_index].target_h = pipeline_info->output_height;
+
+	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, vse_node_handle);
+	ERR_CON_EQ(ret, 0);
+
+	ret = hbn_vnode_set_attr(*vse_node_handle, &vse_attr);
+	ERR_CON_EQ(ret, 0);
+
+	ret = hbn_vnode_set_ichn_attr(*vse_node_handle, chn_id, &vse_ichn_attr);
+	ERR_CON_EQ(ret, 0);
+
+	alloc_attr.buffers_num = 3;
+	alloc_attr.is_contig = 1;
+	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN
+		| HB_MEM_USAGE_CACHED |HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
+
+	printf("hbn_vnode_set_ochn_attr :vse channel %d, %dx%d.\n",
+		vse_bind_index,
+		vse_ochn_attr[vse_bind_index].target_w,
+		vse_ochn_attr[vse_bind_index].target_h);
+	ret = hbn_vnode_set_ochn_attr(*vse_node_handle, vse_bind_index, &vse_ochn_attr[vse_bind_index]);
+	ERR_CON_EQ(ret, 0);
+	ret = hbn_vnode_set_ochn_buf_attr(*vse_node_handle, vse_bind_index, &alloc_attr);
+	ERR_CON_EQ(ret, 0);
+	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
+	ERR_CON_EQ(ret, 0);
+	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
+							pipe_contex->vse_node_handle);
+	ERR_CON_EQ(ret, 0);
+
+	ret = hbn_vflow_start(pipe_contex->vflow_fd);
+	ERR_CON_EQ(ret, 0);
+	return 0;
+}
+int vp_send_to_vse_feedback(pipe_contex_t *pipe_contex, int vse_channel, hbn_vnode_image_t* src){
+
+	int ret = hbn_vnode_sendframe(pipe_contex->vse_node_handle, vse_channel, src);
+	if (ret != 0) {
+		printf("hbn_vnode_sendframe to vse failed(%d)\n", ret);
+		return -1;
+	}
+
+	return 0;
+}
+
+int vp_get_from_vse_feedback(pipe_contex_t *pipe_contex, int vse_channel, hbn_vnode_image_t* src){
+
+	int ret = hbn_vnode_getframe(pipe_contex->vse_node_handle, vse_channel, 2000 ,src);
+	if (ret != 0) {
+		printf("hbn_vnode_getframe to vse failed(%d)\n", ret);
+		return -1;
+	}
+	return 0;
+}
+
+int vp_release_vse_feedback(pipe_contex_t *pipe_contex, int vse_channel, hbn_vnode_image_t* src){
+
+	int ret = hbn_vnode_releaseframe(pipe_contex->vse_node_handle, vse_channel, src);
+	if (ret != 0) {
+		printf("hbn_vnode_releaseframe to vse failed(%d)\n", ret);
+		return -1;
+	}
+	return 0;
 }

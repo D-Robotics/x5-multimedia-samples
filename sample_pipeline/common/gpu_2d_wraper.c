@@ -81,6 +81,7 @@ int gpu_2d_stitch_multi_source_blend(n2d_buffer_t* src_images, n2d_rectangle_t *
 	globalAlpha.config.globalAlpha.srcValue = 180; //0: S + D , 255: S + 0 *D, 128 : S + 0.5 * D
 	globalAlpha.config.globalAlpha.dstValue = 0;
     N2D_ON_ERROR(n2d_set(&globalAlpha));
+
 	for (int i = 0; i < src_count; i++){
 #if 0
 		n2d_rectangle_t srcrect;
@@ -90,7 +91,12 @@ int gpu_2d_stitch_multi_source_blend(n2d_buffer_t* src_images, n2d_rectangle_t *
 		srcrect.height = src_images[i].height;
 		N2D_ON_ERROR(n2d_filterblit(dst, &dst_positions[i], N2D_NULL, &src_images[i], &srcrect, N2D_BLEND_ADDITIVE)); //
 #else
-		N2D_ON_ERROR(n2d_blit(dst, &dst_positions[i], &src_images[i], N2D_NULL, N2D_BLEND_SRC_OVER));
+		if(i == 0){
+			N2D_ON_ERROR(n2d_blit(dst, &dst_positions[i], &src_images[i], N2D_NULL, N2D_BLEND_NONE));
+		}else{
+			N2D_ON_ERROR(n2d_blit(dst, &dst_positions[i], &src_images[i], N2D_NULL, N2D_BLEND_SRC_OVER));
+		}
+
 #endif
 	}
 	N2D_ON_ERROR(n2d_commit());

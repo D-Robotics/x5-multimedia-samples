@@ -125,7 +125,8 @@ void *get_vse_data(void *context){
 			memset(vse_chn_frame, 0, sizeof(hbn_vnode_image_t));
 			ret = hbn_vnode_getframe(vse_node_handle, sensor_param_config->vse_bind_n2d_chn, 1000, vse_chn_frame);
 			if (ret != 0){
-				printf("hbn_vnode_getframe VSE channel %d failed, error code %d\n", 0, ret);
+				printf("hbn_vnode_getframe VSE channel %d failed, error code %d, vse handle %ld\n",
+					sensor_param_config->vse_bind_n2d_chn, ret, vse_node_handle);
 				break;
 			}
 			get_vse_frame_count++;
@@ -164,6 +165,7 @@ void *get_stitch_data(void *context){
 		return NULL;
 	}
 	prctl(PR_SET_NAME, "get_stitch_data");
+
 
 	//0. prepare buffer
 
@@ -255,36 +257,50 @@ void *get_stitch_data(void *context){
 	//0.5 prepare stitch:src image rect
 	int src_image_start_y = (little_image_height + y_duration) * 2;
 	int src_image_duration_x = multi_pipe_stitch_info->output_width / param_config->sensor_config_count;
-	int src_image_offset_x = src_image_duration_x / 8; // 叠加的效果
 	n2d_rectangle_t stitch_src_image_rect[croped_image_count]; //2或4
 	for (int i = 0; i < param_config->sensor_config_count; i++){
 		stitch_src_image_rect[i].x = i * src_image_duration_x;
-
-		//for blend
-		if(stitch_src_image_rect[i].x != 0){
-			stitch_src_image_rect[i].x -= src_image_offset_x;
-		}
-
-		stitch_src_image_rect[i].y = 0; // 画布只是 4K的部分，如果是整个4k, 应该设置成 src_image_start_y
-		stitch_src_image_rect[i].width = src_image_duration_x + src_image_offset_x;
+		//画布决定： 画布只是 4K的部分 设置为0，如果是整个4k, 应该设置成 src_image_start_y
+		stitch_src_image_rect[i].y = src_image_start_y;
+		stitch_src_image_rect[i].width = src_image_duration_x;
 		stitch_src_image_rect[i].height = little_image_height;
 	}
 
 	//0.6 prepare Color space conversion
+	int src_image_expend_x = src_image_duration_x * param_config->blend_ratio;
 	n2d_buffer_t dst_rgba8888_n2d;
-	error = n2d_util_allocate_buffer(
-			multi_pipe_stitch_info->output_width,
-			little_image_height, 				// 只拼接一部分
-			N2D_BGRA8888,
-			N2D_0,
-			N2D_LINEAR,
-			N2D_TSC_DISABLE,
-			&dst_rgba8888_n2d);
+	n2d_rectangle_t blend_src_image_rect[croped_image_count]; //2或4
+	if(param_config->blend_ratio != 0){
+		int src_img_stitch_width = src_image_expend_x;
+		int src_img_stitch_height = little_image_height;
+		error = n2d_util_allocate_buffer(
+				src_img_stitch_width,
+				src_img_stitch_height, 				// 只拼接一部分
+				N2D_BGRA8888,
+				N2D_0,
+				N2D_LINEAR,
+				N2D_TSC_DISABLE,
+				&dst_rgba8888_n2d);
 
-	if (N2D_IS_ERROR(error)){
-		printf("n2d_util_allocate_buffer failed! error=%d.\n", error);
-		return NULL;
+		if (N2D_IS_ERROR(error)){
+			printf("n2d_util_allocate_buffer failed! error=%d.\n", error);
+			return NULL;
+		}
+		int blend_width = multi_pipe_stitch_info->output_width * param_config->blend_ratio;
+
+		for (int i = 0; i < param_config->sensor_config_count; i++){
+			if(i % 2 == 0){
+				blend_src_image_rect[i].x = multi_pipe_stitch_info->output_width - blend_width;
+			}else{
+				blend_src_image_rect[i].x = blend_width;
+			}
+
+			blend_src_image_rect[i].y = 0;
+			blend_src_image_rect[i].width = blend_width;
+			blend_src_image_rect[i].height = multi_pipe_stitch_info->output_height;
+		}
 	}
+
 
 	data_item_t *data_item = NULL;
 	while (multi_pipe_stitch_info->is_running){
@@ -337,12 +353,6 @@ void *get_stitch_data(void *context){
 			}
 		}
 
-		ret = gpu_2d_fill(&dst_rgba8888_n2d, n2d_black_opaque);
-		if(ret != 0){
-				printf("gpu_2d_stitch_multi_source failed, croped_image_count=%d.\n", croped_image_count);
-				break;
-			}
-
 		//2.2 stitch little image
 		ret = gpu_2d_stitch_multi_source(croped, stitch_little_rect, croped_image_count, &stitch_dst_n2d);
 		if(ret != 0){
@@ -350,21 +360,35 @@ void *get_stitch_data(void *context){
 			break;
 		}
 
-		//2.3 stitch src image
-		ret = gpu_2d_stitch_multi_source_blend(n2d_buffer, stitch_src_image_rect, data_item->item_count, &dst_rgba8888_n2d);
+		ret = gpu_2d_stitch_multi_source(n2d_buffer, stitch_src_image_rect, data_item->item_count, &stitch_dst_n2d);
 		if(ret != 0){
 			printf("gpu_2d_stitch_multi_source failed, croped_image_count=%d.\n", croped_image_count);
 			break;
 		}
-		n2d_rectangle_t dst_positions = {
-			.x = 0,
-			.y = src_image_start_y,
-			.width = dst_rgba8888_n2d.width,
-			.height = dst_rgba8888_n2d.height,
-		};
-		ret = gpu_2d_format_convert(&stitch_dst_n2d, &dst_rgba8888_n2d, 1, &dst_positions);
 
-		performance_test_stop(&performace_test_param);
+		if(param_config->blend_ratio != 0){
+			//2.3 stitch src image
+			ret = gpu_2d_stitch_multi_source_blend(n2d_buffer, blend_src_image_rect, data_item->item_count, &dst_rgba8888_n2d);
+			if(ret != 0){
+				printf("gpu_2d_stitch_multi_source failed, croped_image_count=%d.\n", croped_image_count);
+				break;
+			}
+
+			n2d_rectangle_t dst_positions = {
+				.x = src_image_duration_x - src_image_expend_x / 2,
+				.y = src_image_start_y,
+				.width = dst_rgba8888_n2d.width,
+				.height = dst_rgba8888_n2d.height,
+			};
+			ret = gpu_2d_format_convert(&stitch_dst_n2d, &dst_rgba8888_n2d, 1, &dst_positions);
+			if(ret != 0){
+				printf("gpu_2d_format_convert failed\n");
+				break;
+			}
+		}
+		if(param_config->verbose_flag){
+			performance_test_stop(&performace_test_param);
+		}
 
 		//3. release wrapered n2d_buffer form hbn memory
 		for (int i = 0; i < data_item->item_count ; i++){
@@ -390,7 +414,9 @@ void *get_stitch_data(void *context){
 		}
 		multi_pipe_stitch_info->stitch_counter++;
 
-		performance_test_stop_simple(&performace_test_param_simple);
+		if(param_config->verbose_flag){
+			performance_test_stop_simple(&performace_test_param_simple);
+		}
 		// printf("stitch:%d\n", multi_pipe_stitch_info->stitch_counter);
 
 	}
@@ -664,6 +690,8 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			.active_mipi_host = sensor_param_config->active_mipi_host,
 			.vse_bind_index = sensor_param_config->vse_bind_n2d_chn,
 			.sensor_mode = sensor_param_config->sensor_mode,
+			.enable_gdc = param_config->gdc_enable,
+			.sensor_name = sensor_param_config->sensor_config->camera_config->name,
 			.camera_config_info = {
 				.width = multi_pipe_stitch_info->output_width,
 				.height = multi_pipe_stitch_info->output_height,
@@ -743,8 +771,6 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			return -1;
 		}
 		multi_pipe_stitch_info->vp_vse_pipeline_info = vp_vse_pipeline_info;
-
-
 	}
 
 	//4. start all thread

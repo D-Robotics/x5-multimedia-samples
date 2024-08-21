@@ -1,5 +1,183 @@
-#include"vp_pipeline.h"
+#include "gdc_cfg.h"
+#include "gdc_bin_cfg.h"
 
+#include"vp_pipeline.h"
+typedef struct {
+    char *sensor_name;
+    char *gdc_file_name;
+    int is_valid;
+} gdc_list_info_t;
+
+static gdc_list_info_t g_gdc_list_info[] = {
+    {
+        .sensor_name = "sc202cs",
+        .gdc_file_name = "./gdc_bin/sc202cs_gdc.bin",
+        .is_valid = -1
+    },
+	{
+        .sensor_name = "sc230ai",
+        .gdc_file_name = "./gdc_bin/sc230ai_gdc.bin",
+        .is_valid = -1
+    }
+};
+
+
+const char *vp_gdc_get_bin_file(const char *sensor_name){
+    char *gdc_file = NULL;
+
+    for(int i = 0; i < sizeof(g_gdc_list_info)/sizeof(gdc_list_info_t); i++){
+        int config_sensor_name_len = strlen(g_gdc_list_info[i].sensor_name);
+        int ret = strncmp(sensor_name, g_gdc_list_info[i].sensor_name, config_sensor_name_len);
+        if(ret == 0){
+            gdc_file = g_gdc_list_info[i].gdc_file_name;
+            break;
+        }
+    }
+
+	if ((gdc_file != NULL) && access(gdc_file, F_OK) != 0) {
+		printf("not found gdc file %s, so return null.\n", gdc_file);
+		return NULL;
+	}
+    return gdc_file;
+}
+
+static int get_gdc_config(const char *gdc_bin_file, hb_mem_common_buf_t *bin_buf) {
+	int64_t alloc_flags = 0;
+	int ret = 0;
+	int offset = 0;
+	char *cfg_buf = NULL;
+
+	FILE *fp = fopen(gdc_bin_file, "r");
+	if (fp == NULL) {
+		printf("File %s open failed\n", gdc_bin_file);
+		return -1;
+	}
+	fseek(fp, 0, SEEK_END);
+	long file_size = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	cfg_buf = malloc(file_size);
+	int n = fread(cfg_buf, 1, file_size, fp);
+	if (n != file_size) {
+        free(cfg_buf);
+		printf("Read file size failed\n");
+        fclose(fp);
+        return -1;
+	}
+	fclose(fp);
+
+	memset(bin_buf, 0, sizeof(hb_mem_common_buf_t));
+	alloc_flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_PRIV_HEAP_2_RESERVERD | HB_MEM_USAGE_CPU_READ_OFTEN |
+				HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+	ret = hb_mem_alloc_com_buf(file_size, alloc_flags, bin_buf);
+	if (ret != 0 || bin_buf->virt_addr == NULL) {
+        free(cfg_buf);
+		printf("hb_mem_alloc_com_buf for bin failed, ret = %d\n", ret);
+		return -1;
+	}
+
+	memcpy(bin_buf->virt_addr, cfg_buf, file_size);
+	ret = hb_mem_flush_buf(bin_buf->fd, offset, file_size);
+	if (ret != 0 || bin_buf->virt_addr == NULL) {
+        free(cfg_buf);
+		printf("hb_mem_flush_buf for bin failed, ret = %d\n", ret);
+		return -1;
+	}
+
+    free(cfg_buf);
+
+	return ret;
+}
+#if 0
+static int32_t destory_gdc_node(pipe_contex_t *pipe_contex){
+	if(pipe_contex->gdc_node_handle != 0){
+		hbn_vnode_close(pipe_contex->gdc_node_handle);
+		hb_mem_free_buf(pipe_contex->bin_buf.fd);
+	}
+    return 0;
+}
+#endif
+
+static int create_gdc_node(pipe_contex_t *pipe_contex, char *sensor_name) {
+	int ret = 0;
+	isp_ichn_attr_t isp_ichn_attr = {0};
+
+	ret = hbn_vnode_get_ichn_attr(pipe_contex->isp_node_handle, 0, &isp_ichn_attr);
+	ERR_CON_EQ(ret, 0);
+	int input_width = isp_ichn_attr.width;
+	int input_height = isp_ichn_attr.height;
+
+    const char* gdc_bin_file = vp_gdc_get_bin_file(sensor_name);
+	if(gdc_bin_file == NULL){
+		printf("%s is enable gdc, but gdc bin file is not set.\n", sensor_name);
+		return -1;
+	}
+    ret = get_gdc_config(gdc_bin_file, &pipe_contex->bin_buf);
+	if(ret != 0){
+		printf("%s is enable gdc, but gdc bin file [%s] is not valid.\n",
+			sensor_name, gdc_bin_file);
+		return -1;
+	}
+	printf("gdc input resolution: %d*%d, camera name [%s]\n", input_width, input_height, sensor_name);
+	uint32_t hw_id = 0;
+	ret = hbn_vnode_open(HB_GDC, hw_id, AUTO_ALLOC_ID, &(pipe_contex->gdc_node_handle));
+	if(ret != 0){
+		printf("%s is enable gdc and gdc bin file [%s] is valid, but open failed %d.\n",
+			sensor_name, gdc_bin_file, ret);
+		return -1;
+	}
+	gdc_attr_t gdc_attr = {0};
+	gdc_attr.config_addr = pipe_contex->bin_buf.phys_addr;
+	gdc_attr.config_size = pipe_contex->bin_buf.size;
+	gdc_attr.binary_ion_id = pipe_contex->bin_buf.share_id;
+	gdc_attr.binary_offset = pipe_contex->bin_buf.offset;
+	gdc_attr.total_planes = 2;
+	gdc_attr.div_width = 0;
+	gdc_attr.div_height = 0;
+	ret = hbn_vnode_set_attr(pipe_contex->gdc_node_handle, &gdc_attr);
+	if(ret != 0){
+		printf("%s is enable gdc and gdc bin file [%s] is valid, but set attr failed %d.\n",
+			sensor_name, gdc_bin_file, ret);
+		return -1;
+	}
+
+	uint32_t chn_id = 0;
+
+	gdc_ichn_attr_t gdc_ichn_attr = {0};
+	gdc_ichn_attr.input_width = input_width;
+	gdc_ichn_attr.input_height = input_height;
+	gdc_ichn_attr.input_stride = input_width;
+	ret = hbn_vnode_set_ichn_attr(pipe_contex->gdc_node_handle, chn_id, &gdc_ichn_attr);
+	if(ret != 0){
+		printf("%s is enable gdc and gdc bin file [%s] is valid, but set ichn failed %d.\n",
+			sensor_name, gdc_bin_file, ret);
+		return -1;
+	}
+
+	gdc_ochn_attr_t gdc_ochn_attr = {0};
+	gdc_ochn_attr.output_width = input_width;
+	gdc_ochn_attr.output_height = input_height;
+	gdc_ochn_attr.output_stride = input_width;
+	ret = hbn_vnode_set_ochn_attr(pipe_contex->gdc_node_handle, chn_id, &gdc_ochn_attr);
+	if(ret != 0){
+		printf("%s is enable gdc and gdc bin file [%s] is valid, but set ochn failed %d.\n",
+			sensor_name, gdc_bin_file, ret);
+		return -1;
+	}
+	hbn_buf_alloc_attr_t alloc_attr = {0};
+	alloc_attr.buffers_num = 3;
+	alloc_attr.is_contig = 1;
+	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN
+		| HB_MEM_USAGE_CACHED |HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
+
+	ret = hbn_vnode_set_ochn_buf_attr(pipe_contex->gdc_node_handle, chn_id, &alloc_attr);
+	if(ret != 0){
+		printf("%s is enable gdc and gdc bin file [%s] is valid, but set ochn buffer failed %d.\n",
+			sensor_name, gdc_bin_file, ret);
+		return -1;
+	}
+
+    return 0;
+}
 static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
 {
 	camera_config_t *camera_config = NULL;
@@ -216,6 +394,10 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 	ERR_CON_EQ(ret, 0);
 	ret = create_isp_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
+
+	if(vp_pipeline_info->enable_gdc){
+		create_gdc_node(pipe_contex, vp_pipeline_info->sensor_name);
+	}
 	ret = create_vse_node(pipe_contex,
 		vp_pipeline_info->vse_bind_index, &(vp_pipeline_info->camera_config_info));
 	ERR_CON_EQ(ret, 0);
@@ -229,6 +411,13 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
 							pipe_contex->isp_node_handle);
 	ERR_CON_EQ(ret, 0);
+
+	if(vp_pipeline_info->enable_gdc){
+		ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
+								pipe_contex->gdc_node_handle);
+		ERR_CON_EQ(ret, 0);
+	}
+
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vse_node_handle);
 	ERR_CON_EQ(ret, 0);
@@ -238,19 +427,35 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 							pipe_contex->isp_node_handle,
 							0);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							pipe_contex->isp_node_handle,
-							0,
-							pipe_contex->vse_node_handle,
-							0);
-	ERR_CON_EQ(ret, 0);
+
+	if(vp_pipeline_info->enable_gdc){
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->isp_node_handle,
+								0,
+								pipe_contex->gdc_node_handle,
+								0);
+		ERR_CON_EQ(ret, 0);
+
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->gdc_node_handle,
+								0,
+								pipe_contex->vse_node_handle,
+								0);
+		ERR_CON_EQ(ret, 0);
+	}else{
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->isp_node_handle,
+								0,
+								pipe_contex->vse_node_handle,
+								0);
+		ERR_CON_EQ(ret, 0);
+	}
 
 	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
 							pipe_contex->vin_node_handle);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_start(pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
-
 	return 0;
 }
 

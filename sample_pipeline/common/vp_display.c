@@ -666,7 +666,7 @@ static uint32_t get_framebuffer(vp_drm_context_t *drm_ctx,
 		return 0;
 	}
 
-	printf("Created new framebuffer: fb_id=%u for dma_buf_fd=%d\n", fb_id, dma_buf_fd);
+	// printf("Created new framebuffer: fb_id=%u for dma_buf_fd=%d\n", fb_id, dma_buf_fd);
 
 	entry = (dma_buf_map_t *)malloc(sizeof(dma_buf_map_t));
 	if (!entry)

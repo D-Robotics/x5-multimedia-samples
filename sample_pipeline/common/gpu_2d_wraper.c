@@ -73,12 +73,12 @@ on_error:
 	return -1;
 }
 
-int gpu_2d_stitch_multi_source_blend(n2d_buffer_t* src_images, n2d_rectangle_t *dst_positions , int src_count, n2d_buffer_t*dst){
+int gpu_2d_stitch_multi_source_blend(n2d_buffer_t* src_images, n2d_rectangle_t *src_positions , int src_count, n2d_buffer_t*dst){
 	n2d_error_t error = N2D_SUCCESS;
  	n2d_state_config_t globalAlpha = {.state = N2D_SET_GLOBAL_ALPHA};
 	globalAlpha.config.globalAlpha.srcMode = N2D_GLOBAL_ALPHA_ON;
 	globalAlpha.config.globalAlpha.dstMode = N2D_GLOBAL_ALPHA_OFF;
-	globalAlpha.config.globalAlpha.srcValue = 180; //0: S + D , 255: S + 0 *D, 128 : S + 0.5 * D
+	globalAlpha.config.globalAlpha.srcValue = 128; //0: S + D , 255: S + 0 *D, 128 : S + 0.5 * D
 	globalAlpha.config.globalAlpha.dstValue = 0;
     N2D_ON_ERROR(n2d_set(&globalAlpha));
 
@@ -91,10 +91,16 @@ int gpu_2d_stitch_multi_source_blend(n2d_buffer_t* src_images, n2d_rectangle_t *
 		srcrect.height = src_images[i].height;
 		N2D_ON_ERROR(n2d_filterblit(dst, &dst_positions[i], N2D_NULL, &src_images[i], &srcrect, N2D_BLEND_ADDITIVE)); //
 #else
+		n2d_rectangle_t dstrect;
+		dstrect.x = 0;
+		dstrect.y = 0;
+		dstrect.width  = dst->width;
+		dstrect.height = dst->height;
+
 		if(i == 0){
-			N2D_ON_ERROR(n2d_blit(dst, &dst_positions[i], &src_images[i], N2D_NULL, N2D_BLEND_NONE));
+			N2D_ON_ERROR(n2d_blit(dst, &dstrect, &src_images[i], &src_positions[i], N2D_BLEND_NONE));
 		}else{
-			N2D_ON_ERROR(n2d_blit(dst, &dst_positions[i], &src_images[i], N2D_NULL, N2D_BLEND_SRC_OVER));
+			N2D_ON_ERROR(n2d_blit(dst, &dstrect, &src_images[i], &src_positions[i], N2D_BLEND_SRC_OVER));
 		}
 
 #endif

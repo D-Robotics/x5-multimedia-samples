@@ -25,6 +25,10 @@ typedef struct {
 typedef struct {
 	char output[256];
 	char *output_file_name;
+
+	float blend_ratio;
+
+	int gdc_enable;
 	int verbose_flag;
 	int sensor_config_count;
 	sensor_param_config_t sensor_param_config[MAX_PIPE_NUM];

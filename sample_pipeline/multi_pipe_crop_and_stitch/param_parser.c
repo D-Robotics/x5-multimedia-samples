@@ -41,17 +41,12 @@ int camera_config_is_same(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 static void print_help(void) {
 	printf("Usage: %s [Options]\n", get_program_name());
 	printf("Options:\n");
-#if 0
-	printf("-c, --config=\"sensor=id channel=vse_chn\"\n");
-	printf("\t\tConfigure parameters for each video pipeline, can be repeated up to %d times.\n", MAX_PIPE_NUM);
-	printf("\t\tsensor   --  Sensor index,can have multiple parameters, reference sensor list.\n");
-	printf("\t\tchannel  --  Vse channel index bind to encode, default 0, can be set to [0-5].\n");
-#else
 	printf("-c, --config=\"sensor=id \"\n");
 	printf("\t\tConfigure parameters for each video pipeline, can be repeated up to %d times.\n", MAX_PIPE_NUM);
 	printf("\t\tsensor   --  Sensor index,can have multiple parameters, reference sensor list.\n");
-#endif
-	printf("-o, --output=\"file or hdmi\n");
+	printf("-o, --output=\"file or hdmi, default is file\n");
+	printf("-r, --ratio=\"camera image width ratio, used to blend, default is 0.0\n");
+	printf("-g, --gdc_enable\tEnable gdc, default is disable\n");
 	printf("-v, --verbose\tEnable verbose mode\n");
 	printf("-h, --help\tShow help message\n");
 
@@ -62,7 +57,10 @@ static void print_help(void) {
 
 #if 1
 	printf("\n\nExample:(only support 2 cameras .)\n");
-	printf("2 cameras:  ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\"\n");
+	printf("Save File: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\"\n");
+	printf("HDMI Display: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\" -o hdmi\n");
+	printf("HDMI Display, Enable GDC: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\" -o hdmi -g\n");
+	printf("HDMI Display, Enable GDC, Enable Blend: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\" -o hdmi -g -r 0.02\n");
 #else
 	printf("\n\nExample:(only support 2 cameras and 4 cameras)\n");
 	printf("2 cameras:  ./multi_pipe_crop_and_stitch -c \"sensor=7\" -c \"sensor=3\"\n");
@@ -171,7 +169,9 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 
 	static struct option const long_options[] = {
 		{"config", required_argument, NULL, 'c'},
+		{"ratio", no_argument, NULL, 'r'},
 		{"output", no_argument, NULL, 'o'},
+		{"gdc_enable", no_argument, NULL, 'g'},
 		{"verbose", no_argument, NULL, 'v'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
@@ -180,10 +180,12 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 	//output default is file.
 	strcpy(param_config->output, "file");
 	param_config->output_file_name = "output.h265";
+	param_config->blend_ratio = 0.0;
+	param_config->gdc_enable = 0;
 
 	int c = 0;
 	int32_t total_pipeline_num = 0;
-	while ((c = getopt_long(argc, argv, "c:o:vh", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "c:r:o:gvh", long_options, NULL)) != -1) {
 		switch (c) {
 		case 'c':
 			if (total_pipeline_num >= MAX_PIPE_NUM) {
@@ -193,6 +195,14 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 
 			parse_config(&param_config->sensor_param_config[total_pipeline_num], optarg);
 			total_pipeline_num++;
+			break;
+		case 'r':
+			float blend_ratio = atof(optarg);
+			if((blend_ratio >= 0.0) && (blend_ratio <= 1.0)){
+				param_config->blend_ratio = blend_ratio;
+			}else{
+				printf("input blend ratio is invalid [%s] => %f, so use 0.0\n", optarg, blend_ratio);
+			}
 			break;
 		case 'o':
 			if(strcmp("file", optarg) == 0){
@@ -205,6 +215,9 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 			}
 		case 'v':
 			param_config->verbose_flag = 1;
+			break;
+		case 'g':
+			param_config->gdc_enable = 1;
 			break;
 		case 'h':
 		default:
@@ -224,6 +237,7 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		print_help();
 		return -1;
 	}
+
 	param_config->sensor_config_count = total_pipeline_num;
 	// 处理后的参数在这里可以使用
 	printf("\n\n Show sensor info:\n");
@@ -235,6 +249,7 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		printf("\tSensor name: %s\n", param_config->sensor_param_config[i].sensor_config->sensor_name);
 		printf("\tActive mipi host: %d\n", param_config->sensor_param_config[i].active_mipi_host);
 		printf("\tVse Channel: %d\n", param_config->sensor_param_config[i].vse_bind_n2d_chn);
+		printf("\tGDC Enable: %d\n", param_config->gdc_enable);
 	}
 
 	printf("\n\n Show output info:\n");

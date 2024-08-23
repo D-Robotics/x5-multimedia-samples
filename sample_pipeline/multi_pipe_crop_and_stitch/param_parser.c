@@ -6,37 +6,25 @@ static int is_number(const char *str) {
 	}
 	return 1;
 }
-#if 0
-int camera_config_is_same(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 
-	int camera_width = 0;
-	int camera_height = 0;
-	int camera_fps = 0;
-	char *camera_name = "unknown";
-	pipeline_info_t *pipeline_info = multi_pipe_stitch_info->pipeline_info;
-	for(int i = 0; i < multi_pipe_stitch_info->camera_count; i++){
-		int width_tmp = pipeline_info[i].pipe_contexts.sensor_config->camera_config->width;
-		int height_tmp = pipeline_info[i].pipe_contexts.sensor_config->camera_config->height;
-		int fps_tmp = pipeline_info[i].pipe_contexts.sensor_config->camera_config->fps;
-		char *camera_name_tmp = pipeline_info[i].pipe_contexts.sensor_config->sensor_name;
+int check_camera_config(param_config_t *param_config){
 
-		if(i == 0){
-			camera_width = width_tmp;
-			camera_height = height_tmp;
-			camera_fps = fps_tmp;
-			camera_name = pipeline_info[i].pipe_contexts.sensor_config->sensor_name;
-		}else{
-			if((camera_width != width_tmp) || (camera_height != height_tmp)){
-				printf("camera %s width %d height %d fps %dis different width camera %s width %d height %d fps %d.\n",
-					camera_name, camera_width, camera_height, camera_fps,
-					camera_name_tmp, width_tmp, height_tmp, fps_tmp);
-				return -1;
-			}
+	//VSE放大： 最大分辨率是4K，放大倍数最大是4倍
+	int quarter_of_vse_max_resolution = 3840 *2160 / 4;
+	for(int i = 0; i < param_config->sensor_config_count; i++){
+		vp_sensor_config_t* sensor_config = param_config->sensor_param_config[i].sensor_config;
+		int width_tmp = sensor_config->camera_config->width;
+		int height_tmp = sensor_config->camera_config->height;
+		char *camera_name_tmp = sensor_config->camera_config->name;
+
+		if(width_tmp * height_tmp < quarter_of_vse_max_resolution){
+			printf("camera %s width %d height %d is too small, after zooming in 4 times, the resolution cannot reach 4K.\n",
+					camera_name_tmp, width_tmp, height_tmp);
+			return -1;
 		}
 	}
 	return 0;
 }
-#endif
 
 static void print_help(void) {
 	printf("Usage: %s [Options]\n", get_program_name());

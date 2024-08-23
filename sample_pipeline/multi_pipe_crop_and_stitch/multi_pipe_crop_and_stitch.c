@@ -852,6 +852,11 @@ int main(int argc, char** argv) {
 	if(ret != 0){
 		return -1;
 	}
+	ret = check_camera_config(&multi_pipe_stitch_info.param_config);
+	if(ret != 0){
+		printf("camera param is invalid, so return.\n");
+		return -1;
+	}
 
 	hb_mem_module_open();
 

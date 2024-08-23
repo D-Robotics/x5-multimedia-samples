@@ -35,4 +35,5 @@ typedef struct {
 }param_config_t;
 
 int param_process(int argc, char** argv, param_config_t* param_config);
+int check_camera_config(param_config_t *param_config);
 #endif

@@ -26,7 +26,6 @@ typedef struct tuning_context {
 	uint32_t dump_mask;
 	uint32_t send_raw;
 	uint32_t dump_stream_flag;
-	char feedback_path[128];
 	uint32_t work_mode;
 
 	uint32_t yuv_dump_cnt;
@@ -37,8 +36,10 @@ typedef struct tuning_context {
 	hbn_vflow_handle_t vflow_fd;
 	hbn_vnode_handle_t vnode_fd[2];	// 0-sif, 1-isp
 	tool_event_t *hbplayer_event;
-	uint32_t feedback_width;
-	uint32_t feedback_height;
+	int32_t img_num;
+	int32_t cur_img;
+	char img_path[TUNING_FEEDBACK_FILE_MAX][128];
+	char img_name[TUNING_FEEDBACK_FILE_MAX][128];
 	hbn_vnode_image_t src_img;
 } tuning_context_t;
 
@@ -60,24 +61,5 @@ typedef struct tuning_cmd_func {
 		}				\
 	}					\
 	}
-
-#define read_p(text, type, pparam) do {	\
-		printf("%s", text); \
-		scanf(type, (pparam)); \
-	} while(0)
-
-#define VIO_ASSERT_FUNC_EQ(func, val, retfunc) do { \
-		if ((func) != (val)) { \
-			pr_tuning("error: %s(%d)[%s ne %d]\n", __func__, __LINE__, #func, (val)); \
-			retfunc; \
-		} \
-	} while(0)
-
-#define VIO_ASSERT_FUNC_NE(func, val, retfunc) do { \
-		if ((func) == (val)) { \
-			pr_tuning("error: %s(%d)[%s eq %d]\n", __func__, __LINE__, #func, (val)); \
-			retfunc; \
-		} \
-	} while(0)
 
 #endif // __TUNING_TOOL_H__

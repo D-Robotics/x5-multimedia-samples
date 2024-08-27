@@ -169,3 +169,58 @@ int32_t tuning_alloc_feedback_buffer(hb_mem_graphic_buf_t *buf, uint32_t width, 
 
 	return ret;
 }
+
+int32_t tuning_free_feedback_buffer(hb_mem_graphic_buf_t *buf)
+{
+	int32_t ret;
+
+	ret = hb_mem_free_buf_with_vaddr((uint64_t)buf->virt_addr[0]);
+	if (ret < 0) {
+		pr_tuning("hb_mem_free_buf failed ret %d\n", ret);
+		return ret;
+	}
+
+	ret = hb_mem_module_close();
+	if (ret < 0) {
+		pr_tuning("hb_mem_module_close failed ret %d\n", ret);
+		return ret;
+	}
+
+	return ret;
+}
+
+int32_t tuning_get_raw_list(char *path, char img_path[][128], char img_name[][128], int32_t *img_num)
+{
+	struct dirent **namelist;
+	int32_t file_cnt, file;
+	int32_t img_count = 0;
+
+	file_cnt = scandir(path, &namelist, NULL, alphasort);
+	if (file_cnt == -1) {
+		pr_tuning("scandir fail(%d)\n", file_cnt);
+		return file_cnt;
+	}
+
+	for (file = 0; file < file_cnt; file++) {
+		if (!strstr(namelist[file]->d_name, ".raw")) {
+			free(namelist[file]);
+			continue;
+		}
+
+		if (img_count >= TUNING_FEEDBACK_FILE_MAX) {
+			pr_tuning("Warning: support feedback max raw img number: %d\n", TUNING_FEEDBACK_FILE_MAX);
+			break;
+		}
+
+		strcpy((char *)&img_path[img_count], path);
+		img_path[img_count][strlen(img_path[img_count])] = '/';
+		strcat(img_path[img_count], namelist[file]->d_name);
+		memcpy(img_name[img_count++], namelist[file]->d_name, strlen(namelist[file]->d_name)-sizeof("raw"));
+
+		free(namelist[file]);
+	}
+	*img_num = img_count;
+	free(namelist);
+
+	return 0;
+}

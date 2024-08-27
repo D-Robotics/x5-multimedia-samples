@@ -38,10 +38,6 @@ static void parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 		case 's':
 			ctx->dump_stream_flag = atoi(optarg);
 			break;
-		case 'f':
-			sprintf(&ctx->feedback_path[0], "%s", optarg);
-			ctx->work_mode |= (1 << FEEDBACK_MASK);
-			break;
 		case 'w':
 			ctx->work_mode = atoi(optarg);
 			break;
@@ -98,6 +94,37 @@ static int32_t tuning_specify_case(tuning_context_t *ctx)
 	return 0;
 }
 
+static int32_t tuning_feeback_prepare_next(tuning_context_t *ctx)
+{
+	struct stat statbuf;
+	FILE *file = NULL;
+
+	stat(ctx->img_path[ctx->cur_img], &statbuf);
+	if (!statbuf.st_size) {
+		pr_tuning("No such file: %s\n", ctx->img_path[ctx->cur_img]);
+		return -1;
+	}
+	// pr_tuning("feedback file: %s, index %d, size %ld\n", ctx->img_path[ctx->cur_img], ctx->cur_img, statbuf.st_size);
+
+	file = fopen(ctx->img_path[ctx->cur_img], "r");
+	if (!file) {
+		pr_tuning("open %s fail\n", ctx->img_path[ctx->cur_img]);
+		return -1;
+	}
+
+	if ((uint32_t)statbuf.st_size > ctx->src_img.buffer.size[0]) {
+		pr_tuning("alloc buffer donot match src file size!\n");
+		return -1;
+	}
+
+	fread(ctx->src_img.buffer.virt_addr[0], 1, statbuf.st_size, file);
+	fclose(file);
+
+	ctx->cur_img = (ctx->cur_img + 1) >= ctx->img_num ? 0 : ctx->cur_img + 1;
+
+	return 0;
+}
+
 static void *tuning_main_worker_thread(void *arg)
 {
 	tuning_context_t *ctx;
@@ -132,6 +159,7 @@ static void *tuning_main_worker_thread(void *arg)
 			hbn_vnode_releaseframe(ctx->vnode_fd[0], 0, &raw_img);
 		}
 		if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
+			FUNC_EQ(tuning_feeback_prepare_next(ctx), 0, goto out);
 			ret = hbn_vnode_sendframe(ctx->vnode_fd[1], 0, &ctx->src_img);
 			if (ret) {
 				pr_tuning("isp hbn_vnode_sendframe failed!\n");
@@ -223,7 +251,7 @@ static void tuning_handle_set_expsoure(tuning_context_t *ctx)
 		read_p("dgain: ", "%f", &exp_attr.manual_attr.dgain);
 		read_p("ispgain: ", "%f", &exp_attr.manual_attr.ispgain);
 	} else if (exp_mode == 1) {
-		VIO_ASSERT_FUNC_EQ(hbn_isp_get_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
+		FUNC_EQ(hbn_isp_get_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
 		exp_attr.mode = HBN_ISP_MODE_AUTO;
 		read_p("speed_over: ", "%f", &exp_attr.auto_attr.speed_over);
 		read_p("speed_under: ", "%f", &exp_attr.auto_attr.speed_under);
@@ -236,14 +264,14 @@ static void tuning_handle_set_expsoure(tuning_context_t *ctx)
 		return;
 	}
 
-	VIO_ASSERT_FUNC_EQ(hbn_isp_set_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
+	FUNC_EQ(hbn_isp_set_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
 }
 
 static void tuning_handle_get_expsoure(tuning_context_t *ctx)
 {
 	hbn_isp_exposure_attr_t exp_attr = {0};
 
-	VIO_ASSERT_FUNC_EQ(hbn_isp_get_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
+	FUNC_EQ(hbn_isp_get_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
 
 	printf("Currently AE is in %s mode\n", (exp_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":"auto");
 
@@ -281,21 +309,21 @@ static void tuning_handle_set_white_balance(tuning_context_t *ctx)
 		read_p("gbgain: ", "%f", &awb_attr.manual_attr.gain.gbgain);
 		read_p("bgain: ", "%f", &awb_attr.manual_attr.gain.bgain);
 	} else if (awb_mode == 1) {
-		VIO_ASSERT_FUNC_EQ(hbn_isp_get_awb_attr(ctx->vnode_fd[1], &awb_attr), 0, return);
+		FUNC_EQ(hbn_isp_get_awb_attr(ctx->vnode_fd[1], &awb_attr), 0, return);
 		awb_attr.mode = HBN_ISP_MODE_AUTO;
 	} else {
 		printf("Unknown mode: %d\n", awb_mode);
 		return;
 	}
 
-	VIO_ASSERT_FUNC_EQ(hbn_isp_set_awb_attr(ctx->vnode_fd[1], &awb_attr), 0, return);
+	FUNC_EQ(hbn_isp_set_awb_attr(ctx->vnode_fd[1], &awb_attr), 0, return);
 }
 
 static void tuning_handle_get_white_balance(tuning_context_t *ctx)
 {
 	hbn_isp_awb_attr_t awb_attr = {0};
 
-	VIO_ASSERT_FUNC_EQ(hbn_isp_get_awb_attr(ctx->vnode_fd[1], &awb_attr), 0, return);
+	FUNC_EQ(hbn_isp_get_awb_attr(ctx->vnode_fd[1], &awb_attr), 0, return);
 
 	printf("Currently AWB is in %s mode\n", (awb_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":"auto");
 
@@ -323,7 +351,7 @@ static void tuning_hanle_set_ae_table(tuning_context_t *ctx)
 	}
 	ae_table_attr.valid_num = i == CAMDEV_AE_EXP_TABLE_NUM - 1 ? CAMDEV_AE_EXP_TABLE_NUM : i;
 
-	VIO_ASSERT_FUNC_EQ(hbn_isp_set_exposure_table(ctx->vnode_fd[1], &ae_table_attr), 0, return);
+	FUNC_EQ(hbn_isp_set_exposure_table(ctx->vnode_fd[1], &ae_table_attr), 0, return);
 }
 
 static void tuning_hanle_get_ae_table(tuning_context_t *ctx)
@@ -331,7 +359,7 @@ static void tuning_hanle_get_ae_table(tuning_context_t *ctx)
 	int32_t i;
 	hbn_isp_exposure_table_t ae_table_attr = {0};
 
-	VIO_ASSERT_FUNC_EQ(hbn_isp_get_exposure_table(ctx->vnode_fd[1], &ae_table_attr), 0, return);
+	FUNC_EQ(hbn_isp_get_exposure_table(ctx->vnode_fd[1], &ae_table_attr), 0, return);
 
 	for (i = 0; i < ae_table_attr.valid_num; i++) {
 		printf("---------table %d---------\n", i);
@@ -353,7 +381,7 @@ static void tuning_get_ae_statistics(tuning_context_t *ctx)
 	uint32_t *luma;
 	hbn_isp_ae_statistics_t ae_statistics = {0};
 
-	VIO_ASSERT_FUNC_EQ(hbn_isp_get_ae_statistics(ctx->vnode_fd[1], &ae_statistics), 0, return);
+	FUNC_EQ(hbn_isp_get_ae_statistics(ctx->vnode_fd[1], &ae_statistics), 0, return);
 
 	printf("Ae statistics current frameid: %d, timestamps: %ld\n", ae_statistics.frame_id, ae_statistics.timestamps);
 	printf("Datatype: %d\n", ae_statistics.datatype);
@@ -389,13 +417,13 @@ static void tuning_set_module_control(tuning_context_t *ctx)
 	read_p("GE: ", "%d", &key); module_ctrl.module.u32Key |= key << 13;
 	read_p("WB: ", "%d", &key); module_ctrl.module.u32Key |= key << 14;
 
-	VIO_ASSERT_FUNC_EQ(hbn_isp_set_module_control(ctx->vnode_fd[1], &module_ctrl), 0, return);
+	FUNC_EQ(hbn_isp_set_module_control(ctx->vnode_fd[1], &module_ctrl), 0, return);
 }
 
 static void tuning_get_module_control(tuning_context_t *ctx)
 {
 	hbn_isp_module_ctrl_t module_ctrl = {0};
-	VIO_ASSERT_FUNC_EQ(hbn_isp_get_module_control(ctx->vnode_fd[1], &module_ctrl), 0, return);
+	FUNC_EQ(hbn_isp_get_module_control(ctx->vnode_fd[1], &module_ctrl), 0, return);
 
 	printf("module_ctrl.module.u32Key %d\n", module_ctrl.module.u32Key);
 
@@ -442,44 +470,21 @@ static void *tuning_api_worker_thread(void *arg)
 	return NULL;
 }
 
-static int32_t tuning_feeback_prepare(tuning_context_t *ctx)
+static int32_t tuning_feeback_init(tuning_context_t *ctx)
 {
-	struct stat statbuf;
-	int32_t ret;
-	FILE *file = NULL;
 	isp_ichn_attr_t ichn_attr = {0};
+	char file_path[255];
 
-	stat(ctx->feedback_path, &statbuf);
-	pr_tuning("feedback file: %s size %ld\n", ctx->feedback_path, statbuf.st_size);
-
-	if (!statbuf.st_size) {
-		pr_tuning("No such file: %s\n", ctx->feedback_path);
+	if (getcwd(file_path, sizeof(file_path)) != NULL) {
+		printf("Current working directory: %s\n", file_path);
+	} else {
+		printf("getcwd fail\n");
 		return -1;
 	}
 
-	ret = hbn_vnode_get_ichn_attr(ctx->vnode_fd[1], 0, &ichn_attr);
-	if (ret < 0) {
-		pr_tuning("isp hbn_vnode_get_attr failed!\n");
-		return -1;
-	}
-
-	ctx->feedback_height = ichn_attr.height;
-	ctx->feedback_width = ichn_attr.width;
-
-	tuning_alloc_feedback_buffer(&ctx->src_img.buffer, ctx->feedback_height, ctx->feedback_width, 0);
-	if ((uint32_t)statbuf.st_size > ctx->src_img.buffer.size[0]) {
-		pr_tuning("alloc buffer donot match src file size!\n");
-		return -1;
-	}
-
-	file = fopen(ctx->feedback_path, "r");
-	if (!file) {
-		pr_tuning("open %s fail\n", ctx->feedback_path);
-		return -1;
-	}
-
-	fread(ctx->src_img.buffer.virt_addr[0], 1, statbuf.st_size, file);
-	fclose(file);
+	FUNC_EQ(tuning_get_raw_list(file_path, ctx->img_path, ctx->img_name, &ctx->img_num), 0, return -1);
+	FUNC_EQ(hbn_vnode_get_ichn_attr(ctx->vnode_fd[1], 0, &ichn_attr), 0, return -1);
+	FUNC_EQ(tuning_alloc_feedback_buffer(&ctx->src_img.buffer, ichn_attr.height, ichn_attr.width, 0), 0, return -1);
 
 	return 0;
 }
@@ -495,10 +500,10 @@ static int32_t tuning_case_run(tuning_context_t *ctx)
 		return -1;
 	}
 
-	VIO_ASSERT_FUNC_EQ(hbn_vflow_create_cfg(ctx->vpm_json, &vflow_fd), 0, return -1);
+	FUNC_EQ(hbn_vflow_create_cfg(ctx->vpm_json, &vflow_fd), 0, return -1);
 	if (ctx->cam_json && ctx->cam_json[0] != ' ') {
 		pr_tuning("camera run in this case.\n");
-		VIO_ASSERT_FUNC_EQ(hbn_camera_init_cfg(ctx->cam_json), 0, goto destroy);
+		FUNC_EQ(hbn_camera_init_cfg(ctx->cam_json), 0, goto destroy);
 	}
 	ctx->vflow_fd = vflow_fd;
 
@@ -519,7 +524,7 @@ static int32_t tuning_case_run(tuning_context_t *ctx)
 	}
 
 	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK))
-		VIO_ASSERT_FUNC_EQ(tuning_feeback_prepare(ctx), 0, return -1);
+		FUNC_EQ(tuning_feeback_init(ctx), 0, return -1);
 
 	ret = hbn_vnode_get_attr(ctx->vnode_fd[1], &isp_attr);
 	if (ret < 0) {
@@ -535,10 +540,10 @@ static int32_t tuning_case_run(tuning_context_t *ctx)
 	hbn_vflow_start(vflow_fd);
 
 	if (BIT_ENABLE(ctx->work_mode, START_DUMP_MASK))
-		ctx->yuv_dump_cnt = 50;
+		ctx->yuv_dump_cnt = 20;
 
-	VIO_ASSERT_FUNC_EQ(pthread_create(&ctx->main_thid, NULL, tuning_main_worker_thread, (void *)(ctx)), 0, goto destroy);
-	VIO_ASSERT_FUNC_EQ(pthread_create(&ctx->api_thid, NULL, tuning_api_worker_thread, (void *)(ctx)), 0, goto destroy);
+	FUNC_EQ(pthread_create(&ctx->main_thid, NULL, tuning_main_worker_thread, (void *)(ctx)), 0, goto destroy);
+	FUNC_EQ(pthread_create(&ctx->api_thid, NULL, tuning_api_worker_thread, (void *)(ctx)), 0, goto destroy);
 
 	pthread_join(ctx->api_thid, NULL);
 	pr_tuning("api thread join done\n");
@@ -554,12 +559,12 @@ static int32_t tuning_case_run(tuning_context_t *ctx)
 
 destroy:
 	if (ctx->cam_json && ctx->cam_json[0] != ' ')
-		VIO_ASSERT_FUNC_EQ(hbn_camera_init_cfg(NULL), 0, return -1);
+		FUNC_EQ(hbn_camera_init_cfg(NULL), 0, return -1);
 
 	hbn_vflow_destroy(vflow_fd);
 
 	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK))
-		hb_mem_module_close();
+		tuning_free_feedback_buffer(&ctx->src_img.buffer);
 
 	pr_tuning("vflow destory done\n");
 
@@ -586,9 +591,9 @@ int32_t main(int argc, char *argv[])
 		}
 	}
 
-	VIO_ASSERT_FUNC_EQ(tuning_specify_case(&ctx), 0, return -1);
+	FUNC_EQ(tuning_specify_case(&ctx), 0, return -1);
 
-	VIO_ASSERT_FUNC_EQ(tuning_case_run(&ctx), 0, return -1);
+	FUNC_EQ(tuning_case_run(&ctx), 0, return -1);
 
 	return ret;
 }

@@ -15,7 +15,6 @@
 		{"dump_mask", 1, 0, 'd'},\
 		{"send_raw", 1, 0, 'r'},\
 		{"dump_stream", 1, 0, 's'},\
-		{"feedback_path", 1, 0, 'f'},\
 		{"work_mode", 1, 0, 'w'},\
 		{ NULL, 0, 0, 0 },\
 	}
@@ -23,7 +22,6 @@
 			"-v        vpm json path\n"\
 			"-r        send raw to hbplayer\n"\
 			"-s        dump stream flag\n"\
-			"-f        feedback file path\n"\
 			"-w        work mode mask\n"\
 			"-h        usage help\n"
 #define parse_opts_print(prog) do {\

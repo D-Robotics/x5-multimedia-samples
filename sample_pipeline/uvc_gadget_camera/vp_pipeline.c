@@ -235,15 +235,15 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 }
 
 int vp_destroy_and_stop_pipeline(pipe_contex_t *pipe_contex){
-    int ret = 0;
+	int ret = 0;
 
-    ret = hbn_vflow_stop(pipe_contex->vflow_fd);
+	ret = hbn_vflow_stop(pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	hbn_vflow_destroy(pipe_contex->vflow_fd);
-    hbn_vnode_close(pipe_contex->vse_node_handle);
-    hbn_vnode_close(pipe_contex->isp_node_handle);
-    hbn_vnode_close(pipe_contex->vin_node_handle);
+	hbn_vnode_close(pipe_contex->vse_node_handle);
+	hbn_vnode_close(pipe_contex->isp_node_handle);
+	hbn_vnode_close(pipe_contex->vin_node_handle);
 	hbn_camera_destroy(pipe_contex->cam_fd);
 
-    return ret;
+	return ret;
 }

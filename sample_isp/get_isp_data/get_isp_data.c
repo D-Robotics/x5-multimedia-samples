@@ -127,6 +127,9 @@ int main(int argc, char** argv) {
 		if (ret != 0) {
 			printf("hbn_vflow_stop failed for sensor %d. ret = %d\n", sensor_indexes[i], ret);
 		}
+		hbn_vnode_close(pipe_contex[i].vin_node_handle);
+		hbn_vnode_close(pipe_contex[i].isp_node_handle);
+		hbn_camera_destroy(pipe_contex[i].cam_fd);
 		hbn_vflow_destroy(pipe_contex[i].vflow_fd);
 	}
 

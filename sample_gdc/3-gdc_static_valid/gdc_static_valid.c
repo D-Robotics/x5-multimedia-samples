@@ -271,6 +271,7 @@ int create_and_run_vflow(gdc_info_s *gdc_info,
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_stop(vflow_fd);
 	ERR_CON_EQ(ret, 0);
+	hbn_vnode_close(gdc_vnode_fd);
 	hbn_vflow_destroy(vflow_fd);
 
 	return ret;

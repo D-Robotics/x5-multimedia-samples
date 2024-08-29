@@ -219,7 +219,7 @@ int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_im
 	input_height = scaler_info->input_height;
 
 	printf("ichn input width = %d\n", input_width);
-	printf("ichn input input_height = %d\n", input_height);
+	printf("ichn input height = %d\n", input_height);
 
 	vse_ichn_attr.width = input_width;
 	vse_ichn_attr.height = input_height;
@@ -330,6 +330,7 @@ int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_im
 
 	ret = hbn_vflow_stop(vflow_fd);
 	ERR_CON_EQ(ret, 0);
+	hbn_vnode_close(vnode_fd);
 	hbn_vflow_destroy(vflow_fd);
 
 	return ret;

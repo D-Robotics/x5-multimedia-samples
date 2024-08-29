@@ -120,6 +120,10 @@ int main(int argc, char** argv) {
 	/* destroy resource */
 	ret = hbn_vflow_stop(pipe_contex.vflow_fd);
 	ERR_CON_EQ(ret, 0);
+	hbn_vnode_close(pipe_contex.vse_node_handle);
+	hbn_vnode_close(pipe_contex.isp_node_handle);
+	hbn_vnode_close(pipe_contex.vin_node_handle);
+	hbn_camera_destroy(pipe_contex.cam_fd);
 	hbn_vflow_destroy(pipe_contex.vflow_fd);
 	encode_deinit(&pipe_contex);
 

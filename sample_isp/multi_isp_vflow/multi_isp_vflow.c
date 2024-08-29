@@ -633,8 +633,15 @@ int main(int argc, char** argv) {
 
 	ret = hbn_vflow_stop(vin_isp_contex.vflow_fd);
 	ERR_CON_EQ(ret, 0);
+	hbn_vnode_close(vin_isp_contex.vin_node_handle);
+	hbn_vnode_close(vin_isp_contex.isp_node_handle);
+	hbn_camera_destroy(vin_isp_contex.cam_fd);
+
 	ret = hbn_vflow_stop(isp_contex.vflow_fd);
 	ERR_CON_EQ(ret, 0);
+	hbn_vnode_close(isp_contex.vin_node_handle);
+	hbn_vnode_close(isp_contex.isp_node_handle);
+	hbn_camera_destroy(isp_contex.cam_fd);
 
 	hbn_vflow_destroy(vin_isp_contex.vflow_fd);
 	hbn_vflow_destroy(isp_contex.vflow_fd);

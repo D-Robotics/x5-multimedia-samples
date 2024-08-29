@@ -587,6 +587,7 @@ int create_and_run_vflow(scaler_info_s *scaler_info, hbn_vnode_image_t *input_im
 
 	hbn_vflow_stop(vflow_fd);
 	rgn_test_deinit(vse_vnode_fd, work_mode);
+	hbn_vnode_close(vse_vnode_fd);
 	hbn_vflow_destroy(vflow_fd);
 
 	return ret;

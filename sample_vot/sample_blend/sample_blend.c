@@ -517,6 +517,10 @@ int main(int argc, char** argv) {
 	for(int i = 0; i < DRM_MAX_PLANES; i++){
 		ret = __add_property(display_context.drm_fd, req, display_context.plane_ids[i], DRM_MODE_OBJECT_PLANE, "CRTC_ID", display_context.crtc_id);
 		ret |= __add_property(display_context.drm_fd, req, display_context.plane_ids[i], DRM_MODE_OBJECT_PLANE, "FB_ID", drm_fb_info[i].frame_buffer_id);
+		if(display_context.plane_ids[i] == 47){
+			ret |= __add_property(display_context.drm_fd, req, display_context.plane_ids[i], DRM_MODE_OBJECT_PLANE, "rotation", DRM_MODE_ROTATE_0);
+		}
+
 		ret |= __add_property(display_context.drm_fd, req, display_context.plane_ids[i], DRM_MODE_OBJECT_PLANE, "alpha", param_config->alpha_value);
 		ret |= __add_property(display_context.drm_fd, req, display_context.plane_ids[i], DRM_MODE_OBJECT_PLANE, "pixel blend mode", param_config->alpha_mode);
 

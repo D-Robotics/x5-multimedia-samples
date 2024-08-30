@@ -127,7 +127,7 @@ int parser_params(int argc, char **argv, param_config_t *param)
 			break;
 		case 'h':
 		default:
-			print_help("vot_simple");
+			print_help("sample_vot");
 			return -1;
 		}
 	}

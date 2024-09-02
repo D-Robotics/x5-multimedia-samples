@@ -47,6 +47,7 @@ typedef struct display_context_s
 	const uint32_t crtc_id;
 	const uint32_t plane_ids[DRM_MAX_PLANES];
 	uint32_t connector_id;
+	int connector_type;
 
 	param_config_t param_config;
 }display_context_t;
@@ -69,7 +70,7 @@ void print_help(char *test_case)
 	printf("  -m <alpha_mode>                   Specify alphablend mode, default is 2: None, 1:Coverage 0:Pre-multiplied\n");
 	printf("  -h <help>                         Show this help message\n");
 	printf("     For Example, specific hdmi as display: ./%s -o hdmi\n", test_case);
-
+	printf("     For Example, specific dsi as display:  ./%s -o dsi\n", test_case);
 }
 
 int parser_params(int argc, char **argv, param_config_t *param)
@@ -113,8 +114,8 @@ int parser_params(int argc, char **argv, param_config_t *param)
 			return -1;
 		}
 	}
-	if(strcmp(param->output, "hdmi") != 0){
-		printf("display connector current only support hdmi, but input param is [%s].\n", param->output);
+	if((strcmp(param->output, "hdmi") != 0) && (strcmp(param->output, "dsi") != 0)){
+		printf("display connector current only support hdmi and dsi, but input param is [%s].\n", param->output);
 		return -1;
 	}
 	char *alpha_mode_name[] = {"Pre-multiplied", "Coverage", "None"};
@@ -133,7 +134,18 @@ int parser_params(int argc, char **argv, param_config_t *param)
 		printf("input alpha value %d over range 0 - 65535 .\n", param->alpha_value);
 		return -1;
 	}
+
+
 	printf("\nPrint param Config:\n");
+
+	printf("\tOutput   :\n");
+	if((param->width == -1) || ((param->height == -1))){
+		printf("\t\t Resolution: select connector's first config from EDID\n");
+	}else{
+		printf("\t\t Resolution: %d*%d\n", param->width, param->height);
+	}
+	printf("\t\t Connector: %s\n", param->output);
+
 	printf("\tAplhaBlend Param   :\n");
 	printf("\t\tMode    : %s\n", alpha_mode_name[param->alpha_mode]);
 	printf("\t\tFormula : %s\n", alpha_mode_formula[param->alpha_mode]);
@@ -234,7 +246,7 @@ static drmModeModeInfo *__get_valid_mode_from_connector(drmModeConnector* conn, 
 	drmModeModeInfo *mode = NULL;
 
 	if(conn->connection != DRM_MODE_CONNECTED){
-		printf("display connector is not connected.\n");
+		printf("display connector type %d is not connected.\n", conn->connector_type);
 		return mode;
 	}else if(conn->count_modes <= 0){
 		printf("display connector connector not found mode info.\n");
@@ -332,7 +344,7 @@ static int display_setup(display_context_t *display_context){
 	for (int i = 0; i < resources->count_connectors; i++){
 		conn = drmModeGetConnector(drm_fd, resources->connectors[i]);
 		if (conn != NULL){
-			if (conn->connector_type == DRM_MODE_CONNECTOR_HDMIA){
+			if (conn->connector_type == display_context->connector_type){
 				break;
 			} else {
 				drmModeFreeConnector(conn);
@@ -341,7 +353,7 @@ static int display_setup(display_context_t *display_context){
 		}
 	}
 	if(conn == NULL){
-		printf("not support hdmi.\n");
+		printf("not support %s, connector type is %d.\n", param_config->output, display_context->connector_type);
 		goto free_res;
 	}
 	drmModeModeInfo* mode = __get_valid_mode_from_connector(conn, param_config->width, param_config->height);
@@ -418,6 +430,10 @@ int main(int argc, char** argv) {
 	}
 	if(strcmp(param_config->output, "hdmi") == 0){
 		display_context.connector_id = 75;
+		display_context.connector_type = DRM_MODE_CONNECTOR_HDMIA;
+	}else if(strcmp(param_config->output, "dsi") == 0){
+		display_context.connector_id = 73;
+		display_context.connector_type = DRM_MODE_CONNECTOR_DSI;
 	}else{
 		printf("not support display [%s]\n.", param_config->output);
 	}

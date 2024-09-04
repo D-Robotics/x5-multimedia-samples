@@ -556,22 +556,15 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			mThreadStop(&ws_clt->stream_thread);
 			break;
 		case WS_CMD_SYNC_TIME:
-			{
-				static int is_already_update_time = 0;
-				if(!is_already_update_time){
-					SC_LOGD("sync pc time to : %d", cJSON_GetObjectItem(root, "param")->valueint);
-					long int pc_t = cJSON_GetObjectItem(root, "param")->valueint;
-		// #if __GLIBC_MINOR__ == 31
-					struct timespec res;
-					res.tv_sec = pc_t;
-					clock_settime(CLOCK_REALTIME,&res);
-		// #else
-		// 			stime(&pc_t);
-		// #endif
-					is_already_update_time = 1;
-				}
-			}
-
+			SC_LOGD("sync pc time to : %d", cJSON_GetObjectItem(root, "param")->valueint);
+			long int pc_t = cJSON_GetObjectItem(root, "param")->valueint;
+// #if __GLIBC_MINOR__ == 31
+			struct timespec res;
+			res.tv_sec = pc_t;
+			clock_settime(CLOCK_REALTIME,&res);
+// #else
+// 			stime(&pc_t);
+// #endif
 			break;
 		case WS_CMD_GET_CONFIG:
 		{

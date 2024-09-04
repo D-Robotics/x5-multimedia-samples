@@ -36,7 +36,7 @@ H264MainVideoSource::H264MainVideoSource(UsageEnvironment& env,
 
 	fPresentationTime.tv_sec = 0;
 	fPresentationTime.tv_usec = 0;
-	SC_LOGI("video source created for shm_id: %s, shm_name: %s, is dummy %d", shmId, shmName, is_dumy);
+	SC_LOGI("video source created for shm_id: %s, shm_name: %s, is dummy %d codec pts", shmId, shmName, is_dumy);
 	fShmSource = shm_stream_create(shmId, shmName, STREAM_MAX_USER,
 		buffer_item_count, buffer_region_size, SHM_STREAM_READ, SHM_STREAM_MALLOC);
 
@@ -154,11 +154,11 @@ void H264MainVideoSource::incomingDataHandler1()
 			}
 			else if (nalu.nal_unit_type == 1 || nalu.nal_unit_type == 5)
 			{
-				unsigned uSeconds = fPresentationTime.tv_usec + (info.pts  - fPts);
-				fPresentationTime.tv_sec += uSeconds / 1000000;
-				fPresentationTime.tv_usec = uSeconds % 1000000;
+				// unsigned long long uSeconds = fPresentationTime.tv_usec + (info.pts  - fPts);
+				fPresentationTime.tv_sec = info.pts / 1000000;
+				fPresentationTime.tv_usec = info.pts % 1000000;
 				fPts = info.pts;
-				gettimeofday(&fPresentationTime, NULL);
+				// gettimeofday(&fPresentationTime, NULL);
 			}
 
 #if 0

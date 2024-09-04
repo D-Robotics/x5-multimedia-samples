@@ -875,7 +875,7 @@ int32_t bpu_wrap_send_frame(bpu_handle_t *handle, bpu_buffer_info_t *input_buffe
 
 	// 如果队列满的，直接返回
 	if (mQueueIsFull(&handle->m_input_queue)) {
-		SC_LOGW("input queue full, skip it");
+		// SC_LOGW("input queue full, skip it");
 		return 0;
 	}
 

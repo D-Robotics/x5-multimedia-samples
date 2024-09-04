@@ -36,7 +36,7 @@ H264MainVideoSource::H264MainVideoSource(UsageEnvironment& env,
 
 	fPresentationTime.tv_sec = 0;
 	fPresentationTime.tv_usec = 0;
-	SC_LOGI("video source created for shm_id: %s, shm_name: %s, is dummy %d codec pts", shmId, shmName, is_dumy);
+	SC_LOGI("video source created for shm_id: %s, shm_name: %s, is dummy %d", shmId, shmName, is_dumy);
 	fShmSource = shm_stream_create(shmId, shmName, STREAM_MAX_USER,
 		buffer_item_count, buffer_region_size, SHM_STREAM_READ, SHM_STREAM_MALLOC);
 
@@ -144,7 +144,6 @@ void H264MainVideoSource::incomingDataHandler1()
 			memcpy(fTo, nalu.buf, nalu.len);
 
 			/*printf("fMaxSize=%d, fFrameSize = %d, fNumTruncatedBytes=%d\n", fMaxSize, fFrameSize, fNumTruncatedBytes);*/
-
 			if (fPresentationTime.tv_sec == 0 && fPresentationTime.tv_usec == 0)
 			{
 				// This is the first frame, so use the current time:
@@ -154,11 +153,14 @@ void H264MainVideoSource::incomingDataHandler1()
 			}
 			else if (nalu.nal_unit_type == 1 || nalu.nal_unit_type == 5)
 			{
-				// unsigned long long uSeconds = fPresentationTime.tv_usec + (info.pts  - fPts);
-				fPresentationTime.tv_sec = info.pts / 1000000;
-				fPresentationTime.tv_usec = info.pts % 1000000;
-				fPts = info.pts;
-				// gettimeofday(&fPresentationTime, NULL);
+				if(info.pts >= 0){ //pipeline 中产生时间戳时，优先使用Pipeline的时间戳
+					unsigned long long uSeconds = fPresentationTime.tv_usec + (info.pts  - fPts); //基于系统时间增长
+					fPresentationTime.tv_sec += uSeconds / 1000000;
+					fPresentationTime.tv_usec = uSeconds % 1000000;
+					fPts = info.pts;
+				}else{//pipeline 没有时间戳时，使用gettimeofday， 缺点是 用户设置系统时间时，会导致RTSP丢包
+					gettimeofday(&fPresentationTime, NULL);
+				}
 			}
 
 #if 0

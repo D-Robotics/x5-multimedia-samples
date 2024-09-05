@@ -157,7 +157,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex)
 	hbn_buf_alloc_attr_t alloc_attr = {0};
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
-	uint32_t chn_id = 0;
+	uint32_t ichn_id = 0;
+	uint32_t ochn_id = 0;
 	uint64_t vin_attr_ex_mask = 0;
 
 	sensor_config = pipe_contex->sensor_config;
@@ -174,12 +175,12 @@ static int create_vin_node(pipe_contex_t *pipe_contex)
 	ret = hbn_vnode_set_attr(*vin_node_handle, vin_node_attr);
 	ERR_CON_EQ(ret, 0);
 	// 设置输入通道的属性
-	ret = hbn_vnode_set_ichn_attr(*vin_node_handle, chn_id, vin_ichn_attr);
+	ret = hbn_vnode_set_ichn_attr(*vin_node_handle, ichn_id, vin_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 	// 设置输出通道的属性
 	// 使能DDR输出
 	vin_ochn_attr->ddr_en = 1;
-	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, chn_id, vin_ochn_attr);
+	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
 
 	// 如果初始化虚拟 Sensor， 则禁止设置 MCLK
@@ -212,7 +213,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex)
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
 						| HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, chn_id, &alloc_attr);
+	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
 
 	return 0;
 }
@@ -224,7 +225,8 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ochn_attr_t *isp_ochn_attr = NULL;
 	hbn_vnode_handle_t *isp_node_handle = NULL;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
-	uint32_t chn_id = 0;
+	uint32_t ichn_id = 0;
+	uint32_t ochn_id = 0;
 	int ret = 0;
 
 	sensor_config = pipe_contex->sensor_config;
@@ -237,9 +239,9 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vnode_set_attr(*isp_node_handle, isp_attr);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ochn_attr(*isp_node_handle, chn_id, isp_ochn_attr);
+	ret = hbn_vnode_set_ochn_attr(*isp_node_handle, ochn_id, isp_ochn_attr);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, chn_id, isp_ichn_attr);
+	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, ichn_id, isp_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
 	alloc_attr.buffers_num = 3;
@@ -247,7 +249,7 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
 						| HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, chn_id, &alloc_attr);
+	ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, ochn_id, &alloc_attr);
 	ERR_CON_EQ(ret, 0);
 
 	printf("[INFO] Create isp node handle: %d\n", (int)*isp_node_handle);
@@ -387,14 +389,14 @@ int dump_exp_attr(hbn_vnode_handle_t isp_node_handle)
 void isp_dump_func(hbn_vnode_handle_t isp_node_handle, int is_get_2a) {
 	int ret;
 	char dst_file[128];
-	uint32_t chn_id = 0;
+	uint32_t ochn_id = 0;
 	uint32_t timeout = 10000;
 	hbn_vnode_image_t out_img;
 
 	// 调用hbn_vnode_getframe获取帧数据
-	ret = hbn_vnode_getframe(isp_node_handle, chn_id, timeout, &out_img);
+	ret = hbn_vnode_getframe(isp_node_handle, ochn_id, timeout, &out_img);
 	if (ret != 0) {
-		printf("hbn_vnode_getframe from isp chn:%d failed(%d)\n", chn_id, ret);
+		printf("hbn_vnode_getframe from isp chn:%d failed(%d)\n", ochn_id, ret);
 		return;
 	}
 
@@ -406,7 +408,7 @@ void isp_dump_func(hbn_vnode_handle_t isp_node_handle, int is_get_2a) {
 	// 将帧数据写入文件
 	snprintf(dst_file, sizeof(dst_file),
 		"isp_handle_%d_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
-		(int)isp_node_handle, chn_id,
+		(int)isp_node_handle, ochn_id,
 		out_img.buffer.width, out_img.buffer.height, out_img.buffer.stride,
 		out_img.info.frame_id, out_img.info.timestamps);
 	printf("isp(%d) dump yuv %dx%d(stride:%d), buffer size: %ld + %ld frame id: %d,"
@@ -424,7 +426,7 @@ void isp_dump_func(hbn_vnode_handle_t isp_node_handle, int is_get_2a) {
 			out_img.buffer.size[1]);
 
 	// 释放帧数据
-	hbn_vnode_releaseframe(isp_node_handle, chn_id, &out_img);
+	hbn_vnode_releaseframe(isp_node_handle, ochn_id, &out_img);
 }
 
 int isp_backfill_2a(hbn_vnode_handle_t master_handle, hbn_vnode_handle_t slave_handle)
@@ -466,15 +468,15 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle,
 {
 	int ret;
 	char dst_file[128];
-	uint32_t chn_id = 0;
+	uint32_t ochn_id = 0;
 	uint32_t timeout = 2000;
 	hbn_vnode_image_t out_img;
 	int is_get_2a = 0;
 
 	// 调用hbn_vnode_getframe获取帧数据
-	ret = hbn_vnode_getframe_cond(vin_node_handle, chn_id, timeout, 0, &out_img);
+	ret = hbn_vnode_getframe_cond(vin_node_handle, ochn_id, timeout, 0, &out_img);
 	if (ret != 0) {
-		printf("hbn_vnode_getframe from vin chn:%d failed(%d)\n", chn_id, ret);
+		printf("hbn_vnode_getframe from vin chn:%d failed(%d)\n", ochn_id, ret);
 		return;
 	}
 
@@ -486,7 +488,7 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle,
 	// 将帧数据写入文件
 	snprintf(dst_file, sizeof(dst_file),
 		"vin_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld.raw",
-		chn_id,
+		ochn_id,
 		out_img.buffer.width, out_img.buffer.height, out_img.buffer.stride,
 		out_img.info.frame_id, out_img.info.timestamps);
 	printf("vin dump raw %dx%d(stride:%d), buffer size: %ld frame id: %d,"
@@ -510,7 +512,7 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle,
 	isp_dump_func(isp_node_handle, is_get_2a);
 
 	// 释放帧数据
-	hbn_vnode_releaseframe(vin_node_handle, chn_id, &out_img);
+	hbn_vnode_releaseframe(vin_node_handle, ochn_id, &out_img);
 }
 
 static int handle_user_command(pipe_contex_t *vin_isp_contex,

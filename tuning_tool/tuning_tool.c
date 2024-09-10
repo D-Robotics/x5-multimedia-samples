@@ -48,39 +48,8 @@ static void parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 	}
 }
 
-#if 0
-static void tuning_get_char(char *des, char *def)
-{
-	char temp;
-	int32_t len = 0;
-
-	while ((temp = getchar()) != '\n')
-	{
-		snprintf(&des[len], TUNING_PRINT_SIZE_MAX, "%s", &temp);
-		len += 1;
-	}
-
-	if (des[0] == 0)
-		sprintf(&des[0], "%s", def);
-}
-
-static void tuning_param_dbg(tuning_context_t *ctx)
-{
-	if (ctx->cam_json && ctx->cam_json[0] != ' ')
-		pr_tuning("camera json path: %s\n", ctx->cam_json);
-	pr_tuning("vpm json path: %s\n", ctx->vpm_json);
-}
-#endif
-
 static int32_t tuning_specify_case(tuning_context_t *ctx)
 {
-#if 0
-	printf("camera config json path(/app/testcase/S08_VPS/testsuite/res/cfg/tuning_cfg/cam_x5_config.json):");
-	tuning_get_char(ctx->cam_json, "/app/testcase/S08_VPS/testsuite/res/cfg/tuning_cfg/cam_x5_config.json");
-
-	printf("vpm config json path(/app/testcase/S08_VPS/testsuite/res/cfg/tuning_cfg/vpm_x5_config.json):");
-	tuning_get_char(ctx->vpm_json, "/app/testcase/S08_VPS/testsuite/res/cfg/tuning_cfg/vpm_x5_config.json");
-#endif
 	if (ctx->cam_json[0] == 0)
 		sprintf(&ctx->cam_json[0], "%s", DEF_CAM_PATH);
 
@@ -104,7 +73,9 @@ static int32_t tuning_feeback_prepare_next(tuning_context_t *ctx)
 		pr_tuning("No such file: %s\n", ctx->img_path[ctx->cur_img]);
 		return -1;
 	}
-	// pr_tuning("feedback file: %s, index %d, size %ld\n", ctx->img_path[ctx->cur_img], ctx->cur_img, statbuf.st_size);
+#ifdef TUNING_DEBUG
+	pr_tuning("feedback file: %s, index %d, size %ld\n", ctx->img_path[ctx->cur_img], ctx->cur_img, statbuf.st_size);
+#endif
 
 	file = fopen(ctx->img_path[ctx->cur_img], "r");
 	if (!file) {
@@ -135,10 +106,13 @@ static void *tuning_main_worker_thread(void *arg)
 	char file_name[32] = {0};
 
 	ctx = (tuning_context_t *)arg;
+#ifdef TUNING_DEBUG
 	pr_tuning("%s run \n", __func__);
+#endif
 
-	if (ctx->send_raw && BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
-		pr_tuning("Cannot send raw in feedback mode\n");
+	if (ctx->send_raw &&
+		(BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK) || !ctx->is_offline)) {
+		pr_tuning("Cannot send raw in feedback mode or ddr disable!\n");
 		goto out;
 	}
 
@@ -151,8 +125,8 @@ static void *tuning_main_worker_thread(void *arg)
 			}
 
 			if (HBPLAYER_EN) {
-				// todo: get bitwidth from sif ichn
-				ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img, RAW_16, 0);
+				ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img,
+					(ctx->vin_format == 0x2A ? RAW_8 : RAW_10), 0);
 				if (ret)
 					pr_tuning("send to hbplayer failed, skip it\n");
 			}
@@ -188,8 +162,9 @@ static void *tuning_main_worker_thread(void *arg)
 			if (ret)
 				pr_tuning("send to hbplayer failed, skip it\n");
 		}
-
-		// pr_tuning("get buffer size %ld-%ld\n", yuv_img.buffer.size[0], yuv_img.buffer.size[1]);
+#ifdef TUNING_DEBUG
+		pr_tuning("get buffer size %ld-%ld\n", yuv_img.buffer.size[0], yuv_img.buffer.size[1]);
+#endif
 		hbn_vnode_releaseframe(ctx->vnode_fd[1], 0, &yuv_img);
 	}
 out:
@@ -473,16 +448,22 @@ static void *tuning_api_worker_thread(void *arg)
 static int32_t tuning_feeback_init(tuning_context_t *ctx)
 {
 	isp_ichn_attr_t ichn_attr = {0};
-	char file_path[255];
+	char file_path[255] = {0};
 
 	if (getcwd(file_path, sizeof(file_path)) != NULL) {
-		printf("Current working directory: %s\n", file_path);
+#ifdef TUNING_DEBUG
+		pr_tuning("Current working directory: %s\n", file_path);
+#endif
 	} else {
-		printf("getcwd fail\n");
+		pr_tuning("getcwd fail\n");
 		return -1;
 	}
 
 	FUNC_EQ(tuning_get_raw_list(file_path, ctx->img_path, ctx->img_name, &ctx->img_num), 0, return -1);
+	if (ctx->img_num < 1) {
+		pr_tuning("no raw file found in working directory\n");
+		return -1;
+	}
 	FUNC_EQ(hbn_vnode_get_ichn_attr(ctx->vnode_fd[1], 0, &ichn_attr), 0, return -1);
 	FUNC_EQ(tuning_alloc_feedback_buffer(&ctx->src_img.buffer, ichn_attr.height, ichn_attr.width, 0), 0, return -1);
 
@@ -493,7 +474,8 @@ static int32_t tuning_case_run(tuning_context_t *ctx)
 {
 	int32_t ret = 0;
 	hbn_vflow_handle_t vflow_fd = 0;
-	isp_attr_t isp_attr;
+	// isp_attr_t isp_attr;
+	vin_ochn_attr_t vin_oattr;
 
 	if (!ctx->vpm_json) {
 		pr_tuning("vpm cfg json null!\n");
@@ -502,36 +484,44 @@ static int32_t tuning_case_run(tuning_context_t *ctx)
 
 	FUNC_EQ(hbn_vflow_create_cfg(ctx->vpm_json, &vflow_fd), 0, return -1);
 	if (ctx->cam_json && ctx->cam_json[0] != ' ') {
+#ifdef TUNING_DEBUG
 		pr_tuning("camera run in this case.\n");
-		FUNC_EQ(hbn_camera_init_cfg(ctx->cam_json), 0, goto destroy);
+#endif
+		FUNC_EQ(hbn_camera_init_cfg(ctx->cam_json), 0, goto destroy_vflow);
 	}
 	ctx->vflow_fd = vflow_fd;
 
 	if (!BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
 		ctx->vnode_fd[0] = hbn_vflow_get_vnode_handle(ctx->vflow_fd, HB_VIN, 0);
 		if (ctx->vnode_fd[0] < 0) {
-			pr_tuning("isp hbn_vflow_get_vnode_hanle failed!\n");
-			ret = -1;
+			pr_tuning("hbn_vflow_get_vnode_hanle vin failed!\n");
+			ret = ctx->vnode_fd[0];
+			goto destroy_cam;
+		}
+
+		ret = hbn_vnode_get_ochn_attr(ctx->vnode_fd[0], 0, &vin_oattr);
+		if (ret < 0) {
+			pr_tuning("hbn_vnode_get_ochn_attr vin failed!\n");
 			goto destroy;
 		}
+		ctx->is_offline = vin_oattr.ddr_en ? 1 : 0;
+		ctx->vin_format = vin_oattr.vin_basic_attr.format;
 	}
 
 	ctx->vnode_fd[1] = hbn_vflow_get_vnode_handle(ctx->vflow_fd, HB_ISP, 0);
 	if (ctx->vnode_fd[1] < 0) {
-		pr_tuning("isp hbn_vflow_get_vnode_hanle failed!\n");
-		ret = -1;
-		goto destroy;
+		pr_tuning("hbn_vflow_get_vnode_hanle isp failed!\n");
+		ret = ctx->vnode_fd[1];
+		goto destroy_cam;
 	}
 
+	// ret = hbn_vnode_get_attr(ctx->vnode_fd[1], &isp_attr);
+	// if (ret < 0) {
+	// 	pr_tuning("isp hbn_vnode_get_attr failed!\n");
+	// 	goto destroy;
+	// }
 	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK))
-		FUNC_EQ(tuning_feeback_init(ctx), 0, return -1);
-
-	ret = hbn_vnode_get_attr(ctx->vnode_fd[1], &isp_attr);
-	if (ret < 0) {
-		pr_tuning("isp hbn_vnode_get_attr failed!\n");
-		goto destroy;
-	}
-	ctx->is_offline = isp_attr.input_mode == 2 ? 1 : 0;
+		FUNC_EQ(tuning_feeback_init(ctx), 0, goto destroy_cam);
 
 	if (HBPLAYER_EN) {
 		ctx->hbplayer_event = hb_tool_start_transfer(0);
@@ -546,10 +536,14 @@ static int32_t tuning_case_run(tuning_context_t *ctx)
 	FUNC_EQ(pthread_create(&ctx->api_thid, NULL, tuning_api_worker_thread, (void *)(ctx)), 0, goto destroy);
 
 	pthread_join(ctx->api_thid, NULL);
+#ifdef TUNING_DEBUG
 	pr_tuning("api thread join done\n");
+#endif
 
 	pthread_cancel(ctx->main_thid);
+#ifdef TUNING_DEBUG
 	pr_tuning("main thread cancel done\n");
+#endif
 
 	if (HBPLAYER_EN) {
 		hb_tool_stop_transfer(ctx->hbplayer_event);
@@ -558,13 +552,15 @@ static int32_t tuning_case_run(tuning_context_t *ctx)
 	hbn_vflow_stop(vflow_fd);
 
 destroy:
+	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK))
+		tuning_free_feedback_buffer(&ctx->src_img.buffer);
+
+destroy_cam:
 	if (ctx->cam_json && ctx->cam_json[0] != ' ')
 		FUNC_EQ(hbn_camera_init_cfg(NULL), 0, return -1);
 
+destroy_vflow:
 	hbn_vflow_destroy(vflow_fd);
-
-	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK))
-		tuning_free_feedback_buffer(&ctx->src_img.buffer);
 
 	pr_tuning("vflow destory done\n");
 

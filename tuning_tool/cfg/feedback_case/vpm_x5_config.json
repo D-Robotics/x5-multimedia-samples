@@ -28,7 +28,7 @@
 				"output": {
 					"cim_isp": {
 						"cim_isp_flyby": 0,
-						"ddr_enable": 1,
+						"ddr_enable": 0,
 						"buf_num": 6,
 						"format": 43,
 						"pack_mode": 1,
@@ -82,6 +82,7 @@
 			"input_mode": 2,
 			"sched_mode": 0,
 			"sensor_mode": 0,
+			"tile_mode": 0,
 			"width": 1920,
 			"height": 1080,
 			"input_format": 1,

@@ -30,6 +30,7 @@ typedef struct tuning_context {
 
 	uint32_t yuv_dump_cnt;
 	uint32_t is_offline;
+	uint32_t vin_format;
 	pthread_t main_thid;
 	pthread_t api_thid;
 	uint32_t err_cnt;

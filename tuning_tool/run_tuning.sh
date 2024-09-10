@@ -88,7 +88,6 @@ function suit_case_run() {
 
 	elif test "$run_case" == "feedback_case"; then
 		echo "Run $run_case"
-		echo "Notice: this script just support feedback 1080p raw now!!"
 		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" -w 1 "$@"
 
 	fi

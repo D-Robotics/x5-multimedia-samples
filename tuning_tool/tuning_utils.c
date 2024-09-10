@@ -202,14 +202,14 @@ int32_t tuning_get_raw_list(char *path, char img_path[][128], char img_name[][12
 	}
 
 	for (file = 0; file < file_cnt; file++) {
-		if (!strstr(namelist[file]->d_name, ".raw")) {
-			free(namelist[file]);
-			continue;
-		}
-
 		if (img_count >= TUNING_FEEDBACK_FILE_MAX) {
 			pr_tuning("Warning: support feedback max raw img number: %d\n", TUNING_FEEDBACK_FILE_MAX);
 			break;
+		}
+
+		if (!strstr(namelist[file]->d_name, ".raw")) {
+			free(namelist[file]);
+			continue;
 		}
 
 		strcpy((char *)&img_path[img_count], path);
@@ -219,6 +219,10 @@ int32_t tuning_get_raw_list(char *path, char img_path[][128], char img_name[][12
 
 		free(namelist[file]);
 	}
+
+	for (;file < file_cnt; file++)
+		free(namelist[file]);
+
 	*img_num = img_count;
 	free(namelist);
 

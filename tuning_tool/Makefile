@@ -10,6 +10,7 @@ SRCS := $(foreach cf, ./, $(wildcard $(cf)/*.c))
 OBJS := $(patsubst %.c,${TUNING_BUILD_DIR}/%.o,$(SRCS))
 
 LIBS += -levent_pthreads -lhbplayer -lpthread -levent
+# CFLAGS += -D TUNING_DEBUG
 
 .PHONY: all clean install
 

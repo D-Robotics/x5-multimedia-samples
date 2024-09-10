@@ -90,6 +90,7 @@
 			"input_mode": 0,
 			"sched_mode": 0,
 			"sensor_mode": 0,
+			"tile_mode": 0,
 			"width": 1920,
 			"height": 1080,
 			"input_format": 1,

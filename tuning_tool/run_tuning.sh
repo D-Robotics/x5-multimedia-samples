@@ -70,6 +70,10 @@ function suit_case_run() {
 		echo "Run $run_case"
 		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"
 
+	elif test "$run_case" == "sc035hgs_vc_rx0"; then
+		echo "Run $run_case"
+		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"
+
 	elif test "$run_case" == "evb_sc230ai_rx3"; then
 		echo "Run $run_case"
 		${COMMON_DIR}/isp_tuning -v "${vpm_json_path}" -c "${cam_json_path}" "$@"

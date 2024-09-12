@@ -735,31 +735,18 @@ int32_t vp_decode_config_param(media_codec_context_t *context, media_codec_id_t 
 
 static int32_t read_nv12_file(char *addr0, char *addr1, FILE *fd, uint32_t y_size)
 {
-	char *buffer = NULL;
 	if (fd == NULL || addr0 == NULL || addr1 == NULL || y_size == 0) {
 		printf("ERR(%s):null param.\n", __func__);
 		return -1;
 	}
 
-	buffer = (char *)malloc(y_size + y_size / 2);
-
-	if (fread(buffer, 1, y_size, fd) != y_size) {
-		if (buffer)
-			free(buffer);
+	if (fread(addr0, 1, y_size, fd) != y_size) {
 		return -1;
 	}
 
-	if (fread(buffer + y_size, 1, y_size / 2, fd) != y_size / 2) {
-		if (buffer)
-			free(buffer);
+	if (fread(addr1, 1, y_size / 2, fd) != y_size / 2) {
 		return -1;
 	}
-
-	memcpy(addr0, buffer, y_size);
-	memcpy(addr1, buffer + y_size, y_size / 2);
-
-	if (buffer)
-		free(buffer);
 
 	return 0;
 }

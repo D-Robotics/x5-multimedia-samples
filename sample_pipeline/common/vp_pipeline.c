@@ -18,6 +18,11 @@ static gdc_list_info_t g_gdc_list_info[] = {
         .sensor_name = "sc230ai",
         .gdc_file_name = "./gdc_bin/sc230ai_gdc.bin",
         .is_valid = -1
+    },
+	{
+        .sensor_name = "imx415",
+        .gdc_file_name = "./gdc_bin/imx415_gdc.bin",
+        .is_valid = -1
     }
 };
 
@@ -368,6 +373,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index, camer
 
 	return 0;
 }
+
 int vp_get_vse_channel(int input_width, int input_height, int output_width, int output_height){
 	int input_size = input_width * input_height;
 	int output_size = output_width * output_height;
@@ -398,9 +404,12 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 	if(vp_pipeline_info->enable_gdc){
 		create_gdc_node(pipe_contex, vp_pipeline_info->sensor_name);
 	}
-	ret = create_vse_node(pipe_contex,
-		vp_pipeline_info->vse_bind_index, &(vp_pipeline_info->camera_config_info));
-	ERR_CON_EQ(ret, 0);
+	if(vp_pipeline_info->enable_vse){
+		ret = create_vse_node(pipe_contex,
+			vp_pipeline_info->vse_bind_index, &(vp_pipeline_info->camera_config_info));
+		ERR_CON_EQ(ret, 0);
+	}
+
 
 	// 创建HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
@@ -418,9 +427,12 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 		ERR_CON_EQ(ret, 0);
 	}
 
-	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
-							pipe_contex->vse_node_handle);
-	ERR_CON_EQ(ret, 0);
+	if(vp_pipeline_info->enable_vse){
+		ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
+								pipe_contex->vse_node_handle);
+		ERR_CON_EQ(ret, 0);
+	}
+
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vin_node_handle,
 							0,
@@ -436,19 +448,29 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 								0);
 		ERR_CON_EQ(ret, 0);
 
-		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-								pipe_contex->gdc_node_handle,
-								0,
-								pipe_contex->vse_node_handle,
-								0);
-		ERR_CON_EQ(ret, 0);
+		if(vp_pipeline_info->enable_vse){
+			ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+						pipe_contex->gdc_node_handle,
+						0,
+						pipe_contex->vse_node_handle,
+						1);
+			ERR_CON_EQ(ret, 0);
+			printf("gdc: enable, vse: enable\n");
+		}else{
+			printf("gdc: enable %ld, vse: disable\n", pipe_contex->gdc_node_handle);
+		}
 	}else{
-		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-								pipe_contex->isp_node_handle,
-								0,
-								pipe_contex->vse_node_handle,
-								0);
-		ERR_CON_EQ(ret, 0);
+		if(vp_pipeline_info->enable_vse){
+			ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+									pipe_contex->isp_node_handle,
+									0,
+									pipe_contex->vse_node_handle,
+									1);
+			ERR_CON_EQ(ret, 0);
+			printf("gdc: disable, vse: enable\n");
+		}else{
+			printf("gdc: disable, vse: disable\n");
+		}
 	}
 
 	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,

@@ -11,6 +11,7 @@ typedef struct vp_pipeline_info_s {
     int vse_bind_index;
     int sensor_mode;
 	int enable_gdc;
+	int enable_vse;
 	char *sensor_name;
     camera_config_info_t camera_config_info;
 }vp_pipeline_info_t;

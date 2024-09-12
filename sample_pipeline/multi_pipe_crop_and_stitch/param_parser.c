@@ -7,7 +7,9 @@ static int is_number(const char *str) {
 	return 1;
 }
 
-int check_camera_config(param_config_t *param_config){
+int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse){
+
+	printf("\n\n Show VSE info:\n");
 
 	//VSE放大： 最大分辨率是4K，放大倍数最大是4倍
 	int quarter_of_vse_max_resolution = 3840 *2160 / 4;
@@ -22,6 +24,12 @@ int check_camera_config(param_config_t *param_config){
 					camera_name_tmp, width_tmp, height_tmp);
 			return -1;
 		}
+		if((width_tmp == 3840) && (height_tmp == 2160)){
+			pipe_contex_need_vse[i] = 0;
+		}else{
+			pipe_contex_need_vse[i] = 1;
+		}
+		printf("\t [%d] need vse :%d\n", i, pipe_contex_need_vse[i]);
 	}
 	return 0;
 }
@@ -230,7 +238,17 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 	// 处理后的参数在这里可以使用
 	printf("\n\n Show sensor info:\n");
 	for (int i = 0; i < param_config->sensor_config_count; i++) {
-		param_config->sensor_param_config[i].vse_bind_n2d_chn = 5; 					//vse resize to 4K
+
+		vp_sensor_config_t* sensor_config = param_config->sensor_param_config[i].sensor_config;
+		int width_tmp = sensor_config->camera_config->width;
+		int height_tmp = sensor_config->camera_config->height;
+		int input_size = width_tmp * height_tmp;
+
+		if(input_size < 3840 * 2160){
+			param_config->sensor_param_config[i].vse_bind_n2d_chn = 5; 					//vse resize to 4K
+		}else{
+			param_config->sensor_param_config[i].vse_bind_n2d_chn = 0;
+		}
 
 		printf("  Pipeline index %d:\n", i);
 		printf("\tSensor index: %d\n", param_config->sensor_param_config[i].select_sensor_id);
@@ -239,6 +257,9 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		printf("\tVse Channel: %d\n", param_config->sensor_param_config[i].vse_bind_n2d_chn);
 		printf("\tGDC Enable: %d\n", param_config->gdc_enable);
 	}
+	printf("\n\n blend info: %f\n", param_config->blend_ratio);
+
+	printf("\n\n enable print debug info: %d\n", param_config->verbose_flag);
 
 	printf("\n\n Show output info:\n");
 	printf("\t Output Form: %s\n", param_config->output);

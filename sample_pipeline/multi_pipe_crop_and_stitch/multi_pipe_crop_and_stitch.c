@@ -28,6 +28,7 @@
 typedef struct {
 	param_config_t param_config;
 
+	int pipe_contex_need_vse[MAX_PIPE_NUM];
 	pipe_contex_t pipe_contex[MAX_PIPE_NUM];
 	pipe_contex_t vse_feed_back_pipeline;
 	vp_vse_feedback_pipeline_info_t vp_vse_pipeline_info;
@@ -46,7 +47,7 @@ typedef struct {
 	int output_width;
 	int output_height;
 	int is_running;
-	pthread_t get_vse_data_thread;
+	pthread_t get_data_from_pipeline_thread;
 	pthread_t get_stitch_data_thread;
 	pthread_t output_thread;
 
@@ -95,13 +96,14 @@ int init_media_codec_buffer_from_n2d_buffer(media_codec_buffer_t *dst_codec_buff
 	return 0;
 }
 
-void *get_vse_data(void *context){
+void *get_data_from_pipeline(void *context){
 	int ret = 0;
-	prctl(PR_SET_NAME, "get_vse_data");
+	prctl(PR_SET_NAME, "get_data_from_pipeline");
 	multi_pipe_stitch_info_t *multi_pipe_stitch_info = (multi_pipe_stitch_info_t *)context;
 	param_config_t *param_config = &multi_pipe_stitch_info->param_config;
 
 	data_item_t *data_item = NULL;
+
 	while (multi_pipe_stitch_info->is_running){
 
 		sync_queue_t* vse_to_n2d = &multi_pipe_stitch_info->vse_to_n2d;
@@ -114,19 +116,37 @@ void *get_vse_data(void *context){
 		for (int i = 0; i < param_config->sensor_config_count; i++){
 			sensor_param_config_t* sensor_param_config = &param_config->sensor_param_config[i];
 			pipe_contex_t *pipe_contex = &multi_pipe_stitch_info->pipe_contex[i];
-			hbn_vnode_handle_t vse_node_handle = pipe_contex->vse_node_handle;
 
 			if(i >= data_item->item_count){
 				printf("sensor config index %d >= sync queue data item count %d\n", i, data_item->item_count);
 				break;
 			}
 
-			hbn_vnode_image_t *vse_chn_frame = ((hbn_vnode_image_t*)data_item->items) + i;
-			memset(vse_chn_frame, 0, sizeof(hbn_vnode_image_t));
-			ret = hbn_vnode_getframe(vse_node_handle, sensor_param_config->vse_bind_n2d_chn, 1000, vse_chn_frame);
+			int pipeline_node_channel;
+			hbn_vnode_handle_t pipeline_node_handle;
+			char *pipeline_node_name = NULL;
+			if(multi_pipe_stitch_info->pipe_contex_need_vse[i]){
+				pipeline_node_name = "VSE";
+				pipeline_node_handle = pipe_contex->vse_node_handle;
+				pipeline_node_channel = sensor_param_config->vse_bind_n2d_chn;
+			}else{
+				if(param_config->gdc_enable){
+					pipeline_node_name = "GDC";
+					pipeline_node_handle = pipe_contex->gdc_node_handle;
+					pipeline_node_channel = 0;
+				}else{
+					pipeline_node_name = "ISP";
+					pipeline_node_handle = pipe_contex->isp_node_handle;
+					pipeline_node_channel = 0;
+				}
+			}
+
+			hbn_vnode_image_t *pipeline_chn_frame = ((hbn_vnode_image_t*)data_item->items) + i;
+			memset(pipeline_chn_frame, 0, sizeof(hbn_vnode_image_t));
+			ret = hbn_vnode_getframe(pipeline_node_handle, pipeline_node_channel, 1000, pipeline_chn_frame);
 			if (ret != 0){
-				printf("hbn_vnode_getframe VSE channel %d failed, error code %d, vse handle %ld\n",
-					sensor_param_config->vse_bind_n2d_chn, ret, vse_node_handle);
+				printf("[%d] hbn_vnode_getframe %s channel %d failed, error code %d, handle %ld\n",
+					i, pipeline_node_name, pipeline_node_channel, ret, pipeline_node_handle);
 				break;
 			}
 			get_vse_frame_count++;
@@ -148,7 +168,7 @@ void *get_vse_data(void *context){
 	//stop other thread
 	multi_pipe_stitch_info->is_running = 0;
 
-	printf("get_vse_data thread is exit.\n");
+	printf("get_data_from_pipeline thread is exit.\n");
 	return NULL;
 }
 
@@ -259,11 +279,11 @@ void *get_stitch_data(void *context){
 	int src_image_duration_x = multi_pipe_stitch_info->output_width / param_config->sensor_config_count;
 	n2d_rectangle_t stitch_src_image_rect[croped_image_count]; //2或4
 	for (int i = 0; i < param_config->sensor_config_count; i++){
-		stitch_src_image_rect[i].x = i * src_image_duration_x;
+		stitch_src_image_rect[param_config->sensor_config_count - 1 - i].x = i * src_image_duration_x;
 		//画布决定： 画布只是 4K的部分 设置为0，如果是整个4k, 应该设置成 src_image_start_y
-		stitch_src_image_rect[i].y = src_image_start_y;
-		stitch_src_image_rect[i].width = src_image_duration_x;
-		stitch_src_image_rect[i].height = little_image_height;
+		stitch_src_image_rect[param_config->sensor_config_count - 1 - i].y = src_image_start_y;
+		stitch_src_image_rect[param_config->sensor_config_count - 1 - i].width = src_image_duration_x;
+		stitch_src_image_rect[param_config->sensor_config_count - 1 - i].height = little_image_height;
 	}
 
 	//0.6 prepare Color space conversion
@@ -316,8 +336,8 @@ void *get_stitch_data(void *context){
 
 		//1.1 wraper vse image to gpu 2d n2d_buffer
 		for (int i = 0; i < data_item->item_count; i++){
-			hbn_vnode_image_t *vse_chn_frame = ((hbn_vnode_image_t*)data_item->items) + i;
-			error = create_n2d_buffer_from_hbm_graphic(&n2d_buffer[i], &vse_chn_frame->buffer);
+			hbn_vnode_image_t *pipeline_chn_frame = ((hbn_vnode_image_t*)data_item->items) + i;
+			error = create_n2d_buffer_from_hbm_graphic(&n2d_buffer[i], &pipeline_chn_frame->buffer);
 			if(error != N2D_SUCCESS){
 				printf("create n2d buffer from hbm graphic faield.\n");
 				break;
@@ -395,9 +415,27 @@ void *get_stitch_data(void *context){
 			n2d_free(&n2d_buffer[i]);
 			sensor_param_config_t* sensor_param_config = &param_config->sensor_param_config[i];
 			pipe_contex_t *pipe_contex = &multi_pipe_stitch_info->pipe_contex[i];
-			hbn_vnode_handle_t vse_node_handle = pipe_contex->vse_node_handle;
-			hbn_vnode_image_t *vse_chn_frame = ((hbn_vnode_image_t*)data_item->items) + i;
-			hbn_vnode_releaseframe(vse_node_handle, sensor_param_config->vse_bind_n2d_chn, vse_chn_frame);
+			hbn_vnode_image_t *pipeline_chn_frame = ((hbn_vnode_image_t*)data_item->items) + i;
+
+			int pipeline_node_channel;
+			hbn_vnode_handle_t pipeline_node_handle;
+			// char *pipeline_node_name = NULL;
+			if(multi_pipe_stitch_info->pipe_contex_need_vse[i]){
+				// pipeline_node_name = "VSE";
+				pipeline_node_handle = pipe_contex->vse_node_handle;
+				pipeline_node_channel = sensor_param_config->vse_bind_n2d_chn;
+			}else{
+				if(param_config->gdc_enable){
+					// pipeline_node_name = "GDC";
+					pipeline_node_handle = pipe_contex->gdc_node_handle;
+					pipeline_node_channel = 0;
+				}else{
+					// pipeline_node_name = "ISP";
+					pipeline_node_handle = pipe_contex->isp_node_handle;
+					pipeline_node_channel = 0;
+				}
+			}
+			hbn_vnode_releaseframe(pipeline_node_handle, pipeline_node_channel, pipeline_chn_frame);
 		}
 		n2d_free(&stitch_dst_n2d);
 
@@ -445,9 +483,10 @@ void *send_to_hdmi_display(void *context){
 	// param_config_t *param_config = &multi_pipe_stitch_info->param_config;
 
 	prctl(PR_SET_NAME, "send_to_hdmi_display");
-	int vse_channel =multi_pipe_stitch_info->vp_vse_pipeline_info.vse_channel;
 	pipe_contex_t *vse_feedback_pipeline = &multi_pipe_stitch_info->vse_feed_back_pipeline;
 	sync_queue_t* n2d_to_output = &multi_pipe_stitch_info->n2d_to_output;
+
+	int count = 0;
 	while (multi_pipe_stitch_info->is_running){
 		data_item_t *data_item = NULL;
 		ret = sync_queue_obtain_inused_object(n2d_to_output, 5000, &data_item);
@@ -459,38 +498,59 @@ void *send_to_hdmi_display(void *context){
 			printf("sync_queue_obtain_inused_object get data_item->itemcount is error %d. \n", data_item->item_count);
 			break;
 		}
+		if((multi_pipe_stitch_info->hdmi_output_width != 3840) || (multi_pipe_stitch_info->hdmi_output_height != 2160)){
+			hbn_vnode_image_t vse_src_image;
+			hbn_vnode_image_t vse_resized_image;
+			hb_mem_graphic_buf_t *hb_mem_graphic_buf = (hb_mem_graphic_buf_t*)data_item->items;
+			vse_src_image.buffer = *hb_mem_graphic_buf;
+			int vse_channel =multi_pipe_stitch_info->vp_vse_pipeline_info.vse_channel;
+			ret = vp_send_to_vse_feedback(vse_feedback_pipeline, vse_channel, &vse_src_image);
+			if(ret != 0){
+				printf("vp_send_to_vse_feedback failed.\n");
+				break;
+			}
+			ret = vp_get_from_vse_feedback(vse_feedback_pipeline, vse_channel, &vse_resized_image);
+			if(ret != 0){
+				printf("vp_get_from_vse_feedback failed.\n");
+				break;
+			}
 
-		hbn_vnode_image_t vse_src_image;
-		hbn_vnode_image_t vse_resized_image;
-		hb_mem_graphic_buf_t *hb_mem_graphic_buf = (hb_mem_graphic_buf_t*)data_item->items;
-		vse_src_image.buffer = *hb_mem_graphic_buf;
-		ret = vp_send_to_vse_feedback(vse_feedback_pipeline, vse_channel, &vse_src_image);
-		if(ret != 0){
-			printf("vp_send_to_vse_feedback failed.\n");
-			break;
-		}
-		ret = vp_get_from_vse_feedback(vse_feedback_pipeline, vse_channel, &vse_resized_image);
-		if(ret != 0){
-			printf("vp_get_from_vse_feedback failed.\n");
-			break;
-		}
+			ret = vp_display_set_frame(&multi_pipe_stitch_info->vp_drm_context, &vse_resized_image.buffer);
+			if(ret != 0){
+				printf("vp_display_set_frame failed.\n");
+				break;
+			}
 
-		ret = vp_display_set_frame(&multi_pipe_stitch_info->vp_drm_context, &vse_resized_image.buffer);
-		if(ret != 0){
-			printf("vp_display_set_frame failed.\n");
-			break;
+			ret = vp_release_vse_feedback(vse_feedback_pipeline, vse_channel, &vse_resized_image);
+			if(ret != 0){
+				printf("vp_release_vse_feedback failed.\n");
+				break;
+			}
+		}else{
+			ret = vp_display_set_frame(&multi_pipe_stitch_info->vp_drm_context, (hb_mem_graphic_buf_t*)data_item->items);
+			if(ret != 0){
+				printf("vp_display_set_frame failed.\n");
+				continue;
+			}
 		}
-
-		ret = vp_release_vse_feedback(vse_feedback_pipeline, vse_channel, &vse_resized_image);
-		if(ret != 0){
-			printf("vp_release_vse_feedback failed.\n");
-			break;
+#if 0
+		if(count % 10 == 0){
+			char output_file_name[128];
+			hb_mem_graphic_buf_t *hb_mem_graphic_buf_tmp = (hb_mem_graphic_buf_t*)data_item->items;
+			memset(output_file_name, 0, sizeof(output_file_name));
+			sprintf(output_file_name, "/tmp/%d_3840_2160_nv12.yuv", count);
+			dump_image_to_file(output_file_name, hb_mem_graphic_buf_tmp->virt_addr[0],
+				hb_mem_graphic_buf_tmp->size[0] + hb_mem_graphic_buf_tmp->size[1]);
 		}
-
+#endif
 		ret = sync_queue_repay_unused_object(n2d_to_output, 5000, data_item);
 		if(ret != 0){
 			printf("sync_queue_repay_unused_object from n2d_to_output failed.\n");
 			break;
+		}
+		count++;
+		if(count % 60 == 0){
+			count = 0;
 		}
 	}
 	multi_pipe_stitch_info->is_running = 0;
@@ -691,6 +751,7 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			.vse_bind_index = sensor_param_config->vse_bind_n2d_chn,
 			.sensor_mode = sensor_param_config->sensor_mode,
 			.enable_gdc = param_config->gdc_enable,
+			.enable_vse = multi_pipe_stitch_info->pipe_contex_need_vse[i],
 			.sensor_name = sensor_param_config->sensor_config->camera_config->name,
 			.camera_config_info = {
 				.width = multi_pipe_stitch_info->output_width,
@@ -756,26 +817,30 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			printf("hdmi init failed.\n");
 			return -1;
 		}
+		if((multi_pipe_stitch_info->hdmi_output_width != 3840) || (multi_pipe_stitch_info->hdmi_output_height != 2160)){
+			vp_vse_feedback_pipeline_info_t vp_vse_pipeline_info = {
+				.input_width = multi_pipe_stitch_info->output_width,
+				.input_height = multi_pipe_stitch_info->output_height,
+				.output_width = multi_pipe_stitch_info->hdmi_output_width,
+				.output_height = multi_pipe_stitch_info->hdmi_output_height,
+				.vse_channel = 0,
+			};
 
-		vp_vse_feedback_pipeline_info_t vp_vse_pipeline_info = {
-			 .input_width = multi_pipe_stitch_info->output_width,
-			 .input_height = multi_pipe_stitch_info->output_height,
-			 .output_width = multi_pipe_stitch_info->hdmi_output_width,
-			 .output_height = multi_pipe_stitch_info->hdmi_output_height,
-			 .vse_channel = 0,
-		};
-
-		ret = vp_create_start_vse_feedback_pieline(&multi_pipe_stitch_info->vse_feed_back_pipeline, &vp_vse_pipeline_info);
-		if(ret != 0){
-			printf("\n\nFailed: vp_create_start_vse_feedback_pieline.\n\n");
-			return -1;
+			ret = vp_create_start_vse_feedback_pieline(&multi_pipe_stitch_info->vse_feed_back_pipeline, &vp_vse_pipeline_info);
+			if(ret != 0){
+				printf("\n\nFailed: vp_create_start_vse_feedback_pieline.\n\n");
+				return -1;
+			}
+			multi_pipe_stitch_info->vp_vse_pipeline_info = vp_vse_pipeline_info;
+		}else{
+			printf("hdmi support 4K resolution, so dont use feedback vse\n");
 		}
-		multi_pipe_stitch_info->vp_vse_pipeline_info = vp_vse_pipeline_info;
+
 	}
 
 	//4. start all thread
 	multi_pipe_stitch_info->is_running = 1;
-	ret = pthread_create(&multi_pipe_stitch_info->get_vse_data_thread, NULL, (void *)get_vse_data,
+	ret = pthread_create(&multi_pipe_stitch_info->get_data_from_pipeline_thread, NULL, (void *)get_data_from_pipeline,
 							(void *)multi_pipe_stitch_info);
 	ERR_CON_EQ(ret, 0);
 	ret = pthread_create(&multi_pipe_stitch_info->get_stitch_data_thread, NULL, (void *)get_stitch_data,
@@ -801,7 +866,7 @@ int pipeline_stop(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 
 	//1. wait thread stop
 	multi_pipe_stitch_info->is_running = 0;
-	pthread_join(multi_pipe_stitch_info->get_vse_data_thread, NULL);
+	pthread_join(multi_pipe_stitch_info->get_data_from_pipeline_thread, NULL);
 	pthread_join(multi_pipe_stitch_info->get_stitch_data_thread, NULL);
 	pthread_join(multi_pipe_stitch_info->output_thread, NULL);
 	param_config_t *param_config = &multi_pipe_stitch_info->param_config;
@@ -852,7 +917,8 @@ int main(int argc, char** argv) {
 	if(ret != 0){
 		return -1;
 	}
-	ret = check_camera_config(&multi_pipe_stitch_info.param_config);
+	ret = check_camera_config(&multi_pipe_stitch_info.param_config,
+		multi_pipe_stitch_info.pipe_contex_need_vse);
 	if(ret != 0){
 		printf("camera param is invalid, so return.\n");
 		return -1;

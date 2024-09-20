@@ -129,6 +129,7 @@ void vp_print_debug_infos(void)
 
 	printf("======================= Buffer =========================\n");
 	print_file("/sys/devices/virtual/vps/flow/fmgr_stats");
+	print_file("/sys/class/vps/flow/fmgr_stats");
 
 	if (log_ctrl_level_get(NULL) == LOG_DEBUG) {
 		printf("========================= ION ==========================\n");
@@ -138,7 +139,17 @@ void vp_print_debug_infos(void)
 	}
 	printf("========================= END ===========================\n");
 }
+void vp_print_debug_infos_when_error(void)
+{
+	print_file("/sys/class/vps/flow/fmgr_stats");
+	print_file("/proc/interrupts");
 
+	printf("sleep 5\n");
+	sleep(5);
+	print_file("/sys/class/vps/flow/fmgr_stats");
+	print_file("/proc/interrupts");
+
+}
 void vp_normal_buf_info_print(ImageFrame *frame)
 {
 }

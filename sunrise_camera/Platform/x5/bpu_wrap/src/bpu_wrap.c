@@ -139,6 +139,9 @@ static int32_t prepare_output_tensor(hbDNNTensor *output_tensor,
 			"hbDNNGetOutputTensorProperties failed");
 	HB_CHECK_SUCCESS(hbSysAllocCachedMem(&output[i].sysMem[0], output[i].properties.alignedByteSize),
 			"hbSysAllocCachedMem failed");
+	SC_LOGI("model output tensor [%d] output_count: %d, size: %d\n", i,
+		output_count, output[i].properties.alignedByteSize);
+
 	}
 
   return ret;
@@ -289,8 +292,8 @@ static void *inference_yolov5s(void *ptr)
 
 		// 如果后处理队列满的，直接返回
 		if (mQueueIsFull(&bpu_handle->m_output_queue)) {
-			SC_LOGI("post process queue full, skip it, queue length is %d",
-				bpu_handle->m_output_queue.u32Length);
+			// SC_LOGI("post process queue full, skip it, queue length is %d",
+			// 	bpu_handle->m_output_queue.u32Length);
 			cur_ouput_buf_idx++;
 			cur_ouput_buf_idx %= 5;
 			continue;

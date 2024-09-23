@@ -244,18 +244,21 @@ static void tuning_handle_set_expsoure(tuning_context_t *ctx)
 
 static void tuning_handle_get_expsoure(tuning_context_t *ctx)
 {
+	uint32_t lines_per_second;
 	hbn_isp_exposure_attr_t exp_attr = {0};
 
 	FUNC_EQ(hbn_isp_get_exposure_attr(ctx->vnode_fd[1], &exp_attr), 0, return);
+	FUNC_EQ(hbn_isp_get_lines_persecond(ctx->vnode_fd[1], &lines_per_second), 0, return);
 
 	printf("Currently AE is in %s mode\n", (exp_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":"auto");
 
 	printf("exp_time: %f\n", exp_attr.manual_attr.exp_time);
+	printf("lines_per_second: %d\n", lines_per_second);
 	printf("again: %f\n", exp_attr.manual_attr.again);
 	printf("dgain: %f\n", exp_attr.manual_attr.dgain);
 	printf("ispgain: %f\n", exp_attr.manual_attr.ispgain);
 	printf("ae_exp: %f\n",exp_attr.manual_attr.ae_exp);
-	printf("mode %d\n", exp_attr.auto_attr.mode);
+	printf("mode: %d\n", exp_attr.auto_attr.mode);
 
 	printf("exp range %f~%f\n", exp_attr.auto_attr.exp_time_range.min, exp_attr.auto_attr.exp_time_range.max);
 	printf("again range %f~%f\n", exp_attr.auto_attr.again_range.min, exp_attr.auto_attr.again_range.max);

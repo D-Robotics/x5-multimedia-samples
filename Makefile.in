@@ -64,6 +64,20 @@ LIBSDIR = 	-L ${HR_BUILD_OUTPUT_DIR}/build/hbre_deps/usr/lib \
 		-L ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/lib \
 		-L ${PLATFORM_SAMPLES_DIR}/lib
 
+ifeq (${HR_SYSTEM_TYPE},ubuntu)
+INCS += -I${DEPLOY_SYSTEM_DIR}/usr/include/aarch64-linux-gnu
+INCS += -I${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/include
+CFLAGS += --sysroot=${DEPLOY_SYSTEM_DIR}/
+CXXFLAGS += --sysroot=${DEPLOY_SYSTEM_DIR}/
+LIBSDIR += --sysroot=${DEPLOY_SYSTEM_DIR}/
+LIBSDIR += -L${DEPLOY_SYSTEM_DIR}/lib/aarch64-linux-gnu
+LIBSDIR += -L${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/lib
+LIBSDIR += -L${DEPLOY_SYSTEM_DIR}/usr/lib/aarch64-linux-gnu
+LIBSDIR += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/lib/aarch64-linux-gnu
+LIBSDIR += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/lib
+LIBSDIR += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/lib/aarch64-linux-gnu
+endif
+
 LIBS = 	-lcam \
 	-lvpf \
 	-lhbmem \
@@ -78,4 +92,3 @@ $(info PLATFORM_SAMPLES_DIR directory (absolute): $(PLATFORM_SAMPLES_DIR))
 SRC_PATH = $(shell pwd)
 SRC_PATH += ${PLATFORM_SAMPLES_DIR}/utils
 SRC_PATH += $(shell find ${PLATFORM_SAMPLES_DIR}/vp_sensors -maxdepth 1 -type d)
-

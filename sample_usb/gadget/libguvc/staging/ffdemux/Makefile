@@ -1,4 +1,5 @@
 include ./Makefile.in
+include ../../../../../Makefile.in
 
 ifeq (${BUILD_OUTPUT_PATH},)
 export BUILD_OUTPUT_PATH=./
@@ -12,7 +13,7 @@ OBJECT := ${BUILD_OUTPUT_PATH}/ffdemux
 OBJS := $(addprefix ${BUILD_OUTPUT_PATH}/,$(SRC:.c=.o))
 
 CFLAGS +=
-LDFLAGS += -L./ -L${BUILD_OUTPUT_PATH} -L${DEPLOY_SYSTEM_DIR}/usr/lib
+LDFLAGS += -L./ -L${BUILD_OUTPUT_PATH} -L${DEPLOY_SYSTEM_DIR}/usr/lib ${LIBSDIR}
 
 INCS += -I./inc -I${DEPLOY_SYSTEM_DIR}/usr/include
 LIBS += -lpthread -lavformat -lavcodec -lavutil -lz -lssl -lcrypto -ldrm

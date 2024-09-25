@@ -13,6 +13,18 @@ SRC += $(wildcard *.c $(patsubst %,%/*.c,vp_sensors) $(patsubst %,%/*/*.c,vp_sen
 OBJ := $(patsubst %.cpp,%.obj,$(patsubst %.c,%.o,$(SRC)))
 DEP := $(patsubst %.obj,%.dep,$(patsubst %.o,%.d,$(OBJ)))
 
+ifeq (${HR_SYSTEM_TYPE},ubuntu)
+INC += -I${DEPLOY_SYSTEM_DIR}/usr/include/aarch64-linux-gnu
+INC += -I${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/include
+LIB += --sysroot=${DEPLOY_SYSTEM_DIR}/
+LIB += -L${DEPLOY_SYSTEM_DIR}/lib/aarch64-linux-gnu
+LIB += -L${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/lib
+LIB += -L${DEPLOY_SYSTEM_DIR}/usr/lib/aarch64-linux-gnu
+LIB += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/lib/aarch64-linux-gnu
+LIB += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/lib
+LIB += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/lib/aarch64-linux-gnu
+endif
+
 CC := $(COMPILE_PREFIX)gcc
 CFLAGS := $(INC) -Werror -O0 -DBSD=1 -fPIC $(CFLAGS_EX) -Wno-error=unused-function
 CXX := $(COMPILE_PREFIX)c++
@@ -22,6 +34,11 @@ LIBRARY_LINK := $(COMPILE_PREFIX)c++ -shared -o
 LIBRARY_LINK_STATIC := $(COMPILE_PREFIX)ar cr
 LIBRARY_LINK_OPTS =
 STRIP := $(COMPILE_PREFIX)strip
+
+ifeq (${HR_SYSTEM_TYPE},ubuntu)
+CFLAGS += --sysroot=${DEPLOY_SYSTEM_DIR}/
+CXXFLAGS += --sysroot=${DEPLOY_SYSTEM_DIR}/
+endif
 
 TARGET := libvpp.a
 
@@ -53,4 +70,3 @@ clean:
 	@rm -rf $(OBJ) $(DEP) $(TARGET)
 
 sinclude $(DEP)
-

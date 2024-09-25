@@ -1,4 +1,5 @@
 include ./Makefile.in
+include ../../../Makefile.in
 
 ifeq (${BUILD_OUTPUT_PATH},)
 export BUILD_OUTPUT_PATH=./
@@ -7,7 +8,7 @@ endif
 $(info BUILD_OUTPUT_PATH directory (absolute): $(BUILD_OUTPUT_PATH))
 
 CFLAGS  += -D_GNU_SOURCE
-LDFLAGS += -L./ -L${BUILD_OUTPUT_PATH} -L${DEPLOY_SYSTEM_DIR}/usr/lib
+LDFLAGS += -L./ -L${BUILD_OUTPUT_PATH} -L${DEPLOY_SYSTEM_DIR}/usr/lib ${LIBSDIR}
 LIBS += -lpthread -lavformat -lavcodec -lavutil -lguvc -lz -lssl -lcrypto -ldrm
 LIBS_STATIC = -Bstatic $(filter-out -lguvc, $(LIBS))
 INCS += -I./inc -I${DEPLOY_SYSTEM_DIR}/usr/include

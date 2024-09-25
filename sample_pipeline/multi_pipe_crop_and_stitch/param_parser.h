@@ -23,10 +23,15 @@ typedef struct {
 }sensor_param_config_t;
 
 typedef struct {
+
+	char mode_name[256];
 	char output[256];
 	char *output_file_name;
 
 	float blend_ratio;
+
+	int bpu_enable;
+	int bpu_postporcess_enable;
 
 	int gdc_enable;
 	int verbose_flag;

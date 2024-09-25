@@ -163,7 +163,7 @@ void H264MainVideoSource::incomingDataHandler1()
 					unsigned long long uSeconds_sum_new_tmp = fPresentationTime.tv_sec * 1000000 + fPresentationTime.tv_usec;
 
 					long long sum_diff = uSeconds_sum_new_tmp - uSeconds_sum_old_tmp;
-#if 1
+#if 0
 					if((sum_diff < 32000) || (sum_diff > 34000) ){
 						SC_LOGW("[%s] [%s] sum_diff is error %ld\n", fShmId, fShmName, sum_diff);
 					}

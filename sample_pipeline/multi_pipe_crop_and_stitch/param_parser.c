@@ -43,6 +43,8 @@ static void print_help(void) {
 	printf("-o, --output=\"file or hdmi, default is file\n");
 	printf("-r, --ratio=\"camera image width ratio, used to blend, default is 0.0\n");
 	printf("-g, --gdc_enable\tEnable gdc, default is disable\n");
+	printf("-b, --bpu_enable\tEnable bpu, default is disable\n");
+	printf("-p, --bpu_postprocess_enable\tEnable bpu postprocess, default is disable\n");
 	printf("-v, --verbose\tEnable verbose mode\n");
 	printf("-h, --help\tShow help message\n");
 
@@ -168,6 +170,7 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		{"ratio", no_argument, NULL, 'r'},
 		{"output", no_argument, NULL, 'o'},
 		{"gdc_enable", no_argument, NULL, 'g'},
+		{"bpu_enable", no_argument, NULL, 'b'},
 		{"verbose", no_argument, NULL, 'v'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
@@ -178,10 +181,13 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 	param_config->output_file_name = "output.h265";
 	param_config->blend_ratio = 0.0;
 	param_config->gdc_enable = 0;
+	param_config->bpu_enable = 0;
+	param_config->bpu_postporcess_enable = 0;
+	param_config->verbose_flag = 0;
 
 	int c = 0;
 	int32_t total_pipeline_num = 0;
-	while ((c = getopt_long(argc, argv, "c:r:o:gvh", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "c:r:o:pbgvh", long_options, NULL)) != -1) {
 		switch (c) {
 		case 'c':
 			if (total_pipeline_num >= MAX_PIPE_NUM) {
@@ -215,6 +221,14 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		case 'g':
 			param_config->gdc_enable = 1;
 			break;
+
+		case 'b':
+			param_config->bpu_enable = 1;
+			break;
+		case 'p':
+			param_config->bpu_postporcess_enable = 1;
+			break;
+
 		case 'h':
 		default:
 			print_help();
@@ -258,6 +272,10 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		printf("\tGDC Enable: %d\n", param_config->gdc_enable);
 	}
 	printf("\n\n blend info: %f\n", param_config->blend_ratio);
+	printf("\n\n BPU info\n");
+
+	printf("\tenable: %d\n", param_config->bpu_enable);
+	printf("\tpost process enable: %d\n", param_config->bpu_postporcess_enable);
 
 	printf("\n\n enable print debug info: %d\n", param_config->verbose_flag);
 
@@ -266,6 +284,7 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 	if(strcmp(param_config->output, "file") == 0){
 		printf("\t Output filename:%s\n", param_config->output_file_name);
 	}
+
 	printf("\n\n");
 
 	return 0;

@@ -169,7 +169,7 @@ static int create_gdc_node(pipe_contex_t *pipe_contex, char *sensor_name) {
 		return -1;
 	}
 	hbn_buf_alloc_attr_t alloc_attr = {0};
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN
 		| HB_MEM_USAGE_CACHED |HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
@@ -258,7 +258,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
@@ -297,7 +297,7 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, chn_id, isp_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
@@ -356,7 +356,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index, camer
 	ret = hbn_vnode_set_ichn_attr(*vse_node_handle, chn_id, &vse_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN
 		| HB_MEM_USAGE_CACHED |HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
@@ -572,7 +572,7 @@ int vp_send_to_vse_feedback(pipe_contex_t *pipe_contex, int vse_channel, hbn_vno
 
 	int ret = hbn_vnode_sendframe(pipe_contex->vse_node_handle, vse_channel, src);
 	if (ret != 0) {
-		printf("hbn_vnode_sendframe to vse failed(%d)\n", ret);
+		printf("[vp_send_to_vse_feedback] hbn_vnode_sendframe to vse failed(%d)\n", ret);
 		return -1;
 	}
 
@@ -583,7 +583,7 @@ int vp_get_from_vse_feedback(pipe_contex_t *pipe_contex, int vse_channel, hbn_vn
 
 	int ret = hbn_vnode_getframe(pipe_contex->vse_node_handle, vse_channel, 2000 ,src);
 	if (ret != 0) {
-		printf("hbn_vnode_getframe to vse failed(%d)\n", ret);
+		printf("[vp_send_to_vse_feedback] hbn_vnode_getframe to vse failed(%d)\n", ret);
 		return -1;
 	}
 	return 0;

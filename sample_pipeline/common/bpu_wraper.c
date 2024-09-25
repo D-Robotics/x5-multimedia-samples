@@ -12,18 +12,9 @@
 #include <time.h>
 #include <stdbool.h>
 
-#include "communicate/sdk_common_cmd.h"
-#include "communicate/sdk_common_struct.h"
-#include "communicate/sdk_communicate.h"
-
-#include "utils/utils_log.h"
-#include "utils/mthread.h"
-#include "utils/time_utils.h"
-
-#include "bpu_wrap.h"
+#include "bpu_wraper.h"
 #include "yolov5_post_process.h"
-#include "fcos_post_process.h"
-
+#include "performance_test_util.h"
 /**
  * Align by 16
  */
@@ -34,7 +25,7 @@
 		/*value can be call of function*/                                  \
 		int32_t ret_code = value;                                           \
 		if (ret_code != 0) {                                             \
-			SC_LOGE("[BPU ERROR] %s, error code:%d", errmsg, ret_code); \
+			printf("[BPU ERROR] %s, error code:%d\n", errmsg, ret_code); \
 			return (ret_code);                                               \
 		}                                                                \
 	} while (0);
@@ -139,8 +130,8 @@ static int32_t prepare_output_tensor(hbDNNTensor *output_tensor,
 			"hbDNNGetOutputTensorProperties failed");
 	HB_CHECK_SUCCESS(hbSysAllocCachedMem(&output[i].sysMem[0], output[i].properties.alignedByteSize),
 			"hbSysAllocCachedMem failed");
-	SC_LOGI("model output tensor [%d] output_count: %d, size: %d\n", i,
-		output_count, output[i].properties.alignedByteSize);
+	// printf("model output tensor [%d] output_count: %d, size: %d\n", i,
+	// 	output_count, output[i].properties.alignedByteSize);
 
 	}
 
@@ -161,47 +152,32 @@ static void *post_process_yolov5s(void *ptr)
 	tsThread *privThread = (tsThread*)ptr;
 	Yolov5PostProcessInfo_t *post_info;
 
-	int count = 0;
+	// int count = 0;
 	mThreadSetName(privThread, __func__);
 
-	SC_LOGI("thread [post_process_yolov5s] start .");
-	struct TimeStatistics time_statistics;
+	printf("thread [post_process_yolov5s] start .\n");
+
 	bpu_handle_t *bpu_handle = (bpu_handle_t *)privThread->pvThreadData;
 	while (privThread->eState == E_THREAD_RUNNING) {
 		if (mQueueDequeueTimed(&bpu_handle->m_output_queue, 100, (void**)&post_info) != E_QUEUE_OK){
-			// SC_LOGI("post_process_yolov5s wait queue time out.");
+			// printf("post_process_yolov5s wait queue time out.\n");
 			continue;
 		}
-
-		time_statistics_at_beginning_of_loop(&time_statistics);
-		char *results = Yolov5PostProcess(post_info);
-		time_statistics_at_ending_of_loop(&time_statistics);
-		time_statistics_info_show(&time_statistics, "yolov5 post process", false);
-		if (results) {
-			if (NULL != bpu_handle->callback) {
-
-				{
-					int pipeline_id = -1;
-					if (bpu_handle->m_userdata)
-						pipeline_id = *(int*)bpu_handle->m_userdata;
-
-					if(count % 3300 == 0){
-						SC_LOGD("[%d] inference:[%s]", pipeline_id, results);
-					}
-					count++;
+		if(bpu_handle->post_processs_enable){
+			char *results = Yolov5PostProcess(post_info);
+			if (results) {
+				if (NULL != bpu_handle->callback) {
+					bpu_handle->callback(results, bpu_handle->m_userdata);
 				}
-				bpu_handle->callback(results, bpu_handle->m_userdata);
-			} else {
-				SC_LOGI("%s", results);
+				free(results);
 			}
-			free(results);
 		}
 		if (post_info) {
 			free(post_info);
 			post_info = NULL;
 		}
 	}
-	SC_LOGI("thread [post_process_yolov5s] stop .");
+	printf("thread [post_process_yolov5s] stop .\n");
 	mThreadFinish(privThread);
 	return NULL;
 }
@@ -224,7 +200,7 @@ static void *inference_yolov5s(void *ptr)
 	hbPackedDNNHandle_t packed_dnn_handle = bpu_handle->m_packed_dnn_handle;
 	hbDNNHandle_t dnn_handle = bpu_handle->m_dnn_handle;
 
-	SC_LOGI("packed_dnn_handle: %p, dnn_handle: %p", packed_dnn_handle, dnn_handle);
+	printf("packed_dnn_handle: %p, dnn_handle: %p\n", packed_dnn_handle, dnn_handle);
 
 	hbDNNGetOutputCount(&output_count, dnn_handle);
 
@@ -234,23 +210,39 @@ static void *inference_yolov5s(void *ptr)
 	for (i = 0; i < 5; i++) {
 		ret = prepare_output_tensor(output_tensors[i], dnn_handle);
 		if (ret) {
-			SC_LOGE("prepare model output tensor failed");
+			printf("prepare model output tensor failed");
 			goto exit;
 		}
 	}
 
 	hbDNNTaskHandle_t task_handle = NULL;
 
-	struct TimeStatistics time_statistics;
 	char time_sts_tag[32];
 	sprintf(time_sts_tag, "yolov5 infer process:%d", bpu_handle->m_vpp_id);
 
+	struct PerformanceTestParamSimple performace_total_test_param_simple = {
+		.iteration_number = 30 * 60,
+		.test_case = "yolov5_inference_thread_total",
+		.run_count = 0,
+		.test_count = 0,
+	};
+
+	struct PerformanceTestParam performace_test_param_for_infer = {
+		.iteration_number = 30 * 60,
+		.test_case = "yolov5_inference_thread",
+		.run_count = 0,
+		.consumu_time_sum_us = 0,
+		.test_count = 0,
+	};
+
+
 	while (privThread->eState == E_THREAD_RUNNING) {
-
-		if (mQueueDequeueTimed(&bpu_handle->m_input_queue, 100, (void**)&input_tensor) != E_QUEUE_OK)
+		performance_test_start_simple(&performace_total_test_param_simple);
+		if (mQueueDequeueTimed(&bpu_handle->m_input_queue, 100, (void**)&input_tensor) != E_QUEUE_OK){
 			continue;
+		}
 
-		time_statistics_at_beginning_of_loop(&time_statistics);
+		performance_test_start(&performace_test_param_for_infer);
 		// make sure memory data is flushed to DDR before inference
 		hbSysFlushMem(&input_tensor->m_dnn_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
 
@@ -265,13 +257,13 @@ static void *inference_yolov5s(void *ptr)
 				dnn_handle,
 				&infer_ctrl_param);
 		if (ret) {
-			SC_LOGE("hbDNNInfer failed");
+			printf("hbDNNInfer failed\n");
 			break;
 		}
 		// wait task done
 		ret = hbDNNWaitTaskDone(task_handle, 0);
 		if (ret) {
-			SC_LOGE("hbDNNWaitTaskDone failed");
+			printf("hbDNNWaitTaskDone failed\n");
 			break;
 		}
 
@@ -283,16 +275,15 @@ static void *inference_yolov5s(void *ptr)
 		// release task handle
 		ret = hbDNNReleaseTask(task_handle);
 		if (ret) {
-			SC_LOGE("hbDNNReleaseTask failed");
+			printf("hbDNNReleaseTask failed\n");
 			break;
 		}
-		task_handle = NULL;
-		time_statistics_at_ending_of_loop(&time_statistics);
-		time_statistics_info_show(&time_statistics, time_sts_tag, false);
+		performance_test_stop(&performace_test_param_for_infer);
 
+		task_handle = NULL;
 		// 如果后处理队列满的，直接返回
 		if (mQueueIsFull(&bpu_handle->m_output_queue)) {
-			// SC_LOGI("post process queue full, skip it, queue length is %d",
+			// printf("post process queue full, skip it, queue length is %d",
 			// 	bpu_handle->m_output_queue.u32Length);
 			cur_ouput_buf_idx++;
 			cur_ouput_buf_idx %= 5;
@@ -303,11 +294,11 @@ static void *inference_yolov5s(void *ptr)
 		Yolov5PostProcessInfo_t *post_info;
 		post_info = (Yolov5PostProcessInfo_t *)malloc(sizeof(Yolov5PostProcessInfo_t));
 		if (NULL == post_info) {
-			SC_LOGE("Failed to allocate memory for post_info");
+			printf("Failed to allocate memory for post_info\n");
 			continue;
 		}
 		post_info->is_pad_resize = 0;
-		post_info->score_threshold = 0.3;
+		post_info->score_threshold = 0.1;
 		post_info->nms_threshold = 0.45;
 		post_info->nms_top_k = 500;
 		post_info->width = bpu_handle->m_image_info.m_model_w;
@@ -319,8 +310,7 @@ static void *inference_yolov5s(void *ptr)
 		mQueueEnqueue(&bpu_handle->m_output_queue, post_info);
 		cur_ouput_buf_idx++;
 		cur_ouput_buf_idx %= 5;
-
-
+		performance_test_stop_simple(&performace_total_test_param_simple);
 	}
 
 	for (i = 0; i < 5; i++)
@@ -330,342 +320,6 @@ exit:
 	return NULL;
 }
 
-
-static void *post_process_fcos(void *ptr)
-{
-	tsThread *privThread = (tsThread*)ptr;
-	FcosPostProcessInfo_t *post_info;
-
-	mThreadSetName(privThread, __func__);
-
-	bpu_handle_t *bpu_handle = (bpu_handle_t *)privThread->pvThreadData;
-	while (privThread->eState == E_THREAD_RUNNING) {
-		if (mQueueDequeueTimed(&bpu_handle->m_output_queue, 100, (void**)&post_info) != E_QUEUE_OK)
-			continue;
-
-		char *results = FcosPostProcess(post_info);
-
-		if (results) {
-			if (NULL != bpu_handle->callback) {
-				bpu_handle->callback(results, bpu_handle->m_userdata);
-			} else {
-				SC_LOGI("%s", results);
-			}
-			free(results);
-		}
-
-		if (post_info) {
-			free(post_info);
-			post_info = NULL;
-		}
-	}
-	mThreadFinish(privThread);
-	return NULL;
-}
-
-static void *inference_fcos(void *ptr)
-{
-	tsThread *privThread = (tsThread*)ptr;
-	int32_t i = 0, ret = 0;
-	bpu_tensor_info_t *input_tensor;
-	int32_t output_count = 0;
-
-	bpu_handle_t *bpu_handle = (bpu_handle_t *)privThread->pvThreadData;
-
-	mThreadSetName(privThread, __func__);
-
-	if (bpu_handle == NULL)
-		goto exit;
-
-	hbPackedDNNHandle_t packed_dnn_handle = bpu_handle->m_packed_dnn_handle;
-	hbDNNHandle_t dnn_handle = bpu_handle->m_dnn_handle;
-
-	hbDNNGetOutputCount(&output_count, dnn_handle);
-
-	SC_LOGI("packed_dnn_handle: %p, dnn_handle: %p output count:%d.", packed_dnn_handle, dnn_handle, output_count);
-	// 准备模型输出节点tensor，5组输出buff轮转，简单处理，理论上后处理的速度是要比算法推理更快的
-	hbDNNTensor output_tensors[5][15];
-	int32_t cur_ouput_buf_idx = 0;
-	for (i = 0; i < 5; i++) {
-		ret = prepare_output_tensor(output_tensors[i], dnn_handle);
-		if (ret) {
-			SC_LOGE("prepare model output tensor failed");
-			goto exit;
-		}
-	}
-
-	hbDNNTaskHandle_t task_handle = NULL;
-
-	while (privThread->eState == E_THREAD_RUNNING) {
-		if (mQueueDequeueTimed(&bpu_handle->m_input_queue, 100, (void**)&input_tensor) != E_QUEUE_OK)
-			continue;
-
-		// make sure memory data is flushed to DDR before inference
-		hbSysFlushMem(&input_tensor->m_dnn_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
-
-		hbDNNTensor *output = &output_tensors[cur_ouput_buf_idx][0];
-
-		// 模型推理infer
-		hbDNNInferCtrlParam infer_ctrl_param;
-		HB_DNN_INITIALIZE_INFER_CTRL_PARAM(&infer_ctrl_param);
-		ret = hbDNNInfer(&task_handle,
-				&output,
-				&input_tensor->m_dnn_tensor,
-				dnn_handle,
-				&infer_ctrl_param);
-		if (ret) {
-			SC_LOGE("hbDNNInfer failed");
-			break;
-		}
-		// wait task done
-		ret = hbDNNWaitTaskDone(task_handle, 0);
-		if (ret) {
-			SC_LOGE("hbDNNWaitTaskDone failed");
-			break;
-		}
-
-		// make sure CPU read data from DDR before using output tensor data
-		for (int32_t i = 0; i < output_count; i++) {
-			hbSysFlushMem(&output_tensors[cur_ouput_buf_idx][i].sysMem[0], HB_SYS_MEM_CACHE_INVALIDATE);
-		}
-
-		// release task handle
-		ret = hbDNNReleaseTask(task_handle);
-		if (ret) {
-			SC_LOGE("hbDNNReleaseTask failed");
-			break;
-		}
-		task_handle = NULL;
-
-		// 如果后处理队列满的，直接返回
-		if (mQueueIsFull(&bpu_handle->m_output_queue)) {
-			SC_LOGI("post process queue full, skip it");
-			cur_ouput_buf_idx++;
-			cur_ouput_buf_idx %= 5;
-			continue;
-		}
-
-		// 后处理数据
-		FcosPostProcessInfo_t *post_info;
-		post_info = (FcosPostProcessInfo_t *)malloc(sizeof(FcosPostProcessInfo_t));
-		if (NULL == post_info) {
-			SC_LOGE("Failed to allocate memory for post_info");
-			continue;
-		}
-		post_info->is_pad_resize = 0;
-		post_info->score_threshold = 0.5;
-		post_info->nms_threshold = 0.6;
-		post_info->nms_top_k = 500;
-		post_info->width = bpu_handle->m_image_info.m_model_w;
-		post_info->height = bpu_handle->m_image_info.m_model_h;
-		post_info->ori_width = bpu_handle->m_image_info.m_ori_width;
-		post_info->ori_height = bpu_handle->m_image_info.m_ori_height;
-		post_info->tv = input_tensor->tv;
-		post_info->output_tensor = output_tensors[cur_ouput_buf_idx];
-		mQueueEnqueue(&bpu_handle->m_output_queue, post_info);
-		cur_ouput_buf_idx++;
-		cur_ouput_buf_idx %= 5;
-	}
-
-	for (i = 0; i < 5; i++)
-		release_output_tensor(output_tensors[i], output_count);	// 释放模型输出资源
-exit:
-	mThreadFinish(privThread);
-	return NULL;
-}
-
-// 解析分类结果
-static void parse_classification_result(
-		hbDNNTensor *tensor,
-		int32_t *idx,
-		float *score_top1) {
-
-	float *scores = (float *) (tensor->sysMem[0].virAddr);
-	int32_t *shape = tensor->properties.validShape.dimensionSize;
-	for (int32_t i = 0; i < shape[1] * shape[2] * shape[3]; i++) {
-		float score = scores[i];
-		if (score > *score_top1){
-			*idx =  i;
-			*score_top1 = score;
-		}
-	}
-}
-
-static void *inference_mobilenetv2(void *ptr)
-{
-	tsThread *privThread = (tsThread*)ptr;
-	int32_t ret = 0;
-	bpu_tensor_info_t *input_tensor;
-	int32_t output_count = 0;
-
-	bpu_handle_t *bpu_handle = (bpu_handle_t *)privThread->pvThreadData;
-
-	mThreadSetName(privThread, __func__);
-
-	if (bpu_handle == NULL)
-		goto exit;
-
-	hbPackedDNNHandle_t packed_dnn_handle = bpu_handle->m_packed_dnn_handle;
-	hbDNNHandle_t dnn_handle = bpu_handle->m_dnn_handle;
-
-	SC_LOGI("packed_dnn_handle: %p, dnn_handle: %p", packed_dnn_handle, dnn_handle);
-
-	hbDNNGetOutputCount(&output_count, dnn_handle);
-
-	// 准备模型输出节点tensor
-	hbDNNTensor output_tensors[1];
-	ret = prepare_output_tensor(output_tensors, dnn_handle);
-	if (ret) {
-		printf("prepare model output tensor failed\n");
-		goto exit;
-	}
-
-	hbDNNTaskHandle_t task_handle = NULL;
-	hbDNNTensor *output = &output_tensors[0];
-
-	while (privThread->eState == E_THREAD_RUNNING) {
-		if (mQueueDequeueTimed(&bpu_handle->m_input_queue, 100, (void**)&input_tensor) != E_QUEUE_OK)
-			continue;
-
-		// make sure memory data is flushed to DDR before inference
-		hbSysFlushMem(&input_tensor->m_dnn_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
-
-		// 模型推理infer
-		hbDNNInferCtrlParam infer_ctrl_param;
-		HB_DNN_INITIALIZE_INFER_CTRL_PARAM(&infer_ctrl_param);
-		ret = hbDNNInfer(&task_handle,
-				&output,
-				&input_tensor->m_dnn_tensor,
-				dnn_handle,
-				&infer_ctrl_param);
-		if (ret) {
-			SC_LOGE("hbDNNInfer failed");
-			break;
-		}
-		// wait task done
-		ret = hbDNNWaitTaskDone(task_handle, 0);
-		if (ret) {
-			SC_LOGE("hbDNNWaitTaskDone failed");
-			break;
-		}
-
-		// make sure CPU read data from DDR before using output tensor data
-		for (int32_t i = 0; i < output_count; i++) {
-			hbSysFlushMem(&output_tensors[i].sysMem[0], HB_SYS_MEM_CACHE_INVALIDATE);
-		}
-
-		// release task handle
-		ret = hbDNNReleaseTask(task_handle);
-		if (ret) {
-			SC_LOGE("hbDNNReleaseTask failed");
-			break;
-		}
-		task_handle = NULL;
-
-		// 同步模式下的后处理, 测试用，每个模型都要一份独立的后处理接口
-		float score_top1 = 0.0;
-		int32_t idx = 0;
-		char result[128] = {0};
-		parse_classification_result(
-				&output_tensors[0], &idx, &score_top1);
-
-		// 通过websocket把算法结果发送给web页面
-		sprintf(result, "\"timestamp\": %ld,\"classification_result\": \"id=%d, score=%.3f\"",
-			input_tensor->tv.tv_sec * 1000000 + input_tensor->tv.tv_usec,
-			idx, score_top1);
-
-		if (NULL != bpu_handle->callback) {
-			bpu_handle->callback(result, bpu_handle->m_userdata);
-		} else {
-			SC_LOGI("%s", result);
-		}
-	}
-
-	ret = hbSysFreeMem(&(output_tensors[0].sysMem[0]));			  // 释放模型输出资源
-	if (ret)
-		printf("output data free failed\n");
-exit:
-	mThreadFinish(privThread);
-	return NULL;
-}
-
-// 定义模型描述符数组
-bpu_model_descriptor bpu_models[] = {
-	{
-		.model_name = "null",
-		.model_path = "",
-		.inference_func = NULL,
-		.post_proc_func = NULL
-	},
-	{
-		.model_name = "mobilenetv2",
-		.model_path = "../model_zoom/mobilenetv2_224x224_nv12.bin",
-		.inference_func = inference_mobilenetv2,
-		.post_proc_func = NULL
-	},
-	{
-		.model_name = "yolov5s",
-		.model_path = "../model_zoom/yolov5s_672x672_nv12.bin",
-		.inference_func = inference_yolov5s,
-		.post_proc_func = post_process_yolov5s
-	},
-	{
-		.model_name = "fcos",
-		.model_path = "../model_zoom/fcos_efficientnetb0_512x512_nv12.bin",
-		.inference_func = inference_fcos,
-		.post_proc_func = post_process_fcos
-	},
-};
-
-int32_t bpu_wrap_get_model_list(char *model_list)
-{
-	// 初始化模型列表字符串
-	// 将每个模型的名称添加到模型列表字符串中
-	for (int i = 0; i < sizeof(bpu_models) / sizeof(bpu_models[0]); ++i) {
-		strcat(model_list, bpu_models[i].model_name);
-		if (i < sizeof(bpu_models) / sizeof(bpu_models[0]) - 1) {
-			strcat(model_list, "/");
-		}
-	}
-	SC_LOGI("model list [%s]", model_list);
-	return 0;
-}
-
-static int32_t bpu_wrap_get_modle_prop(char *model_file_name, hbDNNTensorProperties *properties)
-{
-	int32_t ret = 0;
-	const char **model_name_list;
-	int32_t model_count = 0;
-	hbPackedDNNHandle_t packed_dnn_handle;
-	hbDNNHandle_t dnn_handle;
-
-	// 加载模型
-	HB_CHECK_SUCCESS(
-		hbDNNInitializeFromFiles(&packed_dnn_handle, (char const **)&model_file_name, 1),
-		"hbDNNInitializeFromFiles failed"); // 从本地文件加载模型
-
-	HB_CHECK_SUCCESS(hbDNNGetModelNameList(
-		&model_name_list, &model_count, packed_dnn_handle),
-		"hbDNNGetModelNameList failed");
-
-	if (model_count <= 0) {
-		printf("Modle count <= 0\n");
-		return -1;
-	}
-
-	HB_CHECK_SUCCESS(
-		hbDNNGetModelHandle(&dnn_handle, packed_dnn_handle, model_name_list[0]),
-		"hbDNNGetModelHandle failed");
-
-	// 获取模型属性信息
-	HB_CHECK_SUCCESS(
-			hbDNNGetInputTensorProperties(properties, dnn_handle, 0),
-			"hbDNNGetInputTensorProperties failed");
-
-	HB_CHECK_SUCCESS(hbDNNRelease(packed_dnn_handle), "hbDNNRelease failed");
-
-	return ret;
-}
 
 int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *model_name)
 {
@@ -677,15 +331,15 @@ int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *mod
 	hbDNNHandle_t dnn_handle;
 
 	if (NULL == bpu_handle) {
-		SC_LOGE("bpu_handle is NULL");
+		printf("bpu_handle is NULL\n");
 		return -1;
 	}
 
-	SC_LOGI("model_file_name[%s]  model_name [%s] %d\n", model_file_name, model_name, strlen(model_name));
+	printf("model_file_name[%s]  model_name [%s] %ld\n", model_file_name, model_name, strlen(model_name));
 	if(strlen(model_name) < (sizeof(bpu_handle->m_model_name) - 1)){
 		strcpy(bpu_handle->m_model_name, model_name);
 	}else{
-		SC_LOGE("model_name [%s] is too long :%d\n", strlen(model_name) + 1);
+		printf("model_name [%s] is too long :%ld\n", model_name, strlen(model_name) + 1);
 		exit(-1);
 	}
 
@@ -705,7 +359,7 @@ int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *mod
 		printf("Modle count <= 0\n");
 		return -1;
 	}
-	SC_LOGI("model_name_list[0]:%s", model_name_list[0]);
+	printf("model_name_list[0]:%s\n", model_name_list[0]);
 
 	HB_CHECK_SUCCESS(
 		hbDNNGetModelHandle(&dnn_handle, packed_dnn_handle, model_name_list[0]),
@@ -713,9 +367,9 @@ int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *mod
 
 	bpu_handle->m_packed_dnn_handle = packed_dnn_handle;
 	bpu_handle->m_dnn_handle = dnn_handle;
-	SC_LOGI("packed_dnn_handle: %p, dnn_handle: %p", packed_dnn_handle, dnn_handle);
+	printf("packed_dnn_handle: %p, dnn_handle: %p\n", packed_dnn_handle, dnn_handle);
 
-	SC_LOGI("Model info:\nmodel_name: %s", model_name_list[0]);
+	printf("Model info:\nmodel_name: %s\n", model_name_list[0]);
 
 	// 获取模型相关信息
 	// 目前模型输入的yuv都按照nv12格式处理，其他格式先不做考虑
@@ -725,13 +379,13 @@ int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *mod
 	hbDNNTensorShape  *input_tensor_shape = &properties.validShape;	 // 获取模型输入shape
 	bpu_handle->m_image_info.m_model_h = (input_tensor_shape->dimensionSize)[2];
 	bpu_handle->m_image_info.m_model_w = (input_tensor_shape->dimensionSize)[3];
-	SC_LOGI("get model input_tensor_shape ok, NCHW = (1, 3, %d, %d)",
+	printf("get model input_tensor_shape ok, NCHW = (1, 3, %d, %d)\n",
 		bpu_handle->m_image_info.m_model_h, bpu_handle->m_image_info.m_model_w);		// 打印从模型中读取的宽高
 
 	// 设置默认的原始图像宽高为 1920 * 1080
 	// 如果原始图像时4K/2K或者其他分辨率，请调用bpu_wrap_set_ori_hw接口重新设置
-	bpu_handle->m_image_info.m_ori_height = 1080;
-	bpu_handle->m_image_info.m_ori_width = 1920;
+	bpu_handle->m_image_info.m_ori_height = 3840;
+	bpu_handle->m_image_info.m_ori_width = 2160;
 
 	// 队列中存2个，解决算法结果延迟较大的问题
 	mQueueCreate(&bpu_handle->m_input_queue, 2);//the length of queue is 2
@@ -747,7 +401,7 @@ int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *mod
 			bpu_handle->m_image_info.m_model_h * bpu_handle->m_image_info.m_model_w / 2),
 			"hbSysAllocCachedMem failed");
 	}
-
+	bpu_handle->post_processs_enable = 1;
 	return ret;
 }
 
@@ -763,7 +417,7 @@ int32_t bpu_wrap_deinit(bpu_handle_t *handle)
 		ret = hbSysFreeMem(&handle->m_input_tensors[i].m_dnn_tensor.sysMem[0]);	   // 释放模型输入资源
 		ret |= hbSysFreeMem(&handle->m_input_tensors[i].m_dnn_tensor.sysMem[1]);
 		if (ret)
-			SC_LOGE("input data free failed");
+			printf("input data free failed\n");
 	}
 	// 销毁队列
 	mQueueDestroy(&handle->m_output_queue);
@@ -772,12 +426,26 @@ int32_t bpu_wrap_deinit(bpu_handle_t *handle)
 	// 释放模型资源
 	HB_CHECK_SUCCESS(hbDNNRelease(handle->m_packed_dnn_handle), "hbDNNRelease failed");
 
-	SC_LOGI("successful");
+	printf("successful\n");
 
 	return ret;
 }
+// 定义模型描述符数组
+bpu_model_descriptor bpu_models[] = {
+	{
+		.model_name = "null",
+		.model_path = "",
+		.inference_func = NULL,
+		.post_proc_func = NULL
+	},
 
-// 初始化算法模型
+	{
+		.model_name = "yolov5s",
+		.model_path = "../model_zoom/yolov5s_672x672_nv12.bin",
+		.inference_func = inference_yolov5s,
+		.post_proc_func = post_process_yolov5s
+	},
+};
 int32_t bpu_wrap_model_init(bpu_handle_t *bpu_handle, char *model_name)
 {
 	// 遍历模型描述符数组
@@ -789,37 +457,7 @@ int32_t bpu_wrap_model_init(bpu_handle_t *bpu_handle, char *model_name)
 		}
 	}
 	// 如果未找到匹配的模型名称，打印错误信息并返回错误码
-	SC_LOGE("Unsupported model name: %s", model_name);
-	return -1;
-}
-
-void bpu_wrap_set_ori_hw(bpu_handle_t *handle, int32_t width, int32_t height)
-{
-	if (handle == NULL) return;
-
-	handle->m_image_info.m_ori_height = height;
-	handle->m_image_info.m_ori_width = width;
-}
-
-int32_t bpu_wrap_get_model_hw(char *model_name, int32_t *width, int32_t *height)
-{
-	hbDNNTensorProperties properties = {0};
-
-	// 遍历模型描述符数组
-	for (int i = 0; i < sizeof(bpu_models) / sizeof(bpu_models[0]); ++i) {
-		// 检查是否找到匹配的模型名称
-		if (strcmp(model_name, bpu_models[i].model_name) == 0) {
-			bpu_wrap_get_modle_prop(bpu_models[i].model_path, &properties);
-			hbDNNTensorShape  *input_tensor_shape = &properties.validShape;	 // 获取模型输入shape
-			*width = (input_tensor_shape->dimensionSize)[2];
-			*height = (input_tensor_shape->dimensionSize)[3];
-			SC_LOGI("get model input_tensor_shape shape, NCHW = (1, 3, %d, %d)",
-				*height, *width);
-			return 0;
-		}
-	}
-	// 如果未找到匹配的模型名称，打印错误信息并返回错误码
-	SC_LOGE("Unsupported model name: %s", model_name);
+	printf("Unsupported model name: %s\n", model_name);
 	return -1;
 }
 
@@ -844,24 +482,55 @@ int32_t bpu_wrap_start(bpu_handle_t *handle)
 		}
 	}
 	// 如果未找到匹配的模型名称，打印错误信息并返回错误码
-	SC_LOGE("Unsupported model name: %s", handle->m_model_name);
+	printf("Unsupported model name: %s\n", handle->m_model_name);
 	return -1;
 }
 
 int32_t bpu_wrap_stop(bpu_handle_t *handle)
 {
-	SC_LOGI("bpu_wrap_stop start .");
+	printf("bpu_wrap_stop start .\n");
 	if (handle == NULL){
-		SC_LOGE("bpu_wrap_stop failed, handle is null.");
+		printf("bpu_wrap_stop failed, handle is null.\n");
 		return 0;
 	}
 
 	mThreadStop(&handle->m_post_process_thread);
 	mThreadStop(&handle->m_run_model_thread);
-	SC_LOGI("bpu_wrap_stop complete .");
+	printf("bpu_wrap_stop complete .\n");
 
 	return 0;
 }
+#ifdef BPU_DEBUG // test
+static int32_t vp_dump_2plane_yuv_to_file(char *filename, uint8_t *src_buffer, uint8_t *src_buffer1,
+		uint32_t size, uint32_t size1)
+{
+	int yuv_fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+
+	if (yuv_fd == -1) {
+		printf("Error opening file(%s)", filename);
+		return -1;
+	}
+
+	ssize_t bytes_written = write(yuv_fd, src_buffer, size);
+	if (bytes_written != size) {
+		printf("Error writing to file");
+		close(yuv_fd);
+		return -1;
+	}
+
+	bytes_written = write(yuv_fd, src_buffer1, size1);
+	if (bytes_written != size1) {
+		printf("Error writing to file");
+		close(yuv_fd);
+		return -1;
+	}
+
+	close(yuv_fd);
+
+	// SC_LOGI("Dump yuv to file(%s), size(%d) + size1(%d) succeeded\n", filename, size, size1);
+	return 0;
+}
+#endif
 
 // 完成输入数据前处理
 // 处理完的数据推入算法推理队列
@@ -885,10 +554,8 @@ int32_t bpu_wrap_send_frame(bpu_handle_t *handle, bpu_buffer_info_t *input_buffe
 	// print_bpu_buffer_info(input_buffer);
 
 #ifdef BPU_DEBUG
-extern int32_t vp_dump_2plane_yuv_to_file(char *filename, uint8_t *src_buffer, uint8_t *src_buffer1,
-		uint32_t size, uint32_t size1);
 	if (nv12_index++ % 100 == 0) {
-		sprintf(nv12_file_name, "/tmp/bpu_%dx%d_nv12_input_%04d.yuv",
+		sprintf(nv12_file_name, "./bpu_%dx%d_nv12_input_%04d.yuv",
 			input_buffer->width, input_buffer->height,
 			nv12_index++);
 		vp_dump_2plane_yuv_to_file(nv12_file_name,
@@ -925,7 +592,7 @@ extern int32_t vp_dump_2plane_yuv_to_file(char *filename, uint8_t *src_buffer, u
 	input_tensor->properties.alignedShape = input_tensor->properties.validShape;		// 已满足跨距对齐要求，直接赋值
 
 #ifdef BPU_DEBUG
-	SC_LOGI("input_tensor(%p): tensorLayout: %d tensorType: %d validShape:(", input_tensor,
+	printf("input_tensor(%p): tensorLayout: %d tensorType: %d validShape:(", input_tensor,
 			input_tensor->properties.tensorLayout, input_tensor->properties.tensorType);
 		int32_t j = 0;
 		for (j = 0; j < input_tensor->properties.validShape.numDimensions; j++)
@@ -938,7 +605,7 @@ extern int32_t vp_dump_2plane_yuv_to_file(char *filename, uint8_t *src_buffer, u
 		handle->m_cur_input_tensor++;
 		handle->m_cur_input_tensor %= BPU_INPUT_BUFFER_NUM;
 	} else {
-		SC_LOGI("m_input_queue full, skip it");
+		printf("m_input_queue full, skip it\n");
 	}
 
 	return 0;
@@ -958,32 +625,5 @@ void bpu_wrap_callback_unregister(bpu_handle_t* handle)
 		return;
 	handle->callback = NULL;
 	handle->m_userdata = NULL;
-	SC_LOGI("ok!");
 }
 
-
-// 通用的算法回调函数，目前都是通过websocket想web上发送
-int32_t bpu_wrap_general_result_handle(char *result, void *userdata)
-{
-	int32_t ret = 0;
-	int32_t pipeline_id = 0;
-	char *ws_msg = NULL;
-
-	if (userdata)
-		pipeline_id = *(int*)userdata;
-
-	// json 算法结果添加标志信息
-	// 分配内存
-	ws_msg = malloc(strlen(result) + 32);
-	if (NULL == ws_msg) {
-		SC_LOGE("Failed to allocate memory for ws_msg");
-		return -1;
-	}
-	sprintf(ws_msg, "{\"kind\":10, \"pipeline\":%d,", pipeline_id + 1);
-	strcat(ws_msg, result);
-	strcat(ws_msg, "}");
-
-	ret = SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_SEND_MSG, (void*)ws_msg);
-	free(ws_msg);
-	return ret;
-}

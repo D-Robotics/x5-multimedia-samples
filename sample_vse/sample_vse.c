@@ -143,6 +143,7 @@ void vp_vin_print_hbn_vnode_image_t(const hbn_vnode_image_t *frame)
 void vp_vin_print_hbn_frame_info_t(const hbn_frame_info_t *frame_info) {
 	printf("Frame ID: %u\n", frame_info->frame_id);
 	printf("Timestamps: %lu\n", frame_info->timestamps);
+	printf("Systimestamps: %lu\n", frame_info->sys_timestamps);
 	printf("tv: %ld.%06ld\n", frame_info->tv.tv_sec, frame_info->tv.tv_usec);
 	printf("trig_tv: %ld.%06ld\n", frame_info->trig_tv.tv_sec, frame_info->trig_tv.tv_usec);
 	printf("Frame Done: %u\n", frame_info->frame_done);

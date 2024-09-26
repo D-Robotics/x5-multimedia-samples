@@ -391,7 +391,7 @@ static void fill_32bit_pixel_to_frame_buffer(void *fb_virtual_addr, int src_stri
 int main(int argc, char** argv) {
 	display_context_t display_context = {
 		.crtc_id = 31,
-		.plane_id = 47, //只有id = 47 的plane 支持翻转
+		.plane_id = 40, //只有id = 40 的plane 支持翻转
 	};
 
 	param_config_t *param_config = &display_context.param_config;

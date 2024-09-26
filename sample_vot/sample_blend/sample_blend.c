@@ -419,7 +419,7 @@ free_res:
 int main(int argc, char** argv) {
 	display_context_t display_context = {
 		.crtc_id = 31,
-		.plane_ids = {33, 40, 47},
+		.plane_ids = {33, 40, 48},
 	};
 
 	param_config_t *param_config = &display_context.param_config;
@@ -533,7 +533,7 @@ int main(int argc, char** argv) {
 	for(int i = 0; i < DRM_MAX_PLANES; i++){
 		ret = __add_property(display_context.drm_fd, req, display_context.plane_ids[i], DRM_MODE_OBJECT_PLANE, "CRTC_ID", display_context.crtc_id);
 		ret |= __add_property(display_context.drm_fd, req, display_context.plane_ids[i], DRM_MODE_OBJECT_PLANE, "FB_ID", drm_fb_info[i].frame_buffer_id);
-		if(display_context.plane_ids[i] == 47){
+		if(display_context.plane_ids[i] == 40){
 			ret |= __add_property(display_context.drm_fd, req, display_context.plane_ids[i], DRM_MODE_OBJECT_PLANE, "rotation", DRM_MODE_ROTATE_0);
 		}
 

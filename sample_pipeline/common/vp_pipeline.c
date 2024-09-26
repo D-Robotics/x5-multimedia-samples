@@ -453,23 +453,24 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 						pipe_contex->gdc_node_handle,
 						0,
 						pipe_contex->vse_node_handle,
-						1);
+						0);
 			ERR_CON_EQ(ret, 0);
-			printf("gdc: enable, vse: enable\n");
+			printf("[%d] gdc: enable, vse: enable\n", vp_pipeline_info->channel);
 		}else{
-			printf("gdc: enable %ld, vse: disable\n", pipe_contex->gdc_node_handle);
+			printf("[%d] gdc: enable %ld, vse: disable\n", vp_pipeline_info->channel, pipe_contex->gdc_node_handle);
 		}
 	}else{
 		if(vp_pipeline_info->enable_vse){
 			ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 									pipe_contex->isp_node_handle,
-									0,
+									vp_pipeline_info->enable_online,
 									pipe_contex->vse_node_handle,
-									1);
+									0);
 			ERR_CON_EQ(ret, 0);
-			printf("gdc: disable, vse: enable\n");
+			printf("[%d] gdc: disable, vse: enable, online:%d\n",
+				vp_pipeline_info->channel, vp_pipeline_info->enable_online);
 		}else{
-			printf("gdc: disable, vse: disable\n");
+			printf("[%d] gdc: disable, vse: disable\n", vp_pipeline_info->channel);
 		}
 	}
 

@@ -40,5 +40,6 @@ typedef struct {
 }param_config_t;
 
 int param_process(int argc, char** argv, param_config_t* param_config);
-int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse);
+int check_camera_config(param_config_t *param_config,
+	int *pipe_contex_need_vse, int* enable_isp_online);
 #endif

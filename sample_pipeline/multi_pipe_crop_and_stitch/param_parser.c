@@ -7,7 +7,7 @@ static int is_number(const char *str) {
 	return 1;
 }
 
-int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse){
+int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse, int *enable_isp_online){
 
 	printf("\n\n Show VSE info:\n");
 
@@ -30,6 +30,14 @@ int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse)
 			pipe_contex_need_vse[i] = 1;
 		}
 		printf("\t [%d] need vse :%d\n", i, pipe_contex_need_vse[i]);
+	}
+
+	*enable_isp_online = 1;
+	for(int i = 0; i < param_config->sensor_config_count; i++){
+		if(pipe_contex_need_vse[i] == 0){
+			*enable_isp_online = 0;
+			break;
+		}
 	}
 	return 0;
 }

@@ -69,6 +69,7 @@ typedef struct {
 	int n2d_frame_index;
 
 	uint64_t hdmi_wakeup_time_us;
+	int enable_isp_online; //两路都需要VSE时，才能Online
 
 } multi_pipe_stitch_info_t;
 
@@ -542,7 +543,7 @@ void *get_stitch_data(void *context){
 		}
 		multi_pipe_stitch_info->n2d_frame_index = n2d_data_item->index;
 		if(multi_pipe_stitch_info->display_frame_index == multi_pipe_stitch_info->n2d_frame_index){
-			printf("n2d thread found overlay :%d\n", multi_pipe_stitch_info->display_frame_index);
+			// printf("n2d thread found overlay :%d\n", multi_pipe_stitch_info->display_frame_index);
 		}
 
 		//2.1 crop eight little image
@@ -1043,10 +1044,12 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 		pipe_contex->sensor_config = sensor_param_config->sensor_config;
 		pipe_contex->csi_config = sensor_param_config->csi_config;
 		vp_pipeline_info_t vp_pipeline_info = {
+			.channel = i,
 			.active_mipi_host = sensor_param_config->active_mipi_host,
 			.vse_bind_index = sensor_param_config->vse_bind_n2d_chn,
 			.sensor_mode = sensor_param_config->sensor_mode,
 			.enable_gdc = param_config->gdc_enable,
+			.enable_online = multi_pipe_stitch_info->enable_isp_online,
 			.enable_vse = multi_pipe_stitch_info->pipe_contex_need_vse[i],
 			.sensor_name = sensor_param_config->sensor_config->camera_config->name,
 			.camera_config_info = {
@@ -1232,6 +1235,7 @@ int main(int argc, char** argv) {
 		.vse_counter = 0,
 		.stitch_counter = 0,
 		.codec_counter = 0,
+		.enable_isp_online = 0,
 	};
 
 	param_config_t *param_config = &multi_pipe_stitch_info.param_config;
@@ -1240,7 +1244,8 @@ int main(int argc, char** argv) {
 		return -1;
 	}
 	ret = check_camera_config(&multi_pipe_stitch_info.param_config,
-		multi_pipe_stitch_info.pipe_contex_need_vse);
+		multi_pipe_stitch_info.pipe_contex_need_vse,
+		&multi_pipe_stitch_info.enable_isp_online);
 	if(ret != 0){
 		printf("camera param is invalid, so return.\n");
 		return -1;

@@ -10,11 +10,13 @@
 #define PILELINE_OUT_BUFFER_COUNT 5
 #define PILELINE_OUT_BUFFER_RELEASE_COUNT 2
 typedef struct vp_pipeline_info_s {
+	int channel;
     int active_mipi_host;
     int vse_bind_index;
     int sensor_mode;
 	int enable_gdc;
 	int enable_vse;
+	int enable_online;
 	char *sensor_name;
     camera_config_info_t camera_config_info;
 }vp_pipeline_info_t;

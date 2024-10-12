@@ -41,7 +41,7 @@ all : $(TARGET) install
 $(TARGET) : $(OBJ)
 	$(LIBRARY_LINK_STATIC) $@ $^
 
-install:
+install: $(TARGET)
 	-mkdir -p $(GLOBAL_INSTALL_DIR)/lib
 	mv $(TARGET) $(GLOBAL_INSTALL_DIR)/lib
 
@@ -49,4 +49,3 @@ clean:
 	@rm -rf $(OBJ) $(DEP) $(TARGET)
 
 sinclude $(DEP)
-

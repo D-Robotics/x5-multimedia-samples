@@ -30,6 +30,7 @@ extern vp_sensor_config_t irs2381c_linear_224x1903_raw12_5fps_2lane;
 extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc0;
 extern vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc1;
 extern vp_sensor_config_t sc231ai_linear_1920x1080_raw10_30fps_2lane;
+extern vp_sensor_config_t imx586_linear_3480x2160_raw10_30fps_4lane;
 
 vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc1330t_linear_1280x960_raw10_30fps_1lane,
@@ -47,6 +48,7 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc035hgs_linear_640x480_raw10_30fps_2lane_vc0,
 	&sc035hgs_linear_640x480_raw10_30fps_2lane_vc1,
 	&sc231ai_linear_1920x1080_raw10_30fps_2lane,
+	&imx586_linear_3480x2160_raw10_30fps_4lane,
 };
 
 uint32_t vp_get_sensors_list_number() {
@@ -729,6 +731,11 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 
 		// 如果该vcon使能了，检测该vcon上是否有连接 sensor
 		if (vcon_props_array[i].status[0] == 'o') { // okay
+			if(!mclk_is_not_configed){
+				/* enable mclk */
+				write_mipi_host_freq(i, frequency);
+				enable_mipi_host_clock(i, 1);
+			}
 			// 检测该vcon上连接的 sensor
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
 			for (j = 0; j < 8; ++j) {
@@ -739,12 +746,6 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 							(1 - sensor_config->camera_config->gpio_level_bit));
 					}
 				}
-			}
-
-			if(!mclk_is_not_configed){
-				/* enable mclk */
-				write_mipi_host_freq(i, frequency);
-				enable_mipi_host_clock(i, 1);
 			}
 
 			// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
@@ -790,6 +791,12 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 
 		// 如果该vcon使能了，检测该vcon上是否有连接 sensor
 		if (vcon_props_array[i].status[0] == 'o') { // okay
+			if(!mclk_is_not_configed){
+				/* enable mclk */
+				write_mipi_host_freq(i, frequency);
+				enable_mipi_host_clock(i, 1);
+
+			}
 			// 检测该vcon上连接的 sensor
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
 			for (j = 0; j < 8; ++j) {
@@ -802,12 +809,6 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 				}
 			}
 
-			if(!mclk_is_not_configed){
-				/* enable mclk */
-				write_mipi_host_freq(i, frequency);
-				enable_mipi_host_clock(i, 1);
-
-			}
 			// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
 			ret = check_sensor_reg_value(vcon_props_array[i], sensor_config);
 			if (ret == 0) {

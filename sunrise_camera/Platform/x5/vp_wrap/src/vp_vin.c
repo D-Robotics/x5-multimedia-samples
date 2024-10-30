@@ -41,8 +41,8 @@ int32_t vp_vin_init(vp_vflow_contex_t *vp_vflow_contex)
 		SC_LOGI("csi%d ignore mclk ex attr, because mclk is not configed at device tree.",
 			vp_vflow_contex->mipi_csi_rx_index);
 	}else{
-		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
-		vin_attr_ex.vin_attr_ex_mask = 0x80;
+		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
+		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 	}
 
 	// 创建pipeline中的vin node

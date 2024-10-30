@@ -659,13 +659,12 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 
 		memset(csi_info_tmp.sensor_config_list, 0, sizeof(csi_info_tmp.sensor_config_list));
 		if (vcon_props_array[i].status[0] == 'o') {
-			if(!mclk_is_not_configed){
-				/* enable mclk */
-				write_mipi_host_freq(i, 24000000);
-				enable_mipi_host_clock(i, 1);
-			}
-
 			for (int j = 0; j < vp_get_sensors_list_number(); j++) {
+				if(!mclk_is_not_configed){
+					/* enable mclk */
+					write_mipi_host_freq(i, vp_sensor_config_list[j]->vin_attr_ex->mclk_ex_attr.mclk_freq);
+					enable_mipi_host_clock(i, 1);
+				}
 				for (int k = 0; k < 8; ++k) {
 					if (vcon_props_array[i].gpio_oth[k] != 0) {
 						if ((vp_sensor_config_list[j]->camera_config->gpio_enable_bit & (1 << k)) != 0) {
@@ -707,7 +706,7 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 {
 	int32_t ret = -1, j = 0;
 	static int32_t i = 0;
-	uint32_t frequency = 24000000;
+	uint32_t frequency = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 	bool is_need_skip_sci1 = should_skip_sci1();
 
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
@@ -771,7 +770,7 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_config_t* csi_config)
 {
 	int32_t ret = 0, i = 0, j = 0;
-	uint32_t frequency = 24000000;
+	uint32_t frequency = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 	bool is_need_skip_sci1 = should_skip_sci1();
 
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];

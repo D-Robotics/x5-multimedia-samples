@@ -30,6 +30,7 @@ typedef struct {
 
 	float blend_ratio;
 
+	int bpu_fps;
 	int bpu_enable;
 	int bpu_postporcess_enable;
 

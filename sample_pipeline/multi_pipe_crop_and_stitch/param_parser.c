@@ -179,6 +179,7 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 		{"output", no_argument, NULL, 'o'},
 		{"gdc_enable", no_argument, NULL, 'g'},
 		{"bpu_enable", no_argument, NULL, 'b'},
+		{"bpu_fps", no_argument, NULL, 'f'},
 		{"verbose", no_argument, NULL, 'v'},
 		{"help", no_argument, NULL, 'h'},
 		{NULL, 0, NULL, 0}
@@ -192,20 +193,28 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 	param_config->bpu_enable = 0;
 	param_config->bpu_postporcess_enable = 0;
 	param_config->verbose_flag = 0;
+	param_config->bpu_fps = 5;
 
 	int c = 0;
 	int32_t total_pipeline_num = 0;
-	while ((c = getopt_long(argc, argv, "c:r:o:pbgvh", long_options, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "c:r:o:f:pbgvh", long_options, NULL)) != -1) {
 		switch (c) {
 		case 'c':
 			if (total_pipeline_num >= MAX_PIPE_NUM) {
 				fprintf(stderr, "Too many configurations. Maximum allowed is %d.\n", MAX_PIPE_NUM);
 				return -1;
 			}
-
 			parse_config(&param_config->sensor_param_config[total_pipeline_num], optarg);
 			total_pipeline_num++;
 			break;
+		case 'f':
+			int bpu_fps = atoi(optarg);
+			if((bpu_fps <= 0) || (bpu_fps > 30)){
+				printf("input bpu fps is invalid [%s] => %d, so use default %d\n",
+					optarg, bpu_fps, param_config->bpu_fps);
+			}else{
+				param_config->bpu_fps = bpu_fps;
+			}
 		case 'r':
 			float blend_ratio = atof(optarg);
 			if((blend_ratio >= 0.0) && (blend_ratio <= 1.0)){
@@ -282,6 +291,7 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 	printf("\n\n blend info: %f\n", param_config->blend_ratio);
 	printf("\n\n BPU info\n");
 
+	printf("\t fps: %d\n", param_config->bpu_fps);
 	printf("\tenable: %d\n", param_config->bpu_enable);
 	printf("\tpost process enable: %d\n", param_config->bpu_postporcess_enable);
 

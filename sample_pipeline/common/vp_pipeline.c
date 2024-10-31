@@ -221,6 +221,14 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
 	// 调整 mipi_rx 的 index
 	vin_node_attr->cim_attr.mipi_rx = active_mipi_host;
+	vin_node_attr->cim_attr.func.enable_frame_id = 1;
+	vin_node_attr->cim_attr.func.set_init_frame_id = 1;
+
+	vin_node_attr->cim_attr.func.time_stamp_en = 1;
+	vin_node_attr->cim_attr.func.time_stamp_mode = 3;
+	vin_node_attr->cim_attr.func.ts_src = 1;
+	vin_node_attr->cim_attr.func.pps_src = 6;
+
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
@@ -258,7 +266,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
-	alloc_attr.buffers_num = PILELINE_OUT_BUFFER_COUNT;
+	alloc_attr.buffers_num = 3;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN

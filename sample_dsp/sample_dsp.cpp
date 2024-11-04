@@ -141,7 +141,7 @@ int32_t dsp_sample() {
 	uint32_t width = 640;
 	uint32_t height = 480;
 	int32_t timeout = 5;
-	int64_t hbmem_flag = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_PRIV_HEAP_SRAM;
+	int64_t hbmem_flag = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_PRIV_HEAP_2_RESERVED;
 	uint64_t buf_size = width * height;
 	uint64_t input_va, output_va;
 	uint64_t input_iova, output_iova;

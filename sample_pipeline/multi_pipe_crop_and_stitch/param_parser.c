@@ -215,6 +215,7 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 			}else{
 				param_config->bpu_fps = bpu_fps;
 			}
+			break;
 		case 'r':
 			float blend_ratio = atof(optarg);
 			if((blend_ratio >= 0.0) && (blend_ratio <= 1.0)){

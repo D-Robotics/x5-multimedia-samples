@@ -79,7 +79,7 @@ int32_t tuning_send_yuv_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t
 {
 	void *plane0_addr = NULL;
 	void *plane1_addr = NULL;
-	pic_info_t hbplayer_info;
+	pic_info_t hbplayer_info = {0};
 	uint32_t size;
 
 	if(normal_buf == NULL) {

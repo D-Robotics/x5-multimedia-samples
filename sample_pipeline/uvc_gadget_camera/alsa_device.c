@@ -525,3 +525,110 @@ void alsa_device_free(alsa_device_t *obj)
 
 	trace_out();
 }
+
+/* alsa mixer */
+int alsa_mixer_init(alsa_mixer_t *mixer)
+{
+	snd_mixer_elem_t *elem = NULL;
+
+	if (!mixer) {
+		return -1;
+	}
+
+    if (snd_mixer_open(&mixer->handle, 0) < 0) {
+        fprintf(stderr, "Cannot open mixer\n");
+        return -1;
+    }
+
+    if (snd_mixer_attach(mixer->handle, mixer->device) < 0) {
+        fprintf(stderr, "Cannot attach to default card [%s]\n", mixer->device);
+        goto mixer_err_out;
+    }
+
+    if (snd_mixer_selem_register(mixer->handle, NULL, NULL) < 0) {
+        fprintf(stderr, "Cannot register mixer elements\n");
+        goto mixer_err_out;
+    }
+
+    if (snd_mixer_load(mixer->handle) < 0) {
+        fprintf(stderr, "Cannot load mixer\n");
+        goto mixer_err_out;
+    }
+
+	//printf("Alsa Card [%s] Mixer Detect Elem:\n", mixer->device);
+	elem = snd_mixer_first_elem(mixer->handle);
+	while (elem)
+	{
+		//printf("Element [%s]\n", snd_mixer_selem_get_name(elem));
+		if (strcmp("PCM",  snd_mixer_selem_get_name(elem)) == 0)
+		{
+			break;
+		}
+		elem = snd_mixer_elem_next(elem);
+	}
+
+	if (!elem) {
+		printf("Not Elem found in Mixer\n");
+		goto mixer_err_out;
+	}
+
+	mixer->elem = elem;
+	return 0;
+
+mixer_err_out:
+	if (mixer->handle)
+		snd_mixer_close(mixer->handle);
+	return -1;
+}
+
+void alsa_mixer_deinit(alsa_mixer_t *mixer)
+{
+	if (!mixer) {
+		return;
+	}
+
+	if (mixer->handle)
+		snd_mixer_close(mixer->handle);
+}
+
+int alsa_mixer_get_capture_volume_mute(alsa_mixer_t *mixer, long *volume, int *mute)
+{
+	int _mute = 0;
+	long _vol = 0;
+	if (!mixer || !mixer->elem) {
+		return -1;
+	}
+
+	if (0 != snd_mixer_selem_get_capture_switch(mixer->elem, SND_MIXER_SCHN_FRONT_LEFT, &_mute)) {
+		return -1;
+	}
+
+	if (0 != snd_mixer_selem_get_capture_volume(mixer->elem, SND_MIXER_SCHN_FRONT_LEFT, &_vol)) {
+		return -1;
+	}
+
+	*volume = _vol;
+	*mute = _mute;
+	return 0;
+}
+
+int alsa_mixer_get_playback_volume_mute(alsa_mixer_t *mixer, long *volume, int *mute)
+{
+	int _mute = 0;
+	long _vol = 0;
+	if (!mixer || !mixer->elem) {
+		return -1;
+	}
+
+	if (0 != snd_mixer_selem_get_playback_switch(mixer->elem, SND_MIXER_SCHN_FRONT_LEFT, &_mute)) {
+		return -1;
+	}
+
+	if (0 != snd_mixer_selem_get_playback_volume(mixer->elem, SND_MIXER_SCHN_FRONT_LEFT, &_vol)) {
+		return -1;
+	}
+
+	*volume = _vol;
+	*mute = _mute;
+	return 0;
+}

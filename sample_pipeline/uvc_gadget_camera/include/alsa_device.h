@@ -28,6 +28,12 @@ typedef struct alsa_device {
 	snd_pcm_uframes_t	buffer_size;	/* buffer_size, totally alsa buffer. nperiods * period_size */
 } alsa_device_t;
 
+typedef struct alsa_mixer {
+	snd_mixer_t *handle;
+	snd_mixer_elem_t *elem;
+	char *device;
+}alsa_mixer_t;
+
 alsa_device_t *alsa_device_allocate(void);
 int alsa_device_init(alsa_device_t *adev);
 int alsa_device_read(alsa_device_t *adev, void *buffer,
@@ -39,5 +45,11 @@ void alsa_device_free(alsa_device_t *obj);
 
 /* helper function */
 void alsa_device_debug_enable(int enable);
+
+/* alsa mixer */
+int alsa_mixer_init(alsa_mixer_t *mixer);
+void alsa_mixer_deinit(alsa_mixer_t *mixer);
+int alsa_mixer_get_capture_volume_mute(alsa_mixer_t *mixer, long *volume, int *mute);
+int alsa_mixer_get_playback_volume_mute(alsa_mixer_t *mixer, long *volume, int *mute);
 
 #endif	/* _ALSA_DEVICE_H_ */

@@ -8,6 +8,19 @@
 #define UAC_SPEAKER_MASK 		0x1
 #define UAC_MICPHONE_MASK 		0x2
 
+typedef struct control_info {
+    int mute;
+    long volume;
+}control_info_t;
+
+typedef struct uac_control {
+    alsa_mixer_t mixer;
+    pthread_t thread_id;
+    int exit;
+    control_info_t capture;
+    control_info_t playback;
+}uac_control_t;
+
 typedef struct uac_gadget_contex_s
 {
 	uint32_t uac_mask;
@@ -17,6 +30,7 @@ typedef struct uac_gadget_contex_s
     int micphone_test_type;
     char uac_play_file[UAC_FILE_PATH_LEN];
     char uac_record_file[UAC_FILE_PATH_LEN];
+    uac_control_t controller;
 } uac_gadget_contex_t;
 
 int uac_gadget_contex_init(uac_gadget_contex_t *p_uac_gadget_contex);

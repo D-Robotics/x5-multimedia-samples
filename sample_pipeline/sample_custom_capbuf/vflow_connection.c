@@ -62,10 +62,11 @@ int vflow_create_and_run(pipe_contex_t *pipe_contex, node_info_t *nodes,
 {
 	int ret = 0;
 
-	printf(">>>> %s %d node_count %ld \n", __func__, __LINE__, node_count);
 	// 创建vflow
+	pipe_contex->vflow_fd = 0;
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
+	printf(">>>> %s %d node_count %ld vflow_fd %ld\n", __func__, __LINE__, node_count, pipe_contex->vflow_fd);
 
 	// 添加所有节点
 	for (size_t i = 0; i < node_count; ++i) {
@@ -95,11 +96,10 @@ int vflow_create_and_run(pipe_contex_t *pipe_contex, node_info_t *nodes,
 int vflow_stop_and_destory(pipe_contex_t *pipe_contex)
 {
 	int ret = 0;
-	printf(">>>> %s %d vflow id %ld \n", __func__, __LINE__, pipe_contex->vflow_fd);
+	printf(">>>> %s %d vflowid %ld \n", __func__, __LINE__, pipe_contex->vflow_fd);
 
 	ret = hbn_vflow_stop(pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
-	hbn_vnode_close(pipe_contex->vflow_fd);
 	hbn_vflow_destroy(pipe_contex->vflow_fd);
 
 	return ret;

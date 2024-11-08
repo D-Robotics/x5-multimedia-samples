@@ -381,19 +381,21 @@ static int free_nv12_image(hbn_vnode_image_t *input_image)
 
 static int feedback_vse_create_and_run(int n)
 {
-	int ret;
+	int ret = 0;
 
-	printf(">>> %s n %d\n", __func__, n);
+	printf(">>> %s n %d vflow_fd %ld\n", __func__, n, flags.pipe_contex[n].vflow_fd);
 	ret = feedback_vse_create(&flags.pipe_contex[n], &flags.scaler_info[n],
 					VSE_ALL_CHN_MASK, flags.cap_buf_flag);
 	if (ret != 0) {
 		printf("Fail to feedback_vse_create\n");
+		return ret;
 	}
 	node_info_t vse_node;
 	vse_node.node_handle = flags.pipe_contex[n].vse_node_handle;
 	ret = vflow_create_and_run(&flags.pipe_contex[n], &vse_node, 1, NULL, 0);
 	if (ret != 0) {
 		printf("Fail to vflow_create_and_run\n");
+		return ret;
 	}
 
 	return ret;
@@ -412,6 +414,8 @@ static int feedback_vse_stop_and_destory(int n)
 	if (ret != 0) {
 		printf("Fail to vflow_stop_and_destory\n");
 	}
+	printf(">>> %s n %d vflow_fd %ld\n", __func__, n, flags.pipe_contex[n].vflow_fd);
+	flags.pipe_contex[n].vflow_fd = 0;
 
 	return ret;
 }
@@ -434,7 +438,10 @@ void *feedback_thread_vse(void *args)
 	gettimeofday(&start, NULL);
 loop:
 	if (flags.cap_loop_flag != CAP_LOOP_ONLY_FEEDBACK) {
-		feedback_vse_create_and_run(n);
+		ret = feedback_vse_create_and_run(n);
+		if (ret != 0) {
+			printf("Fail to feedback_vse_create_and_run\n");
+		}
 	}
 	ret = feedback_vse(&flags.pipe_contex[n], &flags.scaler_info[n], VSE_ALL_CHN_MASK,
 				flags.cap_buf_flag);
@@ -452,8 +459,10 @@ loop:
 
 	if (flags.cap_loop_flag != CAP_LOOP_ONLY_FEEDBACK) {
 		feedback_vse_stop_and_destory(n);
+		usleep(100*1000);
 	}
 
+	usleep(1*1000);
 	if ((loop_cnt++) < flags.cap_loop_cnt)
 		goto loop;
 
@@ -533,11 +542,10 @@ loop:
 
 	if (flags.cap_loop_flag != CAP_LOOP_ONLY_FEEDBACK) {
 		feedback_gdc_stop_and_destory(n);
-		printf("sleep 200 ms stop\n");
-		usleep(200*1000);
+		usleep(100*1000);
 	}
 
-	usleep(5*1000);
+	usleep(1*1000);
 	if ((loop_cnt++) < flags.cap_loop_cnt)
 		goto loop;
 
@@ -606,7 +614,7 @@ int main(int argc, char** argv)
 	if (strncmp(engine_type, "vse-", 4) == 0) {
 		scaler_info_s scaler_info;
 		gdc_info_s gdc_info;
-		pipe_contex_t pipe_contex;
+		pipe_contex_t pipe_contex = {0};
 
 		token = strtok(engine_type, "-");
 		token = strtok(NULL, "-");
@@ -674,7 +682,7 @@ int main(int argc, char** argv)
 	} else if (strncmp(engine_type, "gdc-", 4) == 0) {
 		scaler_info_s scaler_info;
 		gdc_info_s gdc_info;
-		pipe_contex_t pipe_contex;
+		pipe_contex_t pipe_contex = {0};
 
 		token = strtok(engine_type, "-");
 		token = strtok(NULL, "-");

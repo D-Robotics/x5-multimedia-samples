@@ -4,18 +4,35 @@
 #include <unistd.h>
 #include "util.h"
 #include "synchronous_queue.h"
+
+//#define QUEUE_DEBUG
+#ifdef QUEUE_DEBUG
+#define QUEUE_LOG printf
+#else
+#define QUEUE_LOG(...)
+#endif
+
+
 int sync_queue_add_user(sync_queue_t *sync_queue){
+
 	sync_queue->user_count++;
+
+	QUEUE_LOG("[Queue add user]: [%s -> %s] count[%d]\n", sync_queue->sync_queue_info.productor_name,
+					sync_queue->sync_queue_info.consumer_name , sync_queue->user_count);
+
 	if(sync_queue->user_count > SYNC_QUEUE_MAX_USER){
 		return -1;
 	}
 	return (sync_queue->user_count - 1);
 }
 
-int sync_queue_create_multi_user(sync_queue_t *sync_queue, sync_queue_info_t *sync_queue_info){
+int sync_queue_create_multi_user(sync_queue_t *sync_queue, sync_queue_info_t *sync_queue_info)
+{
 	int ret = sync_queue_create(sync_queue, sync_queue_info);
+
 	if(ret == 0){
-		return (sync_queue->user_count - 1);
+//		return (sync_queue->user_count - 1);
+		sync_queue->user_count = 0;
 	}
 	return ret;
 }
@@ -77,6 +94,10 @@ int sync_queue_create(sync_queue_t *sync_queue, sync_queue_info_t *sync_queue_in
 	sync_queue->sync_queue_info = *sync_queue_info;
 	sync_queue->user_count = 1;
 	sync_queue->inused_queue_count = 0;
+
+	QUEUE_LOG("[Queue create]: [%s -> %s] count[%d]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name , sync_queue->user_count);
+
 	return 0;
 }
 
@@ -84,6 +105,10 @@ int sync_queue_create(sync_queue_t *sync_queue, sync_queue_info_t *sync_queue_in
 int sync_queue_get_unused_object(sync_queue_t* sync_queue, uint32_t timeout_ms, data_item_t **data_item){
 	const int timeout_duration_ms = 1000;
 	int run_count = 0;
+
+	QUEUE_LOG("[Queue get unuse]: [%s -> %s]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name );
+
 	while(timeout_duration_ms * run_count < timeout_ms){
 		run_count++;
 
@@ -118,6 +143,10 @@ int sync_queue_save_inused_object(sync_queue_t* sync_queue, uint32_t timeout_ms,
 	int ret = -1;
 	teQueueStatus status = E_QUEUE_OK;
 	const uint32_t check_duration_ms = 500;
+
+QUEUE_LOG("[Queue save inused]: [%s -> %s]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name );
+
 
 	uint32_t timeout_ms_consume = 0;
 	data_item->is_init_added = 0;
@@ -223,10 +252,15 @@ int dequeue_process_func_with_user(void *data, void *handle, int user_flag){
 	}
 	return 0;
 }
+
 int sync_queue_obtain_inused_object_width_user(sync_queue_t* sync_queue, uint32_t timeout_ms, data_item_t **data_item, int user_flag){
 	int ret = -1;
 	const int timeout_duration_ms = 1000;
 	int run_count = 0;
+
+	QUEUE_LOG("[Queue obtain inused]: [%s -> %s] user[%d]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name, user_flag);
+
 	while(timeout_duration_ms * run_count < timeout_ms){
 		run_count++;
 
@@ -258,6 +292,11 @@ int sync_queue_obtain_inused_object(sync_queue_t* sync_queue, uint32_t timeout_m
 	int ret = -1;
 	const int timeout_duration_ms = 1000;
 	int run_count = 0;
+
+	QUEUE_LOG("[Queue obtain inused]: [%s -> %s]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name);
+
+
 	while(timeout_duration_ms * run_count < timeout_ms){
 		run_count++;
 		teQueueStatus status = E_QUEUE_OK;
@@ -281,6 +320,9 @@ int sync_queue_repay_unused_object(sync_queue_t* sync_queue, uint32_t timeout_ms
 	int ret = -1;
 	teQueueStatus status = E_QUEUE_OK;
 	const uint32_t check_duration_ms = 500;
+
+	QUEUE_LOG("[Queue repay unused]: [%s -> %s]\n", sync_queue->sync_queue_info.productor_name,
+				sync_queue->sync_queue_info.consumer_name);
 
 	uint32_t timeout_ms_consume = 0;
 	data_item->is_init_added = 0;

@@ -31,6 +31,19 @@
 #include "create_n2d_buffer_wraper.h"
 #include "performance_test_util.h"
 
+#ifdef PTS_ENABLE
+#include <sys/time.h>
+static uint64_t get_timestamp_us()
+{
+	uint64_t timestamp;
+	struct timeval ts;
+
+	gettimeofday(&ts, NULL);
+	timestamp = (uint64_t)ts.tv_sec * 1000000 + (uint64_t)ts.tv_usec;
+	return timestamp;
+}
+#endif
+
 #define HDMI_DISPLAY_QUEUE_COUNT 5
 #define BPU_RESULT_MAX_COUNT 4
 typedef struct {
@@ -156,6 +169,200 @@ void vpp_graphic_buf_to_bpu_buffer_info(const hbn_vnode_image_t *src, bpu_buffer
 	}
 }
 
+static int pipeline_file_encodec_data(sensor_outfile_config_t *outfile, hbn_vnode_image_t *chn_frame)
+{
+	int ret;
+	if (!outfile) {
+		printf("Param Empty.\n");
+		return -1;
+	}
+
+	if (!outfile->enable) {
+		return 0;
+	}
+
+	media_codec_context_t *media_context = &outfile->encode_context;
+	media_codec_buffer_t input_buffer = {0};
+	media_codec_buffer_t output_buffer = {0};
+	media_codec_output_buffer_info_t info;
+	// int frame_width = 3840;
+	// int frame_height = 2160;
+
+	memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
+	//input_buffer.type = MC_VIDEO_FRAME_BUFFER;
+	ret = hb_mm_mc_dequeue_input_buffer(media_context, &input_buffer, 2000);
+	if (ret != 0){
+		printf("hb_mm_mc_dequeue_input_buffer failed ret = %d\n", ret);
+		return -1;
+	}
+
+	init_media_codec_buffer_from_hbm(&input_buffer, &chn_frame->buffer);
+
+	ret = hb_mm_mc_queue_input_buffer(media_context, &input_buffer, 2000);
+	if (ret != 0){
+		printf("hb_mm_mc_queue_input_buffer failed, ret = 0x%x\n", ret);
+		return -1;
+	}
+
+	memset(&output_buffer, 0x00, sizeof(media_codec_buffer_t));
+	memset(&info, 0x00, sizeof(media_codec_output_buffer_info_t));
+	ret = vp_codec_get_output(media_context, &output_buffer, &info, 2000);
+	if(ret != 0){
+		printf("vp_codec_get_output failed %d.\n", ret);
+		return -1;
+	}
+
+	if (outfile->enable_save_file && outfile->fp) {
+		fwrite(output_buffer.vstream_buf.vir_ptr, output_buffer.vstream_buf.size, 1, outfile->fp);
+	}
+
+#ifdef PTS_ENABLE
+	// outfile->cur_timestamps = output_buffer.vstream_buf.pts;
+	outfile->cur_timestamps = get_timestamp_us();
+	printf("file[%s] pts cnt [%ld]\n", outfile->filename, outfile->cur_timestamps - outfile->last_timestamps);
+	outfile->last_timestamps = outfile->cur_timestamps;
+#endif
+
+	ret = vp_codec_release_output(media_context, &output_buffer);
+	if(ret != 0){
+		printf("vp_codec_release_output failed %d.\n", ret);
+		return -1;
+	}
+
+	return 0;
+}
+
+static void *pipeline_codec_thread(void *context)
+{
+	int ret = 0;
+	prctl(PR_SET_NAME, "pipeline_codec");
+	char performace_test_case[64] = {0};
+
+	sensor_outfile_config_t *outfile_cfg = (sensor_outfile_config_t *)context;
+	data_item_t *data_item = NULL;
+	int chn = outfile_cfg->chn;
+
+	sprintf(performace_test_case, "chn%d_encode_%s", chn, outfile_cfg->type);
+	struct PerformanceTestParamSimple performace_test_param_codec = {
+		.iteration_number = 30 * 60,
+		.test_case = performace_test_case,
+		.run_count = 0,
+		.test_count = 0,
+	};
+
+	if (!outfile_cfg->enable) {
+		return NULL;
+	}
+
+	if (outfile_cfg->enable_save_file) {
+		outfile_cfg->fp = fopen(outfile_cfg->filename, "w+b");
+		if (NULL == outfile_cfg->fp) {
+			printf("Failed to open output file: [%s]\n", outfile_cfg->filename);
+			return NULL;
+		}
+	}
+
+	while (outfile_cfg->is_running){
+
+		sync_queue_t* vse_to_n2d = outfile_cfg->data_queue;
+		int user_flag = outfile_cfg->queue_user_flag;
+		ret = sync_queue_obtain_inused_object_width_user(vse_to_n2d, 5000, &data_item, user_flag);
+		if(ret == -1){
+			printf("vse feedback sync_queue_obtain_inused_object vse_to_n2d failed\n");
+			break;
+		}else if(ret == 1){
+			// printf("vse feedback thread get same item, so ignore it. %d:%d\n", data_item->inused_frame_index, last_inused_frame_index);
+			usleep(1000);
+			continue;
+		}else{
+			//do nothing
+		}
+
+		for (size_t i = 0; i < data_item->item_count; i++){
+			if (i != chn) {
+				continue;
+			}
+			performance_test_start_simple(&performace_test_param_codec);
+
+			// codec
+			hbn_vnode_image_t *pipeline_chn_frame = ((hbn_vnode_image_t*)data_item->items) + i;
+			pipeline_file_encodec_data(outfile_cfg, pipeline_chn_frame);
+
+			performance_test_stop_simple(&performace_test_param_codec);
+		}
+		ret = sync_queue_repay_unused_object(vse_to_n2d, 2000, data_item);
+		if(ret != 0){
+			printf("sync_queue_repay_unused_object failed\n");
+			break;
+		}
+	}
+
+	if (outfile_cfg->fp) {
+		fclose(outfile_cfg->fp);
+	}
+	printf("pipeline_codec_thread is exit.\n");
+	return NULL;
+}
+
+static int pipeline_codec_init(int chn, const char *type, sensor_outfile_config_t *codec_config, camera_config_info_t *camera_config_info)
+{
+	if (!codec_config->enable) {
+		return 0;
+	}
+	media_codec_context_t *encode_context = &codec_config->encode_context;
+
+	codec_config->chn = chn;
+	strcpy(codec_config->type, type);
+
+	printf("Chn[%d] create codec.\n", chn);
+	printf("\n\nCodec param:\n");
+	printf("\tcodec type :%s\n", type);
+	printf("\tcodec fps :%d\n", camera_config_info->fps);
+	printf("\tcodec width :%d\n", camera_config_info->width);
+	printf("\tcodec height :%d\n", camera_config_info->height);
+	int ret = vp_codec_encoder_create_and_start(encode_context, camera_config_info);
+	if (ret != 0){
+		printf("create_encodec failed:%d\n", ret);
+		return -1;
+	}
+
+	printf("\tcreate Codec Thread.\n");
+	codec_config->is_running = 1;
+	ret = pthread_create(&codec_config->codec_thread, NULL, (void *)pipeline_codec_thread,
+									(void *)codec_config);
+	if(ret != 0){
+		printf("\n\nFailed: pthread_create.\n\n");
+		return -1;
+	}
+
+	#if 0
+	uint8_t uuid[] = "dc45e9bd-e6d948b7-962cd820-d923eeef+SEI_D-Robotics";
+	uint32_t length = sizeof(uuid) / sizeof(uuid[0]);
+	ret = hb_mm_mc_insert_user_data(encode_context, uuid, length);
+	if (ret != 0)
+	{
+		printf("#### insert user data failed. ret(%d) ####\n", ret);
+		return -1;
+	}
+	#endif
+	return 0;
+}
+
+static void pipeline_codec_deinit(sensor_outfile_config_t *codec_config)
+{
+	if (!codec_config || !codec_config->enable) {
+		return;
+	}
+
+	codec_config->is_running = 0;
+	pthread_join(codec_config->codec_thread, NULL);
+
+	media_codec_context_t *encode_context = &codec_config->encode_context;
+	if (encode_context) {
+		vp_codec_encoder_destroy_and_stop(encode_context);
+	}
+}
+
 void *get_data_from_pipeline(void *context){
 	int ret = 0;
 	prctl(PR_SET_NAME, "get_data_from_pipeline");
@@ -226,8 +433,8 @@ void *get_data_from_pipeline(void *context){
 		// uint64_t start_tmp = get_timestamp_ms();
 
 		performance_test_start_simple(&performace_total_test_param_simple);
-		sync_queue_t* vse_to_n2d = &multi_pipe_stitch_info->vse_to_n2d;
 
+		sync_queue_t* vse_to_n2d = &multi_pipe_stitch_info->vse_to_n2d;
 		performance_test_start(&performace_test_param_get_queue);
 		ret = sync_queue_get_unused_object(vse_to_n2d, 5000, &data_item);
 		if(ret != 0){
@@ -254,7 +461,7 @@ void *get_data_from_pipeline(void *context){
 				pipeline_node_handle = pipe_contex->vse_node_handle;
 				pipeline_node_channel = sensor_param_config->vse_bind_n2d_chn;
 			}else{
-				if(param_config->gdc_enable){
+				if(sensor_param_config->gdc_enable){
 					pipeline_node_name = "GDC";
 					pipeline_node_handle = pipe_contex->gdc_node_handle;
 					pipeline_node_channel = 0;
@@ -291,6 +498,7 @@ void *get_data_from_pipeline(void *context){
 					i, pipeline_node_name, pipeline_node_channel, ret, pipeline_node_handle);
 				break;
 			}
+
 			performance_test_stop(performace_test_param);
 			get_vse_frame_count++;
 		}
@@ -302,7 +510,7 @@ void *get_data_from_pipeline(void *context){
 		performance_test_start(&performace_test_param_save_queue);
 		ret = sync_queue_save_inused_object(vse_to_n2d, 5000 /*5s: 极限情况*/, data_item);
 		if(ret != 0){
-			printf("sync_queue_get_unused_object vse_to_n2d failed\n");
+			printf("sync_queue_save_inused_object vse_to_n2d failed\n");
 			break;;
 		}
 		performance_test_stop(&performace_test_param_save_queue);
@@ -478,6 +686,7 @@ void *get_data_from_feedback_vse(void *context){
 	return NULL;
 }
 
+#ifdef GPU_ENABLE
 void *get_stitch_data(void *context){
 	int ret = 0;
 	n2d_error_t error;
@@ -491,7 +700,6 @@ void *get_stitch_data(void *context){
 		return NULL;
 	}
 	prctl(PR_SET_NAME, "get_stitch_data");
-
 
 	//0. prepare buffer
 
@@ -875,7 +1083,7 @@ void *get_stitch_data(void *context){
 	printf("get_stitch_data thread is exit.\n");
 	return NULL;
 }
-
+#endif
 
 void *send_to_hdmi_display(void *context){
 	int ret = 0;
@@ -1156,6 +1364,7 @@ void *get_codec_data_save_file(void *context){
 	printf("get_codec_data_save_file thread is exit.\n");
 	return NULL;
 }
+
 typedef struct stitch_item_data_init_param_s{
 	int width;
 	int height;
@@ -1250,7 +1459,12 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 		printf("sync queue create failed for vse.\n");
 		return -1;
 	}
-	multi_pipe_stitch_info->sync_queue_user_flag_n2d = ret;
+
+#ifdef GPU_ENABLE
+	if (param_config->gpu_enable) {
+		multi_pipe_stitch_info->sync_queue_user_flag_n2d = sync_queue_add_user(&multi_pipe_stitch_info->vse_to_n2d);
+	}
+#endif
 
 	const stitch_item_data_init_param_t stitch_item_data_init_param = {
 		.width = multi_pipe_stitch_info->output_width,
@@ -1319,7 +1533,6 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 					i, sensor_param_config->sensor_config->camera_config->name);
 				return -1;
 			}
-
 		}
 	}
 
@@ -1330,7 +1543,7 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 		sensor_param_config_t* sensor_param_config = &param_config->sensor_param_config[i];
 		pipe_contex_t *pipe_contex = &multi_pipe_stitch_info->pipe_contex[i];
 
-		//3.1 init pipe_contex
+		//2.1 init pipe_contex
 		pipe_contex->sensor_config = sensor_param_config->sensor_config;
 		pipe_contex->csi_config = sensor_param_config->csi_config;
 		vp_pipeline_info_t vp_pipeline_info = {
@@ -1338,7 +1551,7 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			.active_mipi_host = sensor_param_config->active_mipi_host,
 			.vse_bind_index = sensor_param_config->vse_bind_n2d_chn,
 			.sensor_mode = sensor_param_config->sensor_mode,
-			.enable_gdc = param_config->gdc_enable,
+			.enable_gdc = sensor_param_config->gdc_enable,
 			.enable_online = multi_pipe_stitch_info->enable_isp_online,
 			.enable_vse = multi_pipe_stitch_info->pipe_contex_need_vse[i],
 			.sensor_name = sensor_param_config->sensor_config->camera_config->name,
@@ -1357,6 +1570,32 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			printf("vp create and start pipeline for camera [%d] [%s]failed\n",
 				i, sensor_param_config->sensor_config->camera_config->name);
 			return -1;
+		}
+
+		//2.2 init codec_contex
+		if (sensor_param_config->h264_outfile.enable) {
+			camera_config_info_t camera_config_info = {
+				.width = 3840,
+				.height = 2160,
+				.fps = 30,
+				.encode_type = MEDIA_CODEC_ID_H264,
+			};
+
+			sensor_param_config->h264_outfile.data_queue = &multi_pipe_stitch_info->vse_to_n2d;
+			sensor_param_config->h264_outfile.queue_user_flag = sync_queue_add_user(&multi_pipe_stitch_info->vse_to_n2d);
+			pipeline_codec_init(i, "h264", &sensor_param_config->h264_outfile, &camera_config_info);
+		}
+
+		if (sensor_param_config->mjpeg_outfile.enable) {
+			camera_config_info_t camera_config_info = {
+				.width = 3840,
+				.height = 2160,
+				.fps = 30,
+				.encode_type = MEDIA_CODEC_ID_MJPEG,
+			};
+			sensor_param_config->mjpeg_outfile.data_queue = &multi_pipe_stitch_info->vse_to_n2d;
+			sensor_param_config->mjpeg_outfile.queue_user_flag = sync_queue_add_user(&multi_pipe_stitch_info->vse_to_n2d);
+			pipeline_codec_init(i, "mjpeg", &sensor_param_config->mjpeg_outfile, &camera_config_info);
 		}
 	}
 
@@ -1381,6 +1620,7 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			printf("create_encodec failed:%d\n", ret);
 			return -1;
 		}
+
 	}else if(strcmp(param_config->output, "hdmi") == 0){
 		ret = vp_display_check_hdmi_is_connected();
 		if(ret == 0){
@@ -1432,9 +1672,13 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 	ret = pthread_create(&multi_pipe_stitch_info->get_data_from_pipeline_thread, NULL, (void *)get_data_from_pipeline,
 							(void *)multi_pipe_stitch_info);
 	ERR_CON_EQ(ret, 0);
-	ret = pthread_create(&multi_pipe_stitch_info->get_stitch_data_thread, NULL, (void *)get_stitch_data,
-							(void *)multi_pipe_stitch_info);
-	ERR_CON_EQ(ret, 0);
+#ifdef GPU_ENABLE
+	if (param_config->gpu_enable) {
+		ret = pthread_create(&multi_pipe_stitch_info->get_stitch_data_thread, NULL, (void *)get_stitch_data,
+								(void *)multi_pipe_stitch_info);
+		ERR_CON_EQ(ret, 0);
+	}
+#endif
 
 	//设置为实时线程
 	pthread_attr_t attr;
@@ -1466,8 +1710,7 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 		ret = pthread_create(&multi_pipe_stitch_info->output_thread, &attr, (void *)send_to_hdmi_display,
 							(void *)multi_pipe_stitch_info);
 	}else{
-		printf("unspport output form:%s\n", param_config->output);
-		return -1;
+		printf("Nothing output\n");
 	}
 	ERR_CON_EQ(ret, 0);
 
@@ -1484,15 +1727,12 @@ int pipeline_stop(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 	//1. wait thread stop
 	multi_pipe_stitch_info->is_running = 0;
 	pthread_join(multi_pipe_stitch_info->get_data_from_pipeline_thread, NULL);
-	pthread_join(multi_pipe_stitch_info->get_stitch_data_thread, NULL);
-#if 0
-	if((multi_pipe_stitch_info->is_hdmi_output) && (!multi_pipe_stitch_info->hdmi_is_need_use_vse_scale)){
-		//do nothing
-	}else{
+
+#ifdef GPU_ENABLE
+	if (multi_pipe_stitch_info->param_config.gpu_enable) {
+		pthread_join(multi_pipe_stitch_info->get_stitch_data_thread, NULL);
 		pthread_join(multi_pipe_stitch_info->output_thread, NULL);
 	}
-#else
-	pthread_join(multi_pipe_stitch_info->output_thread, NULL);
 #endif
 	param_config_t *param_config = &multi_pipe_stitch_info->param_config;
 
@@ -1506,6 +1746,12 @@ int pipeline_stop(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 
 	//4. pipeline stop
 	for (size_t i = 0; i < param_config->sensor_config_count; i++){
+
+		// 4.1 deinit pipeline codec
+		sensor_param_config_t* sensor_param_config = &param_config->sensor_param_config[i];
+		pipeline_codec_deinit(&sensor_param_config->h264_outfile);
+		pipeline_codec_deinit(&sensor_param_config->mjpeg_outfile);
+
 		pipe_contex_t *pipe_contex = &multi_pipe_stitch_info->pipe_contex[i];
 		vp_destroy_and_stop_pipeline(pipe_contex);
 	}

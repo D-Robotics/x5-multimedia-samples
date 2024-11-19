@@ -201,5 +201,6 @@ modprobe vio_n2d
 modprobe lontium_lt8618
 modprobe vs-x5-syscon-bridge
 modprobe vs_drm
+
 # ./multi_pipe_crop_and_stitch -c "sensor=8" -c "sensor=8" -o hdmi -b -v -g
-./multi_pipe_crop_and_stitch -c "sensor=8" -c "sensor=8" -o hdmi -b -v -p -g
+#./multi_pipe_crop_and_stitch -c "sensor=8" -c "sensor=8" -o hdmi -b -v -p -g

@@ -4,7 +4,7 @@
 #include <pthread.h>
 
 #include "mqueue.h"
-#define SYNC_QUEUE_MAX_USER 3
+#define SYNC_QUEUE_MAX_USER 5
 typedef struct data_item_s{
 	int is_init_added; //初始化过程中会向 unused队列中添加数据，但是不用归还内存
 	int item_count;

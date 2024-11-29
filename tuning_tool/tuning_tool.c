@@ -364,9 +364,9 @@ static void tuning_get_ae_statistics(tuning_context_t *ctx)
 	printf("Ae statistics current frameid: %d, timestamps: %ld\n", ae_statistics.frame_id, ae_statistics.timestamps);
 	printf("Datatype: %d\n", ae_statistics.datatype);
 
-	for (col = 0; col < HBN_ISP_GRID_NUM * HBN_ISP_PIXEL_CHANNEL; col += HBN_ISP_PIXEL_CHANNEL) {
-		for (row = 0; row < HBN_ISP_GRID_NUM; row++) {
-			luma = &ae_statistics.expStat[HBN_ISP_GRID_NUM * HBN_ISP_PIXEL_CHANNEL * row + col];
+	for (col = 0; col < HBN_ISP_AE_ZONE_GRID_NUM * HBN_ISP_PIXEL_CHANNEL; col += HBN_ISP_PIXEL_CHANNEL) {
+		for (row = 0; row < HBN_ISP_AE_ZONE_GRID_NUM; row++) {
+			luma = &ae_statistics.expStat[HBN_ISP_AE_ZONE_GRID_NUM * HBN_ISP_PIXEL_CHANNEL * row + col];
 			printf("(%d, %d, %d, %d) ", *luma, *(luma+1), *(luma+2), *(luma+3));
 		}
 		printf("\n");

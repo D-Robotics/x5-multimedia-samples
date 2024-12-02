@@ -228,3 +228,19 @@ int32_t tuning_get_raw_list(char *path, char img_path[][128], char img_name[][12
 
 	return 0;
 }
+
+struct timeval start, end;
+void tuning_time_point()
+{
+#ifdef TUNING_API_DELAY_DEBUG
+	gettimeofday(&start, NULL);
+#endif
+}
+
+void tuning_time_delay(const char *func_name)
+{
+#ifdef TUNING_API_DELAY_DEBUG
+	gettimeofday(&end, NULL);
+	printf("Call %s delay %lds, %ldus\n", func_name, end.tv_sec - start.tv_sec, end.tv_usec - start.tv_usec);
+#endif
+}

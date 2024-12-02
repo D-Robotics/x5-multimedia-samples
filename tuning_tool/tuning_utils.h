@@ -14,9 +14,47 @@
 #include "hb_tool_server.h"
 #include "hb_camera_interface.h"
 
-#define tuning_fmt(fmt) "[tuning_tool]%s: " fmt
-#define tuning_pr_warp(p_func_, fmt, ...) do { p_func_(tuning_fmt(fmt), __func__, ##__VA_ARGS__); } while(0)
+#define tuning_fmt(fmt) "[tuning_tool]: " fmt
+#define tuning_pr_warp(p_func_, fmt, ...) do { p_func_(tuning_fmt(fmt), ##__VA_ARGS__); } while(0)
 #define pr_tuning(fmt, ...) tuning_pr_warp(printf, fmt, ##__VA_ARGS__)
+#define apr_tuning(fmt, ...) android_printLog(6, NULL, fmt, ##__VA_ARGS__)
+
+#define pr_linear(param_name, level, type, val) do {\
+		int32_t l; \
+		printf("%s:", (param_name)); \
+		for (l = 0; l < (level); l++) { \
+			printf(type, val[l]); \
+		} \
+		printf("\n"); \
+	} while(0)
+
+#define pr_double(param_name, level, level2, type, val) do {\
+		int32_t l, m; \
+		printf("%s:\n", (param_name)); \
+		for (l = 0; l < (level); l++) { \
+			for (m = 0; m < (level2); m++) { \
+				printf(type, val[l][m]); \
+			} \
+			printf("\n"); \
+		} \
+		printf("\n"); \
+	} while(0)
+
+#define pr_triple(param_name, level, level2, level3, type, val) do {\
+		int32_t l, m, n; \
+		printf("%s:\n", (param_name)); \
+		for (l = 0; l < (level); l++) { \
+			for (m = 0; m < (level2); m++) { \
+				for (n = 0; n < (level3); n++) { \
+					printf(type, val[l][m][n]); \
+				} \
+				printf("\n"); \
+			} \
+			printf("\n"); \
+		} \
+		printf("\n"); \
+	} while(0)
+
 #define BIT_ENABLE(val, shift) ((val) & (1 << (shift)))
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
@@ -70,5 +108,26 @@ int32_t tuning_dump_file(char *filename, hbn_vnode_image_t *out_img);
 int32_t tuning_alloc_feedback_buffer(hb_mem_graphic_buf_t *buf, uint32_t width, uint32_t height, uint32_t cached);
 int32_t tuning_free_feedback_buffer(hb_mem_graphic_buf_t *buf);
 int32_t tuning_get_raw_list(char *path, char img_path[][128], char img_name[][128], int32_t *img_num);
+void tuning_time_point();
+void tuning_time_delay(const char *func_name);
+
+#define RECORD_START() do { \
+		tuning_time_point(); \
+	} while(0)
+
+#define RECORD_END() do { \
+		tuning_time_delay(__func__); \
+	} while(0)
+
+#define ISP_API_EQ(func, retfunc) do { \
+		int32_t func_ret; \
+		RECORD_START(); \
+		func_ret = func; \
+		RECORD_END(); \
+		if ((func_ret) != 0) { \
+			pr_tuning("error: %s(%d)%s fail!\n", __func__, __LINE__, #func); \
+			retfunc; \
+		} \
+	} while(0)
 
 #endif // __TUNING_UTILS_H__

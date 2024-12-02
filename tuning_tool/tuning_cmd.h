@@ -7,6 +7,13 @@
 #ifndef __TUNING_CMD_H__
 #define __TUNING_CMD_H__
 
+#include "tuning_tool.h"
+
+typedef struct tuning_cmd_func {
+	char cmd;
+	void (*api_func)(tuning_context_t *ctx);
+} tuning_cmd_func_t;
+
 /* app cmd */
 #define PARSE_SHORT_OPTS "c:v:d:r:s:f:w:"
 #define PARSE_LONG_OPTS {\
@@ -18,12 +25,14 @@
 		{"work_mode", 1, 0, 'w'},\
 		{ NULL, 0, 0, 0 },\
 	}
+
 #define PARSE_SHOW_OPTS "-c        camera json path\n"\
 			"-v        vpm json path\n"\
 			"-r        send raw to hbplayer\n"\
 			"-s        dump stream flag\n"\
 			"-w        work mode mask\n"\
 			"-h        usage help\n"
+
 #define parse_opts_print(prog) do {\
 		pr_tuning("Usage: %s\n", prog);\
 		printf(PARSE_SHOW_OPTS);\
@@ -34,31 +43,78 @@
 			"y -> dump yuv\n"\
 			"e -> set ae attr\n"\
 			"E -> get ae attr\n"\
+			"r -> set ae roi\n"\
+			"R -> get ae roi\n"\
 			"b -> get ae statistics\n"\
+			"f -> get af statistics\n"\
 			"w -> set awb attr\n"\
 			"W -> get awb attr\n"\
 			"t -> set exp table\n"\
 			"T -> get exp table\n"\
 			"m -> set module control\n"\
 			"M -> get module control\n"\
+			"d -> set 2dnr attr\n"\
+			"D -> get 2dnr attr\n"\
+			"n -> set 3dnr attr\n"\
+			"N -> get 3dnr attr\n"\
+			"z -> set ae zone weight\n"\
+			"Z -> get ae zone weight\n"\
+			"p -> set awb preference attr\n"\
+			"P -> get awb preference attr\n"\
 			"q -> quit\n"\
 			"h -> help\n"
+
 #define valid_cmd_print() do {\
 		pr_tuning("Support list:\n");\
 		printf(VALID_CMD_USAGE);\
 	} while(0)
+
 #define TUNING_CMD_FUNC_LIST {\
 	{'s',	tuning_dump_sif_raw},\
 	{'e',	tuning_handle_set_expsoure},\
 	{'E',	tuning_handle_get_expsoure},\
+	{'r',	tuning_hanle_set_exp_roi},\
+	{'R',	tuning_hanle_get_exp_roi},\
 	{'w',	tuning_handle_set_white_balance},\
 	{'W',	tuning_handle_get_white_balance},\
 	{'t',	tuning_hanle_set_ae_table},\
 	{'T',	tuning_hanle_get_ae_table},\
 	{'y',	tuning_dump_yuv},\
 	{'b',	tuning_get_ae_statistics},\
+	{'f',	tuning_get_af_statistics},\
 	{'m',	tuning_set_module_control},\
 	{'M',	tuning_get_module_control},\
+	{'d',	tuning_hanle_set_2dnr_attr},\
+	{'D',	tuning_hanle_get_2dnr_attr},\
+	{'n',	tuning_hanle_set_3dnr_attr},\
+	{'N',	tuning_hanle_get_3dnr_attr},\
+	{'z',	tuning_hanle_set_ae_zone_weight},\
+	{'Z',	tuning_hanle_get_ae_zone_weight},\
+	{'p',	tuning_hanle_set_awb_preference_attr},\
+	{'P',	tuning_hanle_get_awb_preference_attr},\
 }
+
+void tuning_dump_sif_raw(tuning_context_t *ctx);
+void tuning_handle_set_expsoure(tuning_context_t *ctx);
+void tuning_handle_get_expsoure(tuning_context_t *ctx);
+void tuning_handle_set_white_balance(tuning_context_t *ctx);
+void tuning_handle_get_white_balance(tuning_context_t *ctx);
+void tuning_hanle_set_ae_table(tuning_context_t *ctx);
+void tuning_hanle_get_ae_table(tuning_context_t *ctx);
+void tuning_hanle_set_exp_roi(tuning_context_t *ctx);
+void tuning_hanle_get_exp_roi(tuning_context_t *ctx);
+void tuning_dump_yuv(tuning_context_t *ctx);
+void tuning_get_ae_statistics(tuning_context_t *ctx);
+void tuning_set_module_control(tuning_context_t *ctx);
+void tuning_get_module_control(tuning_context_t *ctx);
+void tuning_get_af_statistics(tuning_context_t *ctx);
+void tuning_hanle_set_2dnr_attr(tuning_context_t *ctx);
+void tuning_hanle_get_2dnr_attr(tuning_context_t *ctx);
+void tuning_hanle_set_3dnr_attr(tuning_context_t *ctx);
+void tuning_hanle_get_3dnr_attr(tuning_context_t *ctx);
+void tuning_hanle_set_ae_zone_weight(tuning_context_t *ctx);
+void tuning_hanle_get_ae_zone_weight(tuning_context_t *ctx);
+void tuning_hanle_set_awb_preference_attr(tuning_context_t *ctx);
+void tuning_hanle_get_awb_preference_attr(tuning_context_t *ctx);
 
 #endif // __TUNING_CMD_H__

@@ -10,7 +10,6 @@
 #include "hbn_isp_api.h"
 #include "isp_cfg.h"
 #include "tuning_utils.h"
-#include "tuning_cmd.h"
 
 #define DEF_CAM_PATH "/app/platform_samples/tuning_tool/tuning_cfg/sc1330t_rx0/cam_x5_config.json"
 #define DEF_VPM_PATH "/app/platform_samples/tuning_tool/tuning_cfg/sc1330t_rx0/vpm_x5_config.json"
@@ -43,11 +42,6 @@ typedef struct tuning_context {
 	char img_name[TUNING_FEEDBACK_FILE_MAX][128];
 	hbn_vnode_image_t src_img;
 } tuning_context_t;
-
-typedef struct tuning_cmd_func {
-	char cmd;
-	void (*api_func)(tuning_context_t *ctx);
-} tuning_cmd_func_t;
 
 #define main_while_func_run(func, ctx) {	\
 	unsigned int cmd;			\

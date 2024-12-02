@@ -9,8 +9,9 @@ TARGET := ${TUNING_BUILD_DIR}/isp_tuning
 SRCS := $(foreach cf, ./, $(wildcard $(cf)/*.c))
 OBJS := $(patsubst %.c,${TUNING_BUILD_DIR}/%.o,$(SRCS))
 
-LIBS += -levent_pthreads -lhbplayer -lpthread -levent
+LIBS += -levent_pthreads -lhbplayer -lpthread -levent -lalog
 # CFLAGS += -D TUNING_DEBUG
+# CFLAGS += -D TUNING_API_DELAY_DEBUG
 
 .PHONY: all clean install
 

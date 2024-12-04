@@ -443,6 +443,10 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			break;
 		case WS_CMD_SWITCH_SOLUTION:
 			strcpy(cmd_context, cJSON_GetObjectItem(root, "param")->valuestring);
+			print_json = cJSON_Parse(cmd_context);
+			SC_LOGI("%s", cJSON_Print(print_json));
+			free(print_json);
+
 			// 1. 先stop、反初始化vin 、isp、vps、 venc 和 rtps 删除sms
 			SC_LOGI("========================== DEL SMS ==========================");
 			SDK_Cmd_Impl(SDK_CMD_RTSP_SERVER_DEL_SMS, NULL);
@@ -453,13 +457,22 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			SC_LOGI("==================== UNINIT VPP SOLUTION ====================");
 			SDK_Cmd_Impl(SDK_CMD_VPP_UNINIT, NULL);
 
-			// 2. 更新配置结构体
+			//放到stop pipeline 的后面
+			SC_LOGI("================= CHECK VPP SOLUTION ====================");
+			ret = SDK_Cmd_Impl(SDK_CMD_VPP_CHECK_SOLUTION_CONFIG, (void *)cmd_context);
+#if 0
+			if(ret != 0){
+				SC_LOGE("solution param check failed: , so ignore this process.");
+				ws_send_respose(ws_lst, ws_clt, "{\"kind\":1,\"app_status\": \"配置错误\"}");
+			}else{
+				// 2. 更新配置结构体
+				SC_LOGI("================= SET VPP SOLUTION ====================");
+				SDK_Cmd_Impl(SDK_CMD_VPP_SET_SOLUTION_CONFIG, (void *)cmd_context);
+			}
+#else
 			SC_LOGI("================= SET VPP SOLUTION ====================");
 			SDK_Cmd_Impl(SDK_CMD_VPP_SET_SOLUTION_CONFIG, (void *)cmd_context);
-			print_json = cJSON_Parse(cmd_context);
-			SC_LOGI("%s", cJSON_Print(print_json));
-			free(print_json);
-
+#endif
 			// 3. 开始启动应用
 			SC_LOGI("================= INIT VPP SOLUTION ====================");
 			ret = SDK_Cmd_Impl(SDK_CMD_VPP_INIT, NULL);

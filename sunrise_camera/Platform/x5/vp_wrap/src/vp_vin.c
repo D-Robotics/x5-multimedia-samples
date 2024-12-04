@@ -73,7 +73,7 @@ int32_t vp_vin_init(vp_vflow_contex_t *vp_vflow_contex)
 			SC_ERR_CON_EQ(ret, 0, "hbn_vnode_set_attr_ex");
 		}
 	}
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = vp_vflow_contex->vin_info.ochn_buffer_count;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN

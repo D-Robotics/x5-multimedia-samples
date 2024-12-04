@@ -51,6 +51,7 @@ static sdk_cmd_reg_t cmd_reg[] =
 	{SDK_CMD_VPP_START_RECORD, 					vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_STOP_RECORD, 					vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_VENC_BITRATE_SET, 				vpp_cmd_impl,				1},
+	{SDK_CMD_VPP_CHECK_SOLUTION_CONFIG,			vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_GET_SOLUTION_CONFIG,			vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_SET_SOLUTION_CONFIG, 			vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_SAVE_SOLUTION_CONFIG, 			vpp_cmd_impl,				1},
@@ -96,6 +97,12 @@ int32_t vpp_cmd_impl(SDK_CMD_E cmd, void* param)
 		case SDK_CMD_VPP_GET_SOLUTION_CONFIG:
 		{
 			ret = solution_handle_get_config((char *)param);
+			break;
+		}
+		case SDK_CMD_VPP_CHECK_SOLUTION_CONFIG:
+		{
+			printf("solution_handle_check_config\n");
+			ret = solution_handle_check_config((char *)param);
 			break;
 		}
 		case SDK_CMD_VPP_SET_SOLUTION_CONFIG:

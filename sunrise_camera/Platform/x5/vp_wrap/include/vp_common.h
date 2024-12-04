@@ -83,8 +83,24 @@ typedef struct vse_info_s {
 	vse_ochn_attr_t vse_ochn_attr[6];
 } vse_config_t;
 
+typedef struct isp_info_s {
+	int ochn_buffer_count;
+} isp_user_config_t;
+
+typedef struct vin_info_s {
+	int ochn_buffer_count;
+} vin_user_config_t;
 typedef struct osd_info_s{
-	hbn_rgn_bitmap_t bitmap [6];
+	//起始点
+	int x;
+	int y;
+	//大小
+	int width;
+	int height;
+
+	hbn_rgn_bitmap_t bitmap;
+
+	int channel_id;
 } osd_user_info_t;
 
 enum GDC_STATUS{
@@ -101,20 +117,38 @@ typedef struct{
 	hbn_vnode_handle_t gdc_fd;
 	int input_width;
 	int input_height;
+
+	int output_buffer_count;
+
 }gdc_user_info_t;
 typedef struct vp_vflow_contex_s {
+	//vflow
 	hbn_vflow_handle_t vflow_fd;
+
+	//sensor
 	camera_handle_t cam_fd;
 	int32_t mipi_csi_rx_index;
 	int32_t mclk_is_not_configed;
 	vp_sensor_config_t *sensor_config;
+
+	//vin
+	vin_user_config_t vin_info;
 	hbn_vnode_handle_t vin_node_handle;
+
+	//isp
+	isp_user_config_t isp_info;
 	hbn_vnode_handle_t isp_node_handle;
+
+	//vse
 	vse_config_t vse_config;
-	osd_user_info_t osd_info;
-	gdc_user_info_t gdc_info;
 	hbn_vnode_handle_t vse_node_handle;
+
+	//gdc
+	gdc_user_info_t gdc_info;
 	hbn_vnode_handle_t gdc_node_handle;
+
+	//osd
+	osd_user_info_t osd_info;
 } vp_vflow_contex_t;
 
 #endif // VP_COMMONH_

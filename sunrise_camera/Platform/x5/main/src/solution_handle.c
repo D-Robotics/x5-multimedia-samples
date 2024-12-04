@@ -61,6 +61,7 @@ static vpp_ops_t *camera_generic_impl(void)
 	impl->stop = vpp_camera_stop;
 	impl->param_get = vpp_camera_param_get;
 	impl->param_set = vpp_camera_param_set;
+
 	return impl;
 }
 
@@ -172,6 +173,14 @@ int solution_handle_get_config(char *out_str)
 	strcpy(out_str, config_str);
 	free(config_str);
 	return 0;
+}
+int solution_handle_check_config(char *in_str){
+	int ret = 0;
+	solution_cfg_t solution_cfg;
+	memset(&solution_cfg, 0, sizeof(solution_cfg_t));
+	solution_cfg_string2obj_width_param(in_str, &solution_cfg);
+	ret = vpp_camera_param_check(&solution_cfg);
+	return ret;
 }
 
 int solution_handle_set_config(char *in_str)

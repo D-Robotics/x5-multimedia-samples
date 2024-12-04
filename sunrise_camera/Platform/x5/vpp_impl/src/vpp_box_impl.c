@@ -42,6 +42,7 @@ typedef struct
 	media_codec_context_t m_decode_context;
 	vp_decode_param_t m_decode_param;
 
+	media_codec_user_config_t m_encode_user_config;
 	media_codec_context_t m_encode_context;
 
 	// 使能vse, 功能：
@@ -345,12 +346,18 @@ int32_t vpp_box_init_param(void)
 		}
 
 		// 配置编码通道
-		ret = vp_encode_config_param(&vpp_box->m_encode_context,
-			VP_GET_MD_CODEC_TYPE(cfg_box_vpp->encode_type),
-			cfg_box_vpp->encode_width,
-			cfg_box_vpp->encode_height,
-			cfg_box_vpp->encode_frame_rate,
-			cfg_box_vpp->encode_bitrate, false);
+		media_codec_user_config_t *codec_user_config = &g_vpp_box[i].m_encode_user_config;
+		codec_user_config->bit_rate = cfg_box_vpp->encode_bitrate;
+		codec_user_config->codec_type =VP_GET_MD_CODEC_TYPE(cfg_box_vpp->encode_type);
+		codec_user_config->frame_rate = cfg_box_vpp->encode_frame_rate;
+		codec_user_config->width = cfg_box_vpp->encode_width;
+		codec_user_config->height = cfg_box_vpp->encode_height;
+
+		codec_user_config->input_buffer_is_extrenal = false;
+		codec_user_config->input_buffer_count = 5;
+		codec_user_config->output_buffer_count = 5;
+
+		ret = vp_encode_config_param(&vpp_box->m_encode_context, codec_user_config);
 		if (ret != 0) {
 			SC_LOGE("Encode config param error, type:%d width:%d height:%d"
 				" frame_rate: %d bit_rate:%d\n",

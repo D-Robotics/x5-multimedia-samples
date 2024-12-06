@@ -426,7 +426,8 @@ static int32_t read_chip_id(vcon_propertie_t vcon_props, vp_sensor_config_t *sen
 	if(sensor_config->chip_id >> 8 == 0) {
 		// 读取 8 位 chip ID
 		if (vp_i2c_read_reg16_data8(vcon_props.bus, addr, sensor_config->chip_id_reg, (uint8_t*)chip_id) == 0) {
-			if (((chip_id[0] & 0xFF) == (sensor_config->chip_id & 0xFF))) {
+			if ((sensor_config->chip_id == 0x005A) // 如果有的 sensor 本身读不到ID，但是又想要使用它，就把 sensor 的 chip_id 设为 0x005A
+			|| ((chip_id[0] & 0xFF) == (sensor_config->chip_id & 0xFF))) {
 				return 0;
 			}
 		}

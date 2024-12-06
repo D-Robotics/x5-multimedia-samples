@@ -344,8 +344,7 @@ static void *send_yuv_to_bpu(void *ptr) {
 }
 
 int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
-	int32_t i = 0, ret = 0;
-
+	int32_t i = 0, vse_chn = 0, ret = 0;
 	camera_config_t *camera_config = NULL;
 	isp_ichn_attr_t *isp_ichn_attr = NULL;
 	vse_config_t *vse_config = NULL;
@@ -442,18 +441,21 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) > 1
 			&& strcmp(g_vpp_camera[i].m_bpu_handle.m_model_name, "null") != 0) {
 			bpu_model_info->is_enable = 1;
-
 			ret = bpu_wrap_get_model_user_info(g_vpp_camera[i].m_bpu_handle.m_model_name, bpu_model_info);
+			if (bpu_model_info->input_width > input_width || bpu_model_info->input_height > input_height)
+				vse_chn = 5;
+			else
+				vse_chn = 1;
 			// ret = bpu_wrap_get_model_hw(g_vpp_camera[i].m_bpu_handle.m_model_name, &model_width, &model_height);
-			vse_config->vse_ochn_attr[1].chn_en = CAM_TRUE;
-			vse_config->vse_ochn_attr[1].roi.x = 0;
-			vse_config->vse_ochn_attr[1].roi.y = 0;
-			vse_config->vse_ochn_attr[1].roi.w = input_width;
-			vse_config->vse_ochn_attr[1].roi.h = input_height;
-			vse_config->vse_ochn_attr[1].target_w = bpu_model_info->input_width;
-			vse_config->vse_ochn_attr[1].target_h = bpu_model_info->input_height;
-			vse_config->vse_ochn_attr[1].fmt = FRM_FMT_NV12;
-			vse_config->vse_ochn_attr[1].bit_width = 8;
+			vse_config->vse_ochn_attr[vse_chn].chn_en = CAM_TRUE;
+			vse_config->vse_ochn_attr[vse_chn].roi.x = 0;
+			vse_config->vse_ochn_attr[vse_chn].roi.y = 0;
+			vse_config->vse_ochn_attr[vse_chn].roi.w = input_width;
+			vse_config->vse_ochn_attr[vse_chn].roi.h = input_height;
+			vse_config->vse_ochn_attr[vse_chn].target_w = bpu_model_info->input_width;
+			vse_config->vse_ochn_attr[vse_chn].target_h = bpu_model_info->input_height;
+			vse_config->vse_ochn_attr[vse_chn].fmt = FRM_FMT_NV12;
+			vse_config->vse_ochn_attr[vse_chn].bit_width = 8;
 		}
 
 		//osd

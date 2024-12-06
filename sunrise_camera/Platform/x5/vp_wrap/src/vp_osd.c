@@ -31,11 +31,11 @@ static int region_init(vp_vflow_contex_t *vp_vflow_contex){
 
 	SC_LOGI("osd region init %d*%d.", width, height);
 	hbn_rgn_handle_t rgn_handle = vp_vflow_contex->osd_info.channel_id;
-		//VSE硬件上最多支持4块OSD，其他多余的OSD通过软件操作图像数据完成。
-		int ret = hbn_rgn_create(rgn_handle, &region);
-        if(ret != 0){
-            SC_LOGE("osd init region for channel %d failed %d.", rgn_handle, ret);
-            return -1;
+	//VSE硬件上最多支持4块OSD，其他多余的OSD通过软件操作图像数据完成。
+	int ret = hbn_rgn_create(rgn_handle, &region);
+	if(ret != 0){
+		SC_LOGE("osd init region for channel %d failed %d.", rgn_handle, ret);
+		return -1;
     }
 
  	hbn_rgn_bitmap_t *bitmap_p = &(vp_vflow_contex->osd_info.bitmap);
@@ -149,7 +149,7 @@ int32_t vp_osd_draw_world(vp_vflow_contex_t *vp_vflow_contex, char *str){
 	draw_word.paddr = bitmap_p->paddr;
 	draw_word.size = bitmap_p->size;
 
-	//用户申请好的buffer(malloc)上画字
+	//用户申请好的buffer(malloc)上画字, 纯软件的操作
     int ret = hbn_rgn_draw_word(&draw_word);
     if(ret != 0){
         SC_LOGE("osd draw world for channel %d failed.", handle);

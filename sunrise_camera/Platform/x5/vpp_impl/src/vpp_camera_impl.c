@@ -26,7 +26,7 @@
 #include "utils/time_utils.h"
 
 #include "model_info.h"
-#include "vp_ion.h"
+
 #include "bpu_wrap.h"
 #include "vp_wrap.h"
 #include "vp_codec.h"
@@ -34,9 +34,6 @@
 #include "vp_display.h"
 
 #include "vp_gdc.h"
-
-#include "solution_handle.h"
-#include "solution_config.h"
 
 #include "vpp_preparam.h"
 #include "vpp_camera_impl.h"
@@ -71,11 +68,6 @@ typedef struct
 
 static vp_drm_context_t g_drm_context;
 static vpp_camera_t g_vpp_camera[VPP_CAM_MAX_CHANNELS];
-
-
-static vp_ion_all_info_t g_ion_info;
-static int g_need_check_ion_theory = 0;
-static vp_ion_theory_calc_result_t g_vp_ion_theory_calc_result;
 
 static void vpp_camera_push_stream(vpp_camera_t *vpp_camera, ImageFrame *stream)
 {
@@ -722,79 +714,39 @@ int32_t vpp_init_ion_pipeline_fixed_param_from_vflow_contex(
 	return 0;
 }
 
-int32_t vpp_camera_param_check(solution_cfg_t* solution_cfg){
+int32_t vpp_camera_ion_param_get(solution_cfg_t* solution_cfg, solution_ion_param_info_t *solution_param_info){
 	int ret = 0;
 
-	SC_LOGI("vpp_camera_param_check ...");
-	//1. 获取当前的ION 内存占用情况
-	vp_ion_get_current_status(&g_ion_info);
-
-	//2. 预初始化，根据web参数，得到运行参数
+	//1. 预初始化，根据web参数，得到运行参数
 	vpp_camera_init_param_full(solution_cfg);
 
-	//3. 根据程序运行参数，计算理论的ION消耗
+	//2. 程序运行参数 ==> vp_ion 动态参数
 	solution_cfg_cam_t* cam_cfg = &solution_cfg->cam_solution;
-	int vp_ion_theory_calc_result_count = cam_cfg->max_pipeline_count + 1; //+1 :有些内存多路pipeline时，只占用1份的
-
-	int vp_ion_theory_calc_result_array_size = sizeof(vp_ion_theory_calc_result_t) * vp_ion_theory_calc_result_count;
-	vp_ion_theory_calc_result_t *vp_ion_theory_calc_results =
-		(vp_ion_theory_calc_result_t*)malloc(vp_ion_theory_calc_result_array_size);
-	if(vp_ion_theory_calc_results == NULL){
-		SC_LOGE("vpp camera param check malloc failed.");
-		return 0;
-	}
+	vp_ion_pipeline_param_t *vp_ion_param = solution_param_info->pipeline_params;
+	solution_param_info->pipeline_param_vaild_count = 0;
 	for(int i = 0; i< cam_cfg->max_pipeline_count; i++){
 		if(cam_cfg->cam_vpp[i].is_valid == 0){
-			//必须清0，因为最终计算时，会把无效的也遍历到
-			memset(vp_ion_theory_calc_results + i, 0, sizeof(vp_ion_theory_calc_result_t));
 			continue;
 		}
 		if(cam_cfg->cam_vpp[i].is_enable == 0){
-			//必须清0，因为最终计算时，会把没有使能的也遍历到
-			memset(vp_ion_theory_calc_results + i, 0, sizeof(vp_ion_theory_calc_result_t));
 			continue;
 		}
 
-		vp_ion_pipeline_param_t vp_ion_pipeline_param;
 		ret = vpp_init_ion_pipeline_param_from_vflow_contex(
 				&g_vpp_camera[i].vp_vflow_contex,
 				&g_vpp_camera[i].m_encode_user_config,
 				&g_vpp_camera[i].bpu_model_user_info,
-				&vp_ion_pipeline_param);
+				&vp_ion_param[solution_param_info->pipeline_param_vaild_count]);
 		if(ret != 0){
 			SC_LOGE("vpp_init_ion_pipeline_param_from_vflow_contex failed for channel %d.", i);
-			memset(vp_ion_theory_calc_results + i, 0, sizeof(vp_ion_theory_calc_result_t));
 			continue;
 		}
-		vp_ion_pipeline_calculator(&vp_ion_pipeline_param, vp_ion_theory_calc_results + i);
+		solution_param_info->pipeline_param_vaild_count++;
 	}
 
-	vp_ion_theory_calc_result_t *vp_ion_theory_calc_result_for_fixed =
-		vp_ion_theory_calc_results + cam_cfg->max_pipeline_count;
-	vp_ion_pipeline_fixed_param_t vp_ion_extern_param = {};
-
-	vpp_init_ion_pipeline_fixed_param_from_vflow_contex(g_vpp_camera, cam_cfg, &vp_ion_extern_param);
-	vp_ion_pipeline_fixed_calculator(&vp_ion_extern_param, vp_ion_theory_calc_result_for_fixed);
-
-	//4. 计算ION内存占用的总数
-	memset(&g_vp_ion_theory_calc_result, 0, sizeof(vp_ion_theory_calc_result_t));
-	for(int i = 0; i< vp_ion_theory_calc_result_count; i++){
-		printf("[%d] %d %d %d %d %d\n",
-			i, vp_ion_theory_calc_results[i].osd_size, vp_ion_theory_calc_results[i].vpu_size,
-			vp_ion_theory_calc_results[i].bpu_size, vp_ion_theory_calc_results[i].vflow_size,
-			vp_ion_theory_calc_results[i].camera_service_size);
-		g_vp_ion_theory_calc_result.osd_size += vp_ion_theory_calc_results[i].osd_size;
-		g_vp_ion_theory_calc_result.vpu_size += vp_ion_theory_calc_results[i].vpu_size;
-		g_vp_ion_theory_calc_result.bpu_size += vp_ion_theory_calc_results[i].bpu_size;
-		g_vp_ion_theory_calc_result.vflow_size += vp_ion_theory_calc_results[i].vflow_size;
-		g_vp_ion_theory_calc_result.camera_service_size += vp_ion_theory_calc_results[i].camera_service_size;
-	}
-	free(vp_ion_theory_calc_results);
-
-	vp_ion_pipeline_theory_result_printf(&g_vp_ion_theory_calc_result);
-	ret = vp_ion_check_is_enough(&g_ion_info, &g_vp_ion_theory_calc_result);
-	g_need_check_ion_theory = 1;
-	return ret;
+	//3. 程序运行参数 ==> vp_ion 静态参数
+	vpp_init_ion_pipeline_fixed_param_from_vflow_contex(g_vpp_camera, cam_cfg, &solution_param_info->extern_param);
+	return 0;
 }
 
 int32_t vpp_camera_init(void)
@@ -1026,13 +978,6 @@ int32_t vpp_camera_start(void)
 		SC_LOGI("Start BPU %d process successful, %s", i, g_vpp_camera[i].m_bpu_handle.m_model_name);
 	}
 	vp_print_debug_infos();
-
-	if(g_need_check_ion_theory){
-		sleep(1);//wait bpu init thread start
-		vp_ion_check_theory_result(&g_ion_info, &g_vp_ion_theory_calc_result);
-		g_need_check_ion_theory = 0;
-	}
-
 	return ret;
 }
 

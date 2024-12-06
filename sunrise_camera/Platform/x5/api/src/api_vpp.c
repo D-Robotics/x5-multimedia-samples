@@ -101,8 +101,7 @@ int32_t vpp_cmd_impl(SDK_CMD_E cmd, void* param)
 		}
 		case SDK_CMD_VPP_CHECK_SOLUTION_CONFIG:
 		{
-			printf("solution_handle_check_config\n");
-			ret = solution_handle_check_config((char *)param);
+			ret = solution_handle_check_config((solution_check_info_t *)param);
 			break;
 		}
 		case SDK_CMD_VPP_SET_SOLUTION_CONFIG:

@@ -243,7 +243,7 @@ static int vp_parse_ion_client_info(vp_ion_client_info_t *vp_ion_client_info, co
 		// printf("step %d, line: %s\n", step, line);
 		switch (step){
 			case USED:{
-				const char *format_str = "total           ";
+				const char *format_str = "total ";
 				if(strstr(line, format_str) != NULL){
 					sscanf(line, "%s %x", parse_tmp, &vp_ion_client_info->total_used);
 					step = STEP_SENTRY;
@@ -275,6 +275,7 @@ int vp_ion_client_get_current_status(vp_ion_all_client_info_t *vp_ion_all_client
 		vp_ion_all_client_info->ion_infos[i].type = (ion_client_type_t)i;
 		ret = vp_parse_ion_client_info(&vp_ion_all_client_info->ion_infos[i], tmp_path);
 		if(ret != 0){
+			SC_LOGE("parse client [%s] failed.",  g_ion_client_name[i]);
 			return -1;
 		}
 	}
@@ -678,10 +679,9 @@ int vp_ion_get_current_status(vp_ion_all_info_t *info){
 }
 
 int vp_ion_check_is_enough(vp_ion_all_info_t *ion_info, vp_ion_theory_calc_result_t *theory_result){
-	int ret = 0;
-
 	int total = 0;
 	int used = 0;
+
 	for(int i = 0; i< ION_SENTRY; i++){
 		total += ion_info->heap.ion_infos[i].total;
 		used +=  ion_info->heap.ion_infos[i].used;
@@ -698,5 +698,5 @@ int vp_ion_check_is_enough(vp_ion_all_info_t *ion_info, vp_ion_theory_calc_resul
 		SC_LOGI("ion check: is enough, [total %d] [used %d] [remain %d] [need %d] [diff %d]",
 			total, used, remain, need, diff);
 	}
-	return ret;
+	return 0;
 }

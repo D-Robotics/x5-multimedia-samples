@@ -313,7 +313,7 @@ static void *get_decode_output_thread(void *ptr) {
 	return NULL;
 }
 
-int32_t vpp_box_init_param(void)
+int32_t vpp_box_init_param_full(solution_cfg_t *solution_config)
 {
 	int i, ret = 0;
 
@@ -330,9 +330,9 @@ int32_t vpp_box_init_param(void)
 		g_vpp_box[i].m_decode_context.codec_id = MEDIA_CODEC_ID_NONE;
 	}
 
-	for (i = 0; i < g_solution_config.box_solution.pipeline_count; i++) {
+	for (i = 0; i < solution_config->box_solution.pipeline_count; i++) {
 		vpp_box = &g_vpp_box[i];
-		cfg_box_vpp = &g_solution_config.box_solution.box_vpp[i];
+		cfg_box_vpp = &solution_config->box_solution.box_vpp[i];
 		strncpy(vpp_box->m_stream_path, cfg_box_vpp->stream,
 				sizeof(vpp_box->m_stream_path) - 1);
 
@@ -419,6 +419,36 @@ int32_t vpp_box_init_param(void)
 	}
 
 	return ret;
+}
+int32_t vpp_box_init_param(void)
+{
+	return vpp_box_init_param_full(&g_solution_config);
+}
+
+int32_t vpp_box_ion_param_get(solution_cfg_t* solution_cfg, solution_ion_param_info_t *solution_param_info){
+	return 0;
+}
+int32_t vpp_box_vpu_param_get(solution_cfg_t* solution_cfg, solution_vpu_param_info_t *solution_param_info){
+	solution_cfg_box_vpp_t *cfg_box_vpp = NULL;
+	solution_param_info->valid_count = 0;
+	for (int i = 0; i < solution_cfg->box_solution.pipeline_count; i++) {
+		cfg_box_vpp = &solution_cfg->box_solution.box_vpp[i];
+		vp_codec_usr_param_single_t *param_single = &solution_param_info->params[solution_param_info->valid_count];
+		param_single->encode.width = cfg_box_vpp->encode_width;
+		param_single->encode.height = cfg_box_vpp->encode_height;
+		param_single->encode.fps = cfg_box_vpp->encode_frame_rate;
+
+		param_single->decode.width = cfg_box_vpp->decode_width;
+		param_single->decode.height = cfg_box_vpp->decode_height;
+		param_single->decode.fps = cfg_box_vpp->decode_frame_rate;
+		solution_param_info->valid_count++;
+
+		SC_LOGI("vpp_box_vpu_param_get [%d] [encode:%d %d %d] [decode:%d %d %d]",
+			solution_param_info->valid_count,
+			param_single->encode.width, param_single->encode.height, param_single->encode.fps,
+			param_single->decode.width, param_single->decode.height, param_single->decode.fps);
+	}
+	return 0;
 }
 
 int32_t vpp_box_init(void)

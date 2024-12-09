@@ -55,11 +55,11 @@ static vin_node_attr_t sc035hgs_vin_node_attr = {
 	.lpwm_attr = {
 		.enable = 1,
 		.lpwm_chn_attr = {
-			{	.trigger_source = 10,
-				.trigger_mode = 1,
-				.period = 33332,
-				.offset = 11,
-				.duty_time = 99,
+			{	.trigger_source = 10,  // 使用SIF作为触发源
+				.trigger_mode = 1,     // 使用外部触发模式
+				.period = 33332,       // period = 1000000 / 30fps - 1, (需要减1，由于硬件实际生效为 period + 1)
+				.offset = 11,          // LPWM输出方波与触发源之间的间隔, 硬件实际生效为10us
+				.duty_time = 99,       // 高电平有效时间 100us, (需要减1, 由于硬件实际生效为 duty_time + 1)
 				.threshold = 0,
 				.adjust_step = 0,
 			},

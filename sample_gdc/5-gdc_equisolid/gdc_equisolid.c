@@ -36,7 +36,7 @@ static struct option const long_options[] = {
 	{"output", required_argument, NULL, 'o'},
 	{"iw", required_argument, NULL, 'w'},
 	{"ih", required_argument, NULL, 'h'},
-	{"feedback", no_argument, NULL, 'f'},
+	{"feedback", required_argument, NULL, 'f'},
 	{NULL, 0, NULL, 0}
 };
 
@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
 	int c = 0;
 	memset(&gdc_info.bin_buf, 0, sizeof(hb_mem_common_buf_t));
 
-	while((c = getopt_long(argc, argv, "i:o:w:h:x:y:",
+	while((c = getopt_long(argc, argv, "i:o:w:h:f:",
 					long_options, &opt_index)) != -1) {
 		switch (c)
 		{
@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
 				gdc_info.input_height = atoi(optarg);
 				break;
 			case 'f':
-				gdc_info.gdc_vnode_mode = VNODE_WORK_MODE_FEEDBACK;
+				gdc_info.gdc_vnode_mode = atoi(optarg);
 				break;
 			default:
 				print_help();
@@ -205,11 +205,9 @@ int create_start_gdc_vnode(gdc_info_s *gdc_info, hb_mem_common_buf_t *bin_buf) {
 	int ret = 0;
 	uint32_t hw_id = 0;
 	uint32_t chn_id = 0;
-
 	hbn_buf_alloc_attr_t alloc_attr = {0};
 	int64_t alloc_flags = 0;
 	gdc_attr_t gdc_attr = {0};
-
 	param_t gdc_param ={0};
 	window_t windows ={0};
 	uint32_t wnd_num = 1;
@@ -217,7 +215,6 @@ int create_start_gdc_vnode(gdc_info_s *gdc_info, hb_mem_common_buf_t *bin_buf) {
 	int offset = 0;
 	uint32_t getwidth=gdc_info->input_width;
 	uint32_t getheight=gdc_info->input_height;
-	uint32_t *cfg_buf = NULL;
 
 	init_windows(&windows,getwidth,getheight);
 	memset(&gdc_param, 0, sizeof(gdc_param));
@@ -234,7 +231,7 @@ int create_start_gdc_vnode(gdc_info_s *gdc_info, hb_mem_common_buf_t *bin_buf) {
 	ret = hbn_vnode_open(HB_GDC, hw_id, AUTO_ALLOC_ID, &gdc_info->gdc_vnode_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_gen_gdc_bin(&gdc_param, &windows, wnd_num, &gdc_info->cfg_buf, &config_size);
-	if (ret != 0 || cfg_buf == NULL) {
+	if (ret != 0 || gdc_info->cfg_buf == NULL) {
 		printf("hbn_gen_gdc_bin failed \n");
 		return -1;
 	}
@@ -246,7 +243,7 @@ int create_start_gdc_vnode(gdc_info_s *gdc_info, hb_mem_common_buf_t *bin_buf) {
 		printf("hb_mem_alloc_com_buf for bin failed, ret = %d\n", ret);
 		return -1;
 	}
-	memcpy(gdc_info->bin_buf.virt_addr, cfg_buf, config_size);
+	memcpy(gdc_info->bin_buf.virt_addr, gdc_info->cfg_buf, config_size);
 	ret = hb_mem_flush_buf(gdc_info->bin_buf.fd, offset, config_size);
 	ERR_CON_EQ(ret, 0);
 

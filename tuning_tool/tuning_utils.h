@@ -111,23 +111,4 @@ int32_t tuning_get_raw_list(char *path, char img_path[][128], char img_name[][12
 void tuning_time_point();
 void tuning_time_delay(const char *func_name);
 
-#define RECORD_START() do { \
-		tuning_time_point(); \
-	} while(0)
-
-#define RECORD_END() do { \
-		tuning_time_delay(__func__); \
-	} while(0)
-
-#define ISP_API_EQ(func, retfunc) do { \
-		int32_t func_ret; \
-		RECORD_START(); \
-		func_ret = func; \
-		RECORD_END(); \
-		if ((func_ret) != 0) { \
-			pr_tuning("error: %s(%d)%s fail!\n", __func__, __LINE__, #func); \
-			retfunc; \
-		} \
-	} while(0)
-
 #endif // __TUNING_UTILS_H__

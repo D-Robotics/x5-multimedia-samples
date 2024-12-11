@@ -12,6 +12,8 @@
 #include "tuning_cmd.h"
 #include "tuning_tool.h"
 
+tuning_context_t *global_ctx;
+
 static void parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 {
 	int32_t cmd_ret;
@@ -337,6 +339,7 @@ int32_t main(int argc, char *argv[])
 	int32_t ret = 0;
 	tuning_context_t ctx = {0};
 
+	global_ctx = &ctx;
 	parse_opts(argc, argv, &ctx);
 
 	if (access(DEF_DUMP_PATH, 0)) {

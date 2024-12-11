@@ -9,6 +9,8 @@
 
 #include "tuning_tool.h"
 
+extern tuning_context_t *global_ctx;
+
 typedef struct tuning_cmd_func {
 	char cmd;
 	void (*api_func)(tuning_context_t *ctx);
@@ -116,5 +118,28 @@ void tuning_hanle_set_ae_zone_weight(tuning_context_t *ctx);
 void tuning_hanle_get_ae_zone_weight(tuning_context_t *ctx);
 void tuning_hanle_set_awb_preference_attr(tuning_context_t *ctx);
 void tuning_hanle_get_awb_preference_attr(tuning_context_t *ctx);
+
+
+void tuning_time_point();
+void tuning_time_delay(const char *func_name);
+
+#define RECORD_START() do { \
+		tuning_time_point(); \
+	} while(0)
+
+#define RECORD_END(func_name) do { \
+		tuning_time_delay(func_name); \
+	} while(0)
+
+#define TUNING_API_EQ(func, pattr, retfunc) do { \
+		int32_t func_ret; \
+		RECORD_START(); \
+		func_ret = func(global_ctx->vnode_fd[1], pattr); \
+		RECORD_END(#func); \
+		if ((func_ret) != 0) { \
+			pr_tuning("error: %s(%d)%s fail!\n", __func__, __LINE__, #func); \
+			retfunc; \
+		} \
+	} while(0)
 
 #endif // __TUNING_CMD_H__

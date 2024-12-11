@@ -58,7 +58,7 @@ void tuning_handle_set_expsoure(tuning_context_t *ctx)
 		read_p("dgain: ", "%f", &exp_attr.manual_attr.dgain);
 		read_p("ispgain: ", "%f", &exp_attr.manual_attr.ispgain);
 	} else if (exp_mode == 1) {
-		ISP_API_EQ(hbn_isp_get_exposure_attr(ctx->vnode_fd[1], &exp_attr), return);
+		TUNING_API_EQ(hbn_isp_get_exposure_attr, &exp_attr, return);
 		exp_attr.mode = HBN_ISP_MODE_AUTO;
 		read_p("speed_over: ", "%f", &exp_attr.auto_attr.speed_over);
 		read_p("speed_under: ", "%f", &exp_attr.auto_attr.speed_under);
@@ -75,7 +75,7 @@ void tuning_handle_set_expsoure(tuning_context_t *ctx)
 		return;
 	}
 
-	ISP_API_EQ(hbn_isp_set_exposure_attr(ctx->vnode_fd[1], &exp_attr), return);
+	TUNING_API_EQ(hbn_isp_set_exposure_attr, &exp_attr, return);
 }
 
 void tuning_handle_get_expsoure(tuning_context_t *ctx)
@@ -83,8 +83,8 @@ void tuning_handle_get_expsoure(tuning_context_t *ctx)
 	uint32_t lines_per_second;
 	hbn_isp_exposure_attr_t exp_attr = {0};
 
-	ISP_API_EQ(hbn_isp_get_exposure_attr(ctx->vnode_fd[1], &exp_attr), return);
-	ISP_API_EQ(hbn_isp_get_lines_persecond(ctx->vnode_fd[1], &lines_per_second), return);
+	TUNING_API_EQ(hbn_isp_get_exposure_attr, &exp_attr, return);
+	TUNING_API_EQ(hbn_isp_get_lines_persecond, &lines_per_second, return);
 
 	printf("Currently AE is in %s mode", (exp_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":"auto");
 	if (exp_attr.mode == HBN_ISP_MODE_AUTO) {
@@ -138,7 +138,7 @@ void tuning_handle_set_white_balance(tuning_context_t *ctx)
 		read_p("gbgain: ", "%f", &awb_attr.manual_attr.gain.gbgain);
 		read_p("bgain: ", "%f", &awb_attr.manual_attr.gain.bgain);
 	} else if (awb_mode == 1) {
-		ISP_API_EQ(hbn_isp_get_awb_attr(ctx->vnode_fd[1], &awb_attr), return);
+		TUNING_API_EQ(hbn_isp_get_awb_attr, &awb_attr, return);
 
 		read_p("use_damping: ", "%d", &awb_attr.auto_attr.use_damping);
 		read_p("use_manual_damp_coff: ", "%d", &awb_attr.auto_attr.use_manual_damp_coff);
@@ -151,14 +151,14 @@ void tuning_handle_set_white_balance(tuning_context_t *ctx)
 		return;
 	}
 
-	ISP_API_EQ(hbn_isp_set_awb_attr(ctx->vnode_fd[1], &awb_attr), return);
+	TUNING_API_EQ(hbn_isp_set_awb_attr, &awb_attr, return);
 }
 
 void tuning_handle_get_white_balance(tuning_context_t *ctx)
 {
 	hbn_isp_awb_attr_t awb_attr = {0};
 
-	ISP_API_EQ(hbn_isp_get_awb_attr(ctx->vnode_fd[1], &awb_attr), return);
+	TUNING_API_EQ(hbn_isp_get_awb_attr, &awb_attr, return);
 
 	printf("Currently AWB is in %s mode", (awb_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":"auto");
 	if (awb_attr.mode == HBN_ISP_MODE_AUTO) {
@@ -201,7 +201,7 @@ void tuning_hanle_set_ae_table(tuning_context_t *ctx)
 	}
 	ae_table_attr.valid_num = i == HBN_ISP_EXP_TABLE_NUM - 1 ? HBN_ISP_EXP_TABLE_NUM : i;
 
-	ISP_API_EQ(hbn_isp_set_exposure_table(ctx->vnode_fd[1], &ae_table_attr), return);
+	TUNING_API_EQ(hbn_isp_set_exposure_table, &ae_table_attr, return);
 }
 
 void tuning_hanle_get_ae_table(tuning_context_t *ctx)
@@ -209,7 +209,7 @@ void tuning_hanle_get_ae_table(tuning_context_t *ctx)
 	int32_t i;
 	hbn_isp_exposure_table_t ae_table_attr = {0};
 
-	ISP_API_EQ(hbn_isp_get_exposure_table(ctx->vnode_fd[1], &ae_table_attr), return);
+	TUNING_API_EQ(hbn_isp_get_exposure_table, &ae_table_attr, return);
 
 	for (i = 0; i < ae_table_attr.valid_num; i++) {
 		printf("---------table %d---------\n", i);
@@ -241,7 +241,7 @@ void tuning_hanle_set_exp_roi(tuning_context_t *ctx)
 	}
 	exp_roi.roi_num = i == HBN_ISP_ROI_WINDOWS_MAX - 1 ? HBN_ISP_ROI_WINDOWS_MAX : i;
 
-	ISP_API_EQ(hbn_isp_set_exposure_roi(ctx->vnode_fd[1], &exp_roi), return);
+	TUNING_API_EQ(hbn_isp_set_exposure_roi, &exp_roi, return);
 }
 
 void tuning_hanle_get_exp_roi(tuning_context_t *ctx)
@@ -249,7 +249,7 @@ void tuning_hanle_get_exp_roi(tuning_context_t *ctx)
 	int32_t i;
 	hbn_isp_exposure_roi_t exp_roi = {0};
 
-	ISP_API_EQ(hbn_isp_get_exposure_roi(ctx->vnode_fd[1], &exp_roi), return);
+	TUNING_API_EQ(hbn_isp_get_exposure_roi, &exp_roi, return);
 
 	printf("roi_weight: %f\n", exp_roi.roi_weight);
 	for (i = 0; i < exp_roi.roi_num; i++) {
@@ -277,7 +277,7 @@ void tuning_hanle_set_ae_zone_weight(tuning_context_t *ctx)
 		}
 	}
 
-	ISP_API_EQ(hbn_isp_set_ae_zone_weight_attr(ctx->vnode_fd[1], &weight_attr), return);
+	TUNING_API_EQ(hbn_isp_set_ae_zone_weight_attr, &weight_attr, return);
 }
 
 void tuning_hanle_get_ae_zone_weight(tuning_context_t *ctx)
@@ -285,7 +285,7 @@ void tuning_hanle_get_ae_zone_weight(tuning_context_t *ctx)
 	int32_t i, j;
 	hbn_isp_ae_zone_weight_attr_t weight_attr = {0};
 
-	ISP_API_EQ(hbn_isp_get_ae_zone_weight_attr(ctx->vnode_fd[1], &weight_attr), return);
+	TUNING_API_EQ(hbn_isp_get_ae_zone_weight_attr, &weight_attr, return);
 
 	for (i = 0; i < HBN_ISP_AE_ZONE_GRID_NUM; i++) {
 		printf("%d:", i);
@@ -307,7 +307,7 @@ void tuning_get_ae_statistics(tuning_context_t *ctx)
 	uint32_t *luma;
 	hbn_isp_ae_statistics_t ae_statistics = {0};
 
-	ISP_API_EQ(hbn_isp_get_ae_statistics(ctx->vnode_fd[1], &ae_statistics), return);
+	TUNING_API_EQ(hbn_isp_get_ae_statistics, &ae_statistics, return);
 
 	printf("Ae statistics current frameid: %d, timestamps: %ld\n", ae_statistics.frame_id, ae_statistics.timestamps);
 	printf("Datatype: %d\n", ae_statistics.datatype);
@@ -344,13 +344,13 @@ void tuning_set_module_control(tuning_context_t *ctx)
 	read_p("GE: ", "%d", &key); module_ctrl.module.u32Key |= key << 13;
 	read_p("WB: ", "%d", &key); module_ctrl.module.u32Key |= key << 14;
 
-	ISP_API_EQ(hbn_isp_set_module_control(ctx->vnode_fd[1], &module_ctrl), return);
+	TUNING_API_EQ(hbn_isp_set_module_control, &module_ctrl, return);
 }
 
 void tuning_get_module_control(tuning_context_t *ctx)
 {
 	hbn_isp_module_ctrl_t module_ctrl = {0};
-	ISP_API_EQ(hbn_isp_get_module_control(ctx->vnode_fd[1], &module_ctrl), return);
+	TUNING_API_EQ(hbn_isp_get_module_control, &module_ctrl, return);
 
 	printf("module_ctrl.module.u32Key %d\n", module_ctrl.module.u32Key);
 
@@ -376,7 +376,7 @@ void tuning_get_af_statistics(tuning_context_t *ctx)
 	int32_t i, j, pos;
 	hbn_isp_af_statistics_t af_statistics = {0};
 
-	ISP_API_EQ(hbn_isp_get_af_statistics(ctx->vnode_fd[1], &af_statistics), return);
+	TUNING_API_EQ(hbn_isp_get_af_statistics, &af_statistics, return);
 
 	printf("frame_id: %d\n", af_statistics.frame_id);
 	printf("sharpnessLowPass:\n");
@@ -425,7 +425,7 @@ void tuning_hanle_set_2dnr_attr(tuning_context_t *ctx)
 	hbn_isp_2dnr_attr_t dnr2_attr = {0};
 
 	read_p("typing the 2dnr mode, manual(0)/auto(1): ", "%d", &mode);
-	ISP_API_EQ(hbn_isp_get_2dnr_attr(ctx->vnode_fd[1], &dnr2_attr), return);
+	TUNING_API_EQ(hbn_isp_get_2dnr_attr, &dnr2_attr, return);
 
 	if (mode == 0) {
 		dnr2_attr.mode = HBN_ISP_MODE_MANUAL;
@@ -436,14 +436,14 @@ void tuning_hanle_set_2dnr_attr(tuning_context_t *ctx)
 		return;
 	}
 
-	ISP_API_EQ(hbn_isp_set_2dnr_attr(ctx->vnode_fd[1], &dnr2_attr), return);
+	TUNING_API_EQ(hbn_isp_set_2dnr_attr, &dnr2_attr, return);
 }
 
 void tuning_hanle_get_2dnr_attr(tuning_context_t *ctx)
 {
 	hbn_isp_2dnr_attr_t dnr2_attr = {0};
 
-	ISP_API_EQ(hbn_isp_get_2dnr_attr(ctx->vnode_fd[1], &dnr2_attr), return);
+	TUNING_API_EQ(hbn_isp_get_2dnr_attr, &dnr2_attr, return);
 
 	printf("2dnr is in %s mode\n", (dnr2_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":"auto");
 	printf("2dnr current value:\n");
@@ -541,8 +541,8 @@ void tuning_hanle_set_3dnr_attr(tuning_context_t *ctx)
 	uint32_t mode;
 	hbn_isp_3dnr_attr_t dnr3_attr = {0};
 
-	read_p("typing the 2dnr mode, manual(0)/auto(1): ", "%d", &mode);
-	ISP_API_EQ(hbn_isp_get_3dnr_attr(ctx->vnode_fd[1], &dnr3_attr), return);
+	read_p("typing the 3dnr mode, manual(0)/auto(1): ", "%d", &mode);
+	TUNING_API_EQ(hbn_isp_get_3dnr_attr, &dnr3_attr, return);
 
 	if (mode == 0) {
 		dnr3_attr.mode = HBN_ISP_MODE_MANUAL;
@@ -553,14 +553,14 @@ void tuning_hanle_set_3dnr_attr(tuning_context_t *ctx)
 		return;
 	}
 
-	ISP_API_EQ(hbn_isp_set_3dnr_attr(ctx->vnode_fd[1], &dnr3_attr), return);
+	TUNING_API_EQ(hbn_isp_set_3dnr_attr, &dnr3_attr, return);
 }
 
 void tuning_hanle_get_3dnr_attr(tuning_context_t *ctx)
 {
 	hbn_isp_3dnr_attr_t dnr3_attr = {0};
 
-	ISP_API_EQ(hbn_isp_get_3dnr_attr(ctx->vnode_fd[1], &dnr3_attr), return);
+	TUNING_API_EQ(hbn_isp_get_3dnr_attr, &dnr3_attr, return);
 
 	printf("3dnr is in %s mode\n", (dnr3_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":"auto");
 	printf("3dnr current value:\n");
@@ -627,7 +627,7 @@ void tuning_hanle_set_awb_preference_attr(tuning_context_t *ctx)
 		}
 	}
 
-	ISP_API_EQ(hbn_isp_set_awb_preference_attr(ctx->vnode_fd[1], &awb_pre_attr), return);
+	TUNING_API_EQ(hbn_isp_set_awb_preference_attr, &awb_pre_attr, return);
 }
 
 void tuning_hanle_get_awb_preference_attr(tuning_context_t *ctx)
@@ -635,7 +635,7 @@ void tuning_hanle_get_awb_preference_attr(tuning_context_t *ctx)
 	int32_t illum, level;
 	hbn_isp_awb_preference_attr_t awb_pre_attr = {0};
 
-	ISP_API_EQ(hbn_isp_get_awb_preference_attr(ctx->vnode_fd[1], &awb_pre_attr), return);
+	TUNING_API_EQ(hbn_isp_get_awb_preference_attr, &awb_pre_attr, return);
 
 	for (illum = 0; illum < HBN_ISP_ILLUPROFILE_NUM; illum++) {
 		printf("illum: %d, %s\n", illum, (awb_pre_attr.gray_preference[illum].enable ? "enable":"disable"));

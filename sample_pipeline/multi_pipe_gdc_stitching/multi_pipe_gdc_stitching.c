@@ -429,6 +429,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	int32_t ret = 0;
 	uint32_t chn_id = 0;
 	uint64_t vin_attr_ex_mask = 0;
+	hbn_buf_alloc_attr_t alloc_attr = {0};
 
 	sensor_config = pipe_contex->sensor_config;
 	vin_node_attr = sensor_config->vin_node_attr;
@@ -438,6 +439,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	vin_node_attr->cim_attr.mipi_rx = active_mipi_host;
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
+	vin_node_attr->cim_attr.cim_isp_flyby = 1;
+	vin_ochn_attr->ddr_en = 1;
 
 	if(pipe_contex->csi_config.mclk_is_not_configed){
 		//设备树中没有配置mclk：使用外部晶振
@@ -456,6 +459,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	// 设置输入通道的属性
 	ret = hbn_vnode_set_ichn_attr(*vin_node_handle, chn_id, vin_ichn_attr);
 	ERR_CON_EQ(ret, 0);
+
 	// 设置输出通道的属性
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, chn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
@@ -470,6 +474,15 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
+	alloc_attr.buffers_num = 3;
+	alloc_attr.is_contig = 1;
+	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
+						| HB_MEM_USAGE_CPU_WRITE_OFTEN
+						| HB_MEM_USAGE_CACHED
+						| HB_MEM_USAGE_HW_CIM
+						| HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
+	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, chn_id, &alloc_attr);
+	ERR_CON_EQ(ret, 0);
 	return 0;
 }
 
@@ -488,6 +501,7 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ichn_attr = sensor_config->isp_ichn_attr;
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &pipe_contex->isp_node_handle;
+	isp_attr->input_mode = 2; // offline
 
 	ret = hbn_vnode_open(HB_ISP, 0, AUTO_ALLOC_ID, isp_node_handle);
 	ERR_CON_EQ(ret, 0);
@@ -705,7 +719,7 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex,
 
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 			pipe_contex->vin_node_handle,
-			1,
+			0,
 			pipe_contex->isp_node_handle,
 			0);
 	ERR_CON_EQ(ret, 0);

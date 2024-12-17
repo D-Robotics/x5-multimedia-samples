@@ -68,6 +68,26 @@ void vp_show_sensors_list() {
 	}
 }
 
+void vp_show_sensors_list_vse_limit(uint32_t width_limit, uint32_t height_limit)
+{
+	int num = 0;
+	int quarter_of_vse_max_resolution = width_limit * height_limit / 4;
+
+	num = vp_get_sensors_list_number();
+	for (int i = 0; i < num; i++) {
+		vp_sensor_config_t* sensor_config = vp_sensor_config_list[i];
+		int width_tmp = sensor_config->camera_config->width;
+		int height_tmp = sensor_config->camera_config->height;
+		if (width_tmp * height_tmp < quarter_of_vse_max_resolution) {
+			continue;
+		}
+		printf("index: %d  sensor_name: %-16s \tconfig_file:%s\n",
+			i, vp_sensor_config_list[i]->sensor_name,
+			vp_sensor_config_list[i]->config_file);
+	}
+}
+
+
 vp_sensor_config_t *vp_get_sensor_config_by_name(char *sensor_name)
 {
 	for (int i = 0; vp_sensor_config_list[i]->sensor_name != NULL; i++) {

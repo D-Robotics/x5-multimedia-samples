@@ -75,6 +75,7 @@ extern vp_sensor_config_t *vp_sensor_config_list[];
 
 uint32_t vp_get_sensors_list_number();
 void vp_show_sensors_list();
+void vp_show_sensors_list_vse_limit(uint32_t width_limit, uint32_t height_limit);
 vp_sensor_config_t *vp_get_sensor_config_by_name(char *sensor_name);
 void vp_sensor_detect_structed(csi_list_info_t *csi_list_info);
 

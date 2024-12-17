@@ -62,11 +62,11 @@ static void print_help(void) {
 	printf("\n\n");
 
 	printf("Support sensor list:\n");
-	vp_show_sensors_list();
+	vp_show_sensors_list_vse_limit(3840, 2160);
 
 #if 1
 	printf("\n\nExample:(only support 2 cameras .)\n");
-	printf("Save File: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\"\n");
+	printf("Save File: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\" -o file\n");
 	printf("HDMI Display: ./multi_pipe_crop_and_stitch -c \"sensor=3\" -c \"sensor=3\" -o hdmi\n");
 	printf("HDMI Display, Enable GDC: ./multi_pipe_crop_and_stitch -c \"sensor=3 gdc=1\" -c \"sensor=3 gdc=1\" -o hdmi\n");
 	printf("HDMI Display, Enable GDC, Enable Blend: ./multi_pipe_crop_and_stitch -c \"sensor=3 gdc=1\" -c \"sensor=3 gdc=1\" -o hdmi -r 0.02\n");

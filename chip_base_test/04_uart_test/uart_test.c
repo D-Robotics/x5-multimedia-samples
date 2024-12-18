@@ -38,6 +38,7 @@ static char recv_buffer[UT_BUFFER_SIZE] = {0};
 static uint32_t test_size = 1024;
 static uint32_t baudrate = 115200;
 static int32_t test_count = -1;
+static int32_t test_finished = 0;
 static char *uart_device = NULL;
 static char *uart_device2 = NULL;
 static int uart_test_mode = MODE_NONE;
@@ -246,6 +247,8 @@ static void *uart_send_thread(void* arg)
 
 		i++;
 	}
+
+	printf("Send thread exit\n");
 	return NULL;
 }
 
@@ -287,6 +290,8 @@ void* uart_recv_thread(void* arg)
 				len_frame -= UT_FRAME_LEN;
 				// 每接收一个完整帧就释放信号量
 				sem_post(&sem_check_data);
+				// 主动让出当前线程的时间片，让数据校验线程尽早执行
+				sched_yield();
 			}
 
 			if (verbose_enabled & DEBUG_MODULE_UART_RECV) {
@@ -307,6 +312,14 @@ void* uart_recv_thread(void* arg)
 
 		i++;
 	}
+
+	printf("Receive thread exit\n");
+
+	// 主动让出当前线程的时间片，让数据校验线程执行完所有校验
+	sched_yield();
+	// 通知数据校验线程退出
+	test_finished = 1;
+	sem_post(&sem_check_data);
 
 	return NULL;
 }
@@ -333,6 +346,7 @@ void *check_recv_thread(void *arg) {
 
 	while (1) {
 		sem_wait(&sem_check_data);
+		if (test_finished == 1) break;
 		// Check data
 		cur_frame = (uint32_t *)&recv_buffer[check_pos];
 		if (*cur_frame != check_pos / UT_FRAME_LEN) {
@@ -391,6 +405,8 @@ void *check_recv_thread(void *arg) {
 			printf("Data verification successful. Received data matches sent data. Test total data count: 0x%lx\n", recv_total);
 		}
 	}
+
+	printf("Data verification thread exit\n");
 
 	return NULL;
 }

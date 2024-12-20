@@ -81,7 +81,7 @@ void vp_ion_all_key_info_printf(vp_ion_all_info_by_key_t *vp_ion_all_info){
 	for(int i = 0; i < ION_KEY_SENTRY; i++){
 		vp_ion_info_by_key_t *info = &vp_ion_all_info->ion_infos[i];
 		printf("[%s]:\n", info->name);
-		printf("\t total_used: %d\n", info->total_used);
+		printf("\t total_used: %ld\n", info->total_used);
 	}
 	printf("\n\n");
 }
@@ -130,7 +130,7 @@ static int vp_parse_ion_heap_info(vp_ion_heap_info_t *vp_ion_single_info, const 
 			case TOTAL_SIZE:{
 				const char *format_str = "heap total size ";
 				if(strstr(line, format_str) != NULL){
-					sscanf(line, "%s %s %s %s %d", parse_tmp, parse_tmp, parse_tmp, parse_tmp, &vp_ion_single_info->total);
+					sscanf(line, "%s %s %s %s %ld", parse_tmp, parse_tmp, parse_tmp, parse_tmp, &vp_ion_single_info->total);
 					step = USED_ORPHANED;
 				}
 				break;
@@ -138,7 +138,7 @@ static int vp_parse_ion_heap_info(vp_ion_heap_info_t *vp_ion_single_info, const 
 			case USED_ORPHANED:{
 				const char *format_str = "total orphaned ";
 				if(strstr(line, format_str) != NULL){
-					sscanf(line, "%s %d", parse_tmp, &vp_ion_single_info->used_orphaned);
+					sscanf(line, "%s %ld", parse_tmp, &vp_ion_single_info->used_orphaned);
 					step = USED;
 				}
 				break;
@@ -147,7 +147,7 @@ static int vp_parse_ion_heap_info(vp_ion_heap_info_t *vp_ion_single_info, const 
 			case USED:{
 				const char *format_str = "total ";
 				if(strstr(line, format_str) != NULL){
-					sscanf(line, "%s %d", parse_tmp, &vp_ion_single_info->used);
+					sscanf(line, "%s %ld", parse_tmp, &vp_ion_single_info->used);
 					step = STEP_SENTRY;
 				}
 				break;
@@ -205,9 +205,9 @@ void vp_ion_all_heap_printf(vp_ion_all_heap_info_t *vp_ion_all_info){
 		vp_ion_heap_info_t *info = &vp_ion_all_info->ion_infos[i];
 		printf("[%s]:\n", info->name);
 		printf("\t head id: %d\n", info->heap_id);
-		printf("\t total: %d\n", info->total);
-		printf("\t used: %d\n", info->used);
-		printf("\t used orphanned: %d\n", info->used_orphaned);
+		printf("\t total: %ld\n", info->total);
+		printf("\t used: %ld\n", info->used);
+		printf("\t used orphanned: %ld\n", info->used_orphaned);
 	}
 	printf("\n\n");
 }
@@ -245,7 +245,7 @@ static int vp_parse_ion_client_info(vp_ion_client_info_t *vp_ion_client_info, co
 			case USED:{
 				const char *format_str = "total ";
 				if(strstr(line, format_str) != NULL){
-					sscanf(line, "%s %x", parse_tmp, &vp_ion_client_info->total_used);
+					sscanf(line, "%s %lx", parse_tmp, &vp_ion_client_info->total_used);
 					step = STEP_SENTRY;
 				}
 				break;
@@ -289,7 +289,7 @@ void vp_ion_all_client_printf(vp_ion_all_client_info_t *vp_ion_all_info){
 	for(int i = 0; i < ION_CLIENT_SENTRY; i++){
 		vp_ion_client_info_t *info = &vp_ion_all_info->ion_infos[i];
 		printf("[%s]:\n", info->name);
-		printf("\t total used: 0x%x (%d) \n", info->total_used, info->total_used);
+		printf("\t total used: 0x%lx (%ld) \n", info->total_used, info->total_used);
 	}
 	printf("\n\n");
 }
@@ -497,7 +497,7 @@ int vp_ion_pipeline_calculator(vp_ion_pipeline_param_t *param, vp_ion_theory_cal
 	result->vflow_size = vp_ion_vflow_calculator(param);
 	result->osd_size = vp_ion_osd_calculator(param);
 
-	printf("pipeline ion(dynamic): [camera_service_size:%d] [vpu_size:%d] [bpu_size:%d] [vflow_size:%d] [osd_size:%d]\n",
+	printf("pipeline ion(dynamic): [camera_service_size:%ld] [vpu_size:%ld] [bpu_size:%ld] [vflow_size:%ld] [osd_size:%ld]\n",
 		result->camera_service_size, result->vpu_size, result->bpu_size, result->vflow_size, result->osd_size);
 	return 0;
 }
@@ -542,7 +542,7 @@ int vp_ion_pipeline_fixed_calculator(vp_ion_pipeline_fixed_param_t *param, vp_io
 	result->camera_service_size = vp_ion_camera_service_extern_calculator(&param->camera_service);
 	result->bpu_size = vp_ion_bpu_extern_calculator(&param->bpu);
 
-	printf("pipeline ion(static): [camera_service_size:%d] [bpu_size:%d]\n", result->camera_service_size, result->bpu_size);
+	printf("pipeline ion(static): [camera_service_size:%ld] [bpu_size:%ld]\n", result->camera_service_size, result->bpu_size);
 	return 0;
 }
 
@@ -550,11 +550,11 @@ int vp_ion_pipeline_fixed_calculator(vp_ion_pipeline_fixed_param_t *param, vp_io
 void vp_ion_pipeline_theory_result_printf(vp_ion_theory_calc_result_t *vp_ion_theory_calc_result){
 	printf("\n\n");
 	printf("pipeline ion info:\n");
-	printf("	osd: %d 0x%016x\n", vp_ion_theory_calc_result->osd_size, vp_ion_theory_calc_result->osd_size);
-	printf("	vpu: %d 0x%08x\n", vp_ion_theory_calc_result->vpu_size, vp_ion_theory_calc_result->vpu_size);
-	printf("	bpu: %d 0x%08x\n", vp_ion_theory_calc_result->bpu_size, vp_ion_theory_calc_result->bpu_size);
-	printf("	vflow: %d 0x%08x\n", vp_ion_theory_calc_result->vflow_size, vp_ion_theory_calc_result->vflow_size);
-	printf("	camera_service: %d 0x%08x\n", vp_ion_theory_calc_result->camera_service_size, vp_ion_theory_calc_result->camera_service_size);
+	printf("	osd: %ld 0x%08lx\n", vp_ion_theory_calc_result->osd_size, vp_ion_theory_calc_result->osd_size);
+	printf("	vpu: %ld 0x%08lx\n", vp_ion_theory_calc_result->vpu_size, vp_ion_theory_calc_result->vpu_size);
+	printf("	bpu: %ld 0x%08lx\n", vp_ion_theory_calc_result->bpu_size, vp_ion_theory_calc_result->bpu_size);
+	printf("	vflow: %ld 0x%08lx\n", vp_ion_theory_calc_result->vflow_size, vp_ion_theory_calc_result->vflow_size);
+	printf("	camera_service: %ld 0x%08lx\n", vp_ion_theory_calc_result->camera_service_size, vp_ion_theory_calc_result->camera_service_size);
 	printf("\n\n");
 }
 
@@ -678,24 +678,24 @@ int vp_ion_get_current_status(vp_ion_all_info_t *info){
 	return ret;
 }
 
-int vp_ion_check_is_enough(vp_ion_all_info_t *ion_info, vp_ion_theory_calc_result_t *theory_result){
-	int total = 0;
-	int used = 0;
+int64_t vp_ion_check_is_enough(vp_ion_all_info_t *ion_info, vp_ion_theory_calc_result_t *theory_result){
+	int64_t total = 0;
+	int64_t used = 0;
 
 	for(int i = 0; i< ION_SENTRY; i++){
 		total += ion_info->heap.ion_infos[i].total;
 		used +=  ion_info->heap.ion_infos[i].used;
 	}
-	int remain = total - used;
-	int need = theory_result->osd_size + theory_result->vpu_size +
+	int64_t remain = total - used;
+	int64_t need = theory_result->osd_size + theory_result->vpu_size +
 		theory_result->bpu_size + theory_result->vflow_size + theory_result->camera_service_size;
-	int diff = remain - need;
+	int64_t diff = remain - need;
 	if(diff < 0){
-		SC_LOGW("ion check: not enough, [total %d] [used %d] [remain %d] [need %d] [diff %d]",
+		SC_LOGW("ion check: not enough, [total %ld] [used %ld] [remain %ld] [need %ld] [diff %ld]",
 			total, used, remain, need, diff);
 		return diff;
 	}else{
-		SC_LOGI("ion check: is enough, [total %d] [used %d] [remain %d] [need %d] [diff %d]",
+		SC_LOGI("ion check: is enough, [total %ld] [used %ld] [remain %ld] [need %ld] [diff %ld]",
 			total, used, remain, need, diff);
 	}
 	return 0;

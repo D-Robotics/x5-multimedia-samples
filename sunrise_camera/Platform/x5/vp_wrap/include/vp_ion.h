@@ -17,9 +17,9 @@ typedef enum {
 }ion_type_t;
 typedef struct {
 	int heap_id;
-	int total;
-	int used;
-	int used_orphaned;
+	int64_t total;
+	int64_t used;
+	int64_t used_orphaned;
 	char *name;
 	ion_type_t type;
 
@@ -45,7 +45,7 @@ typedef enum {
 	ION_CLIENT_SENTRY,
 }ion_client_type_t;
 typedef struct {
-	int total_used;
+	int64_t total_used;
 	char *name;
 	ion_client_type_t type;
 }vp_ion_client_info_t;
@@ -65,7 +65,7 @@ typedef enum {
 
 typedef struct {
 	char *name;
-	int total_used;
+	int64_t total_used;
 	ion_key_type_t type;
 }vp_ion_info_by_key_t;
 
@@ -220,11 +220,11 @@ typedef struct {
 	5. bpu
 */
 typedef struct {
-	int32_t osd_size;
-	int32_t vpu_size;
-	int32_t bpu_size;
-	int32_t vflow_size;
-	int32_t camera_service_size;
+	int64_t osd_size;
+	int64_t vpu_size;
+	int64_t bpu_size;
+	int64_t vflow_size;
+	int64_t camera_service_size;
 }vp_ion_theory_calc_result_t;
 int vp_ion_pipeline_calculator(vp_ion_pipeline_param_t *vp_ion_pipeline_param, vp_ion_theory_calc_result_t *result);
 
@@ -241,5 +241,5 @@ void vp_ion_pipeline_theory_result_printf(vp_ion_theory_calc_result_t *vp_ion_th
 int vp_ion_check_theory_result(vp_ion_all_info_t *before_ion_info, vp_ion_theory_calc_result_t *theory_result);
 
 //返回值：缺少的ION内存
-int vp_ion_check_is_enough(vp_ion_all_info_t *before_ion_info, vp_ion_theory_calc_result_t *theory_result);
+int64_t vp_ion_check_is_enough(vp_ion_all_info_t *before_ion_info, vp_ion_theory_calc_result_t *theory_result);
 #endif /* extern "C" */

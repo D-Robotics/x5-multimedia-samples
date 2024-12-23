@@ -1,5 +1,14 @@
 #!/bin/bash
 
+QOS_LOCK_PATH="/var/lock/qos"
+if [ -f "$QOS_LOCK_PATH" ]; then
+    echo "$QOS_LOCK_PATH Exist. No need to configure QoS repeatedly."
+    exit 0
+else
+    echo "Configure QoS."
+    touch "$QOS_LOCK_PATH"
+fi
+
 function config_noc_qos_max()
 {
     noc_base=$1

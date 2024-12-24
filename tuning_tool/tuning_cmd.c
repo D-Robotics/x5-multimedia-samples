@@ -328,21 +328,20 @@ void tuning_set_module_control(tuning_context_t *ctx)
 	uint32_t key;
 
 	printf("Typing [1] to enable, [0] to disable\n");
-	read_p("CCM: ", "%d", &key); module_ctrl.module.u32Key |= key << 0;
-	read_p("CNR: ", "%d", &key); module_ctrl.module.u32Key |= key << 1;
-	read_p("CPROC: ", "%d", &key); module_ctrl.module.u32Key |= key << 2;
-	read_p("DG: ", "%d", &key); module_ctrl.module.u32Key |= key << 3;
-	read_p("Demosaic: ", "%d", &key); module_ctrl.module.u32Key |= key << 4;
+	read_p("COMPAND: ", "%d", &key); module_ctrl.module.u32Key |= key << 0;
+	read_p("LSC: ", "%d", &key); module_ctrl.module.u32Key |= key << 1;
+	read_p("DG: ", "%d", &key); module_ctrl.module.u32Key |= key << 2;
+	read_p("WDR: ", "%d", &key); module_ctrl.module.u32Key |= key << 3;
+	read_p("GE: ", "%d", &key); module_ctrl.module.u32Key |= key << 4;
 	read_p("DPCC: ", "%d", &key); module_ctrl.module.u32Key |= key << 5;
 	read_p("2DNR: ", "%d", &key); module_ctrl.module.u32Key |= key << 6;
 	read_p("3DNR: ", "%d", &key); module_ctrl.module.u32Key |= key << 7;
-	read_p("EE: ", "%d", &key); module_ctrl.module.u32Key |= key << 8;
-	read_p("LSC: ", "%d", &key); module_ctrl.module.u32Key |= key << 9;
-	read_p("LUT3D: ", "%d", &key); module_ctrl.module.u32Key |= key << 10;
-	read_p("WDR: ", "%d", &key); module_ctrl.module.u32Key |= key << 11;
-	read_p("YNR: ", "%d", &key); module_ctrl.module.u32Key |= key << 12;
-	read_p("GE: ", "%d", &key); module_ctrl.module.u32Key |= key << 13;
-	read_p("WB: ", "%d", &key); module_ctrl.module.u32Key |= key << 14;
+	read_p("Demosaic: ", "%d", &key); module_ctrl.module.u32Key |= key << 8;
+	read_p("CCM: ", "%d", &key); module_ctrl.module.u32Key |= key << 9;
+	read_p("Gamma: ", "%d", &key); module_ctrl.module.u32Key |= key << 10;
+	read_p("EE: ", "%d", &key); module_ctrl.module.u32Key |= key << 11;
+	read_p("CPROC: ", "%d", &key); module_ctrl.module.u32Key |= key << 12;
+	read_p("CNR: ", "%d", &key); module_ctrl.module.u32Key |= key << 13;
 
 	TUNING_API_EQ(hbn_isp_set_module_control, &module_ctrl, return);
 }
@@ -354,21 +353,20 @@ void tuning_get_module_control(tuning_context_t *ctx)
 
 	printf("module_ctrl.module.u32Key %d\n", module_ctrl.module.u32Key);
 
-	printf("CCM: %s\n", (module_ctrl.module.u32Key & 1 << 0)?"Enable":"Disable");
-	printf("CNR: %s\n", (module_ctrl.module.u32Key & 1 << 1)?"Enable":"Disable");
-	printf("CPROC: %s\n", (module_ctrl.module.u32Key & 1 << 2)?"Enable":"Disable");
-	printf("DG: %s\n", (module_ctrl.module.u32Key & 1 << 3)?"Enable":"Disable");
-	printf("Demosaic: %s\n", (module_ctrl.module.u32Key & 1 << 4)?"Enable":"Disable");
+	printf("COMPAND: %s\n", (module_ctrl.module.u32Key & 1 << 0)?"Enable":"Disable");
+	printf("LSC: %s\n", (module_ctrl.module.u32Key & 1 << 1)?"Enable":"Disable");
+	printf("DG: %s\n", (module_ctrl.module.u32Key & 1 << 2)?"Enable":"Disable");
+	printf("WDR: %s\n", (module_ctrl.module.u32Key & 1 << 3)?"Enable":"Disable");
+	printf("GE: %s\n", (module_ctrl.module.u32Key & 1 << 4)?"Enable":"Disable");
 	printf("DPCC: %s\n", (module_ctrl.module.u32Key & 1 << 5)?"Enable":"Disable");
 	printf("2DNR: %s\n", (module_ctrl.module.u32Key & 1 << 6)?"Enable":"Disable");
 	printf("3DNR: %s\n", (module_ctrl.module.u32Key & 1 << 7)?"Enable":"Disable");
-	printf("EE: %s\n", (module_ctrl.module.u32Key & 1 << 8)?"Enable":"Disable");
-	printf("LSC: %s\n", (module_ctrl.module.u32Key & 1 << 9)?"Enable":"Disable");
-	printf("LUT3D: %s\n", (module_ctrl.module.u32Key & 1 << 10)?"Enable":"Disable");
-	printf("WDR: %s\n", (module_ctrl.module.u32Key & 1 << 11)?"Enable":"Disable");
-	printf("YNR: %s\n", (module_ctrl.module.u32Key & 1 << 12)?"Enable":"Disable");
-	printf("GE: %s\n", (module_ctrl.module.u32Key & 1 << 13)?"Enable":"Disable");
-	printf("WB: %s\n", (module_ctrl.module.u32Key & 1 << 14)?"Enable":"Disable");
+	printf("Demosaic: %s\n", (module_ctrl.module.u32Key & 1 << 8)?"Enable":"Disable");
+	printf("CCM: %s\n", (module_ctrl.module.u32Key & 1 << 9)?"Enable":"Disable");
+	printf("Gamma: %s\n", (module_ctrl.module.u32Key & 1 << 10)?"Enable":"Disable");
+	printf("EE: %s\n", (module_ctrl.module.u32Key & 1 << 11)?"Enable":"Disable");
+	printf("CPROC: %s\n", (module_ctrl.module.u32Key & 1 << 12)?"Enable":"Disable");
+	printf("CNR: %s\n", (module_ctrl.module.u32Key & 1 << 13)?"Enable":"Disable");
 }
 
 void tuning_get_af_statistics(tuning_context_t *ctx)
@@ -655,4 +653,82 @@ void tuning_hanle_get_awb_preference_attr(tuning_context_t *ctx)
 		}
 		printf("\n");
 	}
+}
+
+void tuning_handle_set_dpcc_attr(tuning_context_t *ctx)
+{
+	uint32_t mode;
+	int32_t tmp_num;
+	hbn_isp_dpcc_attr_t dpcc_attr = {0};
+
+	read_p("typing the dpcc mode, manual(0)/auto(1): ", "%d", &mode);
+	TUNING_API_EQ(hbn_isp_get_dpcc_attr, &dpcc_attr, return);
+
+	if (mode == 0) {
+		dpcc_attr.mode = HBN_ISP_MODE_MANUAL;
+		read_p("bpt_enable: ", "%d", &tmp_num);
+		dpcc_attr.manual_attr.bpt_enable = tmp_num;
+		read_p("bpt_num: ", "%d", &tmp_num);
+		dpcc_attr.manual_attr.bpt_num = tmp_num;
+		read_p("bpt_out_mode: ", "%d", &tmp_num);
+		dpcc_attr.manual_attr.bpt_out_mode = tmp_num;
+	} else if (mode == 1) {
+		dpcc_attr.mode = HBN_ISP_MODE_AUTO;
+	} else {
+		printf("Unknown mode: %d\n", mode);
+		return;
+	}
+
+	TUNING_API_EQ(hbn_isp_set_dpcc_attr, &dpcc_attr, return);
+}
+
+void tuning_handle_get_dpcc_attr(tuning_context_t *ctx)
+{
+	hbn_isp_dpcc_attr_t dpcc_attr = {0};
+
+	TUNING_API_EQ(hbn_isp_get_dpcc_attr, &dpcc_attr, return);
+
+	printf("dpcc is in %s mode\n", (dpcc_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":(dpcc_attr.mode == HBN_ISP_MODE_AUTO)?"auto":"disable");
+	printf("bpt_enable: %d\n", dpcc_attr.manual_attr.bpt_enable);
+	printf("bpt_num: %d\n", dpcc_attr.manual_attr.bpt_num);
+	printf("bpt_out_mode: %d\n", dpcc_attr.manual_attr.bpt_out_mode);
+	printf("out_mode: %d\n", dpcc_attr.manual_attr.out_mode);
+	printf("set_use: %d\n", dpcc_attr.manual_attr.set_use);
+	pr_double("line_mad_fac", HBN_ISP_DPCC_CHANNEL_NUM, HBN_ISP_DPCC_MP_TYPE_NUM,
+		" %d", dpcc_attr.manual_attr.line_mad_fac);
+	pr_double("line_thresh", HBN_ISP_DPCC_CHANNEL_NUM, HBN_ISP_DPCC_MP_TYPE_NUM,
+		" %d", dpcc_attr.manual_attr.line_thresh);
+	pr_linear("methods_set", HBN_ISP_DPCC_MP_TYPE_NUM, " %d", dpcc_attr.manual_attr.methods_set);
+	pr_double("pg_fac", HBN_ISP_DPCC_CHANNEL_NUM, HBN_ISP_DPCC_MP_TYPE_NUM,
+		" %d", dpcc_attr.manual_attr.pg_fac);
+	pr_double("rg_fac", HBN_ISP_DPCC_CHANNEL_NUM, HBN_ISP_DPCC_MP_TYPE_NUM,
+		" %d", dpcc_attr.manual_attr.rg_fac);
+	pr_double("rnd_offs", HBN_ISP_DPCC_CHANNEL_NUM, HBN_ISP_DPCC_MP_TYPE_NUM,
+		" %d", dpcc_attr.manual_attr.rnd_offs);
+	pr_double("rnd_thresh", HBN_ISP_DPCC_CHANNEL_NUM, HBN_ISP_DPCC_MP_TYPE_NUM,
+		" %d", dpcc_attr.manual_attr.rnd_thresh);
+	pr_double("ro_limits", HBN_ISP_DPCC_CHANNEL_NUM, HBN_ISP_DPCC_MP_TYPE_NUM,
+		" %d", dpcc_attr.manual_attr.ro_limits);
+
+	printf("auto config:\n");
+	printf("auto_level: %d\n", dpcc_attr.auto_attr.auto_level);
+	pr_linear("gains", HBN_ISP_AUTO_LEVEL_MAX, " %f", dpcc_attr.auto_attr.gains);
+	pr_triple("line_mad_fac", dpcc_attr.auto_attr.auto_level, HBN_ISP_DPCC_CHANNEL_NUM,
+		HBN_ISP_DPCC_MP_TYPE_NUM, " %d", dpcc_attr.auto_attr.line_mad_fac);
+	pr_triple("line_thresh", dpcc_attr.auto_attr.auto_level, HBN_ISP_DPCC_CHANNEL_NUM,
+		HBN_ISP_DPCC_MP_TYPE_NUM, " %d", dpcc_attr.auto_attr.line_thresh);
+	pr_triple("pg_fac", dpcc_attr.auto_attr.auto_level, HBN_ISP_DPCC_CHANNEL_NUM,
+		HBN_ISP_DPCC_MP_TYPE_NUM, " %d", dpcc_attr.auto_attr.pg_fac);
+	pr_triple("rg_fac", dpcc_attr.auto_attr.auto_level, HBN_ISP_DPCC_CHANNEL_NUM,
+		HBN_ISP_DPCC_MP_TYPE_NUM, " %d", dpcc_attr.auto_attr.rg_fac);
+	pr_triple("rnd_offs", dpcc_attr.auto_attr.auto_level, HBN_ISP_DPCC_CHANNEL_NUM,
+		HBN_ISP_DPCC_MP_TYPE_NUM, " %d", dpcc_attr.auto_attr.rnd_offs);
+	pr_triple("rnd_thresh", dpcc_attr.auto_attr.auto_level, HBN_ISP_DPCC_CHANNEL_NUM,
+		HBN_ISP_DPCC_MP_TYPE_NUM, " %d", dpcc_attr.auto_attr.rnd_thresh);
+	pr_triple("ro_limits", dpcc_attr.auto_attr.auto_level, HBN_ISP_DPCC_CHANNEL_NUM,
+		HBN_ISP_DPCC_MP_TYPE_NUM, " %d", dpcc_attr.auto_attr.ro_limits);
+	pr_double("methods_set", dpcc_attr.auto_attr.auto_level, HBN_ISP_DPCC_MP_TYPE_NUM,
+		" %d", dpcc_attr.auto_attr.methods_set);
+	pr_linear("out_mode", dpcc_attr.auto_attr.auto_level, " %d", dpcc_attr.auto_attr.out_mode);
+	pr_linear("set_use", dpcc_attr.auto_attr.auto_level, " %d", dpcc_attr.auto_attr.set_use);
 }

@@ -44,6 +44,9 @@ static void parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 		case 'w':
 			ctx->work_mode = atoi(optarg);
 			break;
+		case 'f':
+			ctx->feedback_times = atoi(optarg);
+			break;
 		default:
 			parse_opts_print(argv[0]);
 			break;
@@ -58,6 +61,7 @@ static int32_t tuning_specify_case(tuning_context_t *ctx)
 
 	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
 		pr_tuning("tuning_tool run with feedback\n");
+		ctx->feedback_times = ctx->feedback_times == 0 ? 0xFFFF : ctx->feedback_times;
 	}
 
 	if (ctx->vpm_json[0] == 0)
@@ -77,7 +81,8 @@ static int32_t tuning_feeback_prepare_next(tuning_context_t *ctx)
 		return -1;
 	}
 #ifdef TUNING_DEBUG
-	pr_tuning("feedback file: %s, index %d, size %ld\n", ctx->img_path[ctx->cur_img], ctx->cur_img, statbuf.st_size);
+	pr_tuning("feedback file: %s, index %d, size %ld\n",
+		ctx->img_path[ctx->cur_img], ctx->cur_img, statbuf.st_size);
 #endif
 
 	file = fopen(ctx->img_path[ctx->cur_img], "r");
@@ -94,7 +99,18 @@ static int32_t tuning_feeback_prepare_next(tuning_context_t *ctx)
 	fread(ctx->src_img.buffer.virt_addr[0], 1, statbuf.st_size, file);
 	fclose(file);
 
-	ctx->cur_img = (ctx->cur_img + 1) >= ctx->img_num ? 0 : ctx->cur_img + 1;
+	if ((ctx->feedback_times <= 1) &&
+		((ctx->cur_img + 1) >= ctx->img_num)) {
+		pr_tuning("feedback raw list done!\n");
+		return -1;
+	}
+
+	if ((ctx->cur_img + 1) >= ctx->img_num) {
+		ctx->cur_img = 0;
+		ctx->feedback_times -= 1;
+	} else {
+		ctx->cur_img += 1;
+	}
 
 	return 0;
 }
@@ -137,7 +153,8 @@ static void *tuning_main_worker_thread(void *arg)
 			hbn_vnode_releaseframe(ctx->vnode_fd[0], 0, &raw_img);
 		}
 		if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
-			FUNC_EQ(tuning_feeback_prepare_next(ctx), 0, goto out);
+			ret = tuning_feeback_prepare_next(ctx);
+			if (ret) goto out;
 			ret = hbn_vnode_sendframe(ctx->vnode_fd[1], 0, &ctx->src_img);
 			if (ret) {
 				pr_tuning("isp hbn_vnode_sendframe failed!\n");
@@ -170,6 +187,9 @@ static void *tuning_main_worker_thread(void *arg)
 		// pr_tuning("get buffer size %ld-%ld\n", yuv_img.buffer.size[0], yuv_img.buffer.size[1]);
 #endif
 		hbn_vnode_releaseframe(ctx->vnode_fd[1], 0, &yuv_img);
+		if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
+			usleep(20*1000);
+		}
 	}
 out:
 	pr_tuning("typing [q] to quit\n");
@@ -191,6 +211,8 @@ static void tuning_api_func(int32_t cmd, tuning_context_t *ctx)
 		}
 	}
 
+	if (cmd != 'h')
+		printf("Unknown cmd: %c!\n", (char)cmd);
 	valid_cmd_print();
 	printf("Input cmd:");
 }

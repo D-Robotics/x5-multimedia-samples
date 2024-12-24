@@ -17,7 +17,7 @@ typedef struct tuning_cmd_func {
 } tuning_cmd_func_t;
 
 /* app cmd */
-#define PARSE_SHORT_OPTS "c:v:d:r:s:f:w:"
+#define PARSE_SHORT_OPTS "c:v:d:r:s:w:f:"
 #define PARSE_LONG_OPTS {\
 		{"cam_path", 1, 0, 'c'},\
 		{"vpm_path", 1, 0, 'v'},\
@@ -25,6 +25,7 @@ typedef struct tuning_cmd_func {
 		{"send_raw", 1, 0, 'r'},\
 		{"dump_stream", 1, 0, 's'},\
 		{"work_mode", 1, 0, 'w'},\
+		{"feedback_times", 1, 0, 'f'},\
 		{ NULL, 0, 0, 0 },\
 	}
 
@@ -33,6 +34,7 @@ typedef struct tuning_cmd_func {
 			"-r        send raw to hbplayer\n"\
 			"-s        dump stream flag\n"\
 			"-w        work mode mask\n"\
+			"-f        feedback raw list times\n"\
 			"-h        usage help\n"
 
 #define parse_opts_print(prog) do {\
@@ -63,6 +65,8 @@ typedef struct tuning_cmd_func {
 			"Z -> get ae zone weight\n"\
 			"p -> set awb preference attr\n"\
 			"P -> get awb preference attr\n"\
+			"c -> set dpcc attr\n"\
+			"C -> get dpcc attr\n"\
 			"q -> quit\n"\
 			"h -> help\n"
 
@@ -94,6 +98,8 @@ typedef struct tuning_cmd_func {
 	{'Z',	tuning_hanle_get_ae_zone_weight},\
 	{'p',	tuning_hanle_set_awb_preference_attr},\
 	{'P',	tuning_hanle_get_awb_preference_attr},\
+	{'c',	tuning_handle_set_dpcc_attr},\
+	{'C',	tuning_handle_get_dpcc_attr},\
 }
 
 void tuning_dump_sif_raw(tuning_context_t *ctx);
@@ -118,6 +124,8 @@ void tuning_hanle_set_ae_zone_weight(tuning_context_t *ctx);
 void tuning_hanle_get_ae_zone_weight(tuning_context_t *ctx);
 void tuning_hanle_set_awb_preference_attr(tuning_context_t *ctx);
 void tuning_hanle_get_awb_preference_attr(tuning_context_t *ctx);
+void tuning_handle_set_dpcc_attr(tuning_context_t *ctx);
+void tuning_handle_get_dpcc_attr(tuning_context_t *ctx);
 
 
 void tuning_time_point();

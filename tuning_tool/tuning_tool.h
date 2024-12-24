@@ -26,6 +26,7 @@ typedef struct tuning_context {
 	uint32_t send_raw;
 	uint32_t dump_stream_flag;
 	uint32_t work_mode;
+	uint32_t feedback_times;
 
 	uint32_t yuv_dump_cnt;
 	uint32_t is_offline;
@@ -36,11 +37,13 @@ typedef struct tuning_context {
 	hbn_vflow_handle_t vflow_fd;
 	hbn_vnode_handle_t vnode_fd[2];	// 0-sif, 1-isp
 	tool_event_t *hbplayer_event;
+
 	int32_t img_num;
 	int32_t cur_img;
 	char img_path[TUNING_FEEDBACK_FILE_MAX][128];
 	char img_name[TUNING_FEEDBACK_FILE_MAX][128];
 	hbn_vnode_image_t src_img;
+
 } tuning_context_t;
 
 #define main_while_func_run(func, ctx) {	\

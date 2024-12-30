@@ -109,7 +109,7 @@ static void update_osd_info(vp_vflow_contex_t* vp_vflow_contex, uint64_t *next_u
 	if(current_time_ms > *next_update_time_ms){
 		char world_time_string[100];
 		get_world_time_string(world_time_string, sizeof(world_time_string));
-		vp_osd_draw_world(vp_vflow_contex, world_time_string);
+		vp_osd_draw_world(vp_vflow_contex, 0, world_time_string);
 		*next_update_time_ms = (current_time_ms / 1000) * 1000 + 1000;
 	}
 }
@@ -457,14 +457,16 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			vse_config->vse_ochn_attr[vse_chn].fmt = FRM_FMT_NV12;
 			vse_config->vse_ochn_attr[vse_chn].bit_width = 8;
 		}
-
-		//osd
+		//配置OSD
 		osd_user_info_t *osd_info = &g_vpp_camera[i].vp_vflow_contex.osd_info;
-		osd_info->x = 50;
-		osd_info->y = 50;
-		osd_info->width = 320;
-		osd_info->height = 200;
-		osd_info->channel_id = i;
+		osd_info->valid_osd_region_count = 1;
+		for (int j = 0; j < osd_info->valid_osd_region_count; j++){
+			osd_info->handle[j] = i * VP_MAX_OSD_REGION + j;
+			osd_info->position[j].x = 50;
+			osd_info->position[j].y = 50;
+			osd_info->position[j].width = 320;
+			osd_info->position[j].height = 200;
+		}
 
 		//codec
 		camera_config = g_vpp_camera[i].vp_vflow_contex.sensor_config->camera_config;
@@ -568,14 +570,13 @@ int32_t vpp_init_ion_pipeline_param_from_vflow_contex(vp_vflow_contex_t *vp_vflo
 
 	//osd
 	osd_user_info_t *osd_info = &vp_vflow_contex->osd_info;
-	ion_param->osd_valid_count = 0;
-	for(int i = 0; i< 1; i++){
-		vp_ion_buffer_param_t *osd = &ion_param->osd[ion_param->osd_valid_count];
-		osd->width = osd_info->width;
-		osd->height = osd_info->height;
+	ion_param->osd_valid_count = osd_info->valid_osd_region_count;
+	for(int i = 0; i< ion_param->osd_valid_count; i++){
+		vp_ion_buffer_param_t *osd = &ion_param->osd[i];
+		osd->width = osd_info->position[i].width;
+		osd->height =osd_info->position[i].height;
 		osd->format = ION_OSD_BUFFER_VGA8;
 		osd->count = 1;
-		ion_param->osd_valid_count++;
 	}
 
 	//vpu
@@ -733,7 +734,6 @@ int32_t vpp_camera_ion_param_get(solution_cfg_t* solution_cfg, solution_ion_para
 		if(cam_cfg->cam_vpp[i].is_enable == 0){
 			continue;
 		}
-
 		ret = vpp_init_ion_pipeline_param_from_vflow_contex(
 				&g_vpp_camera[i].vp_vflow_contex,
 				&g_vpp_camera[i].m_encode_user_config,

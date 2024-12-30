@@ -36,6 +36,8 @@
 #define VP_GET_FRAME_TIMEOUT 2000
 #define VP_DECODER_GET_FRAME_TIMEOUT 4000
 
+#define VP_MAX_OSD_REGION (4)
+
 /**
  * Align by 16
  */
@@ -90,17 +92,18 @@ typedef struct isp_info_s {
 typedef struct vin_info_s {
 	int ochn_buffer_count;
 } vin_user_config_t;
-typedef struct osd_info_s{
-	//起始点
+
+typedef struct osd_position_s{
 	int x;
 	int y;
-	//大小
 	int width;
 	int height;
-
-	hbn_rgn_bitmap_t bitmap;
-
-	int channel_id;
+}osd_position_t;
+typedef struct osd_info_s{
+	int valid_osd_region_count;
+	osd_position_t position[VP_MAX_OSD_REGION];
+	hbn_rgn_handle_t handle [VP_MAX_OSD_REGION];
+	hbn_rgn_bitmap_t bitmap [VP_MAX_OSD_REGION];
 } osd_user_info_t;
 
 enum GDC_STATUS{

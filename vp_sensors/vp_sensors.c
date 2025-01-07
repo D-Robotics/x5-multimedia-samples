@@ -495,7 +495,6 @@ static int32_t check_sensor_reg_value(vcon_propertie_t vcon_props,
 		} else {
 			printf("WARN: Sensor Name: %s, Expected Chip ID: 0x%02X, Actual Chip ID Read: 0x%02X\n",
 					sensor_config->sensor_name, sensor_config->chip_id & 0x0000FFFF, chip_id);
-			return -1;
 		}
 
 	}

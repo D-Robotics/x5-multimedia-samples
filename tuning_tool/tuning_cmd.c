@@ -732,3 +732,14 @@ void tuning_handle_get_dpcc_attr(tuning_context_t *ctx)
 	pr_linear("out_mode", dpcc_attr.auto_attr.auto_level, " %d", dpcc_attr.auto_attr.out_mode);
 	pr_linear("set_use", dpcc_attr.auto_attr.auto_level, " %d", dpcc_attr.auto_attr.set_use);
 }
+
+void tuning_handle_set_pattern_attr(tuning_context_t *ctx)
+{
+	int32_t tmp_num;
+	hbn_isp_pattern_t pattern;
+
+	read_p("bayer pattern(0-RGGB 1-GRBG 2-GBRG 3-BGGR): ", "%d", &tmp_num);
+	pattern = tmp_num;
+
+	TUNING_API_EQ(hbn_isp_set_pattern_attr, &pattern, return);
+}

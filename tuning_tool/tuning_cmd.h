@@ -67,6 +67,7 @@ typedef struct tuning_cmd_func {
 			"P -> get awb preference attr\n"\
 			"c -> set dpcc attr\n"\
 			"C -> get dpcc attr\n"\
+			"g -> set bayer pattern attr\n"\
 			"q -> quit\n"\
 			"h -> help\n"
 
@@ -100,6 +101,7 @@ typedef struct tuning_cmd_func {
 	{'P',	tuning_hanle_get_awb_preference_attr},\
 	{'c',	tuning_handle_set_dpcc_attr},\
 	{'C',	tuning_handle_get_dpcc_attr},\
+	{'g',	tuning_handle_set_pattern_attr},\
 }
 
 void tuning_dump_sif_raw(tuning_context_t *ctx);
@@ -126,6 +128,7 @@ void tuning_hanle_set_awb_preference_attr(tuning_context_t *ctx);
 void tuning_hanle_get_awb_preference_attr(tuning_context_t *ctx);
 void tuning_handle_set_dpcc_attr(tuning_context_t *ctx);
 void tuning_handle_get_dpcc_attr(tuning_context_t *ctx);
+void tuning_handle_set_pattern_attr(tuning_context_t *ctx);
 
 
 void tuning_time_point();

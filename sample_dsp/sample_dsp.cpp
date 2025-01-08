@@ -150,6 +150,20 @@ int32_t dsp_sample() {
 	const char *json_path = "/app/platform_samples/sample_dsp/sample_confg.json";
 	const char *chan_name = "cpu2dsp_ins2ch0";
 
+	struct dsp_call_params_s dsp_call_params = {
+		.buf_width = width,
+		.buf_height = height,
+	};
+
+	dsp_call_params.type = algo_type;
+	if (algo_type == HORIZON_ALGO_SAMPLE) {
+		snprintf(dsp_call_params.cmd, sizeof(dsp_call_params.cmd), "horizon-algo-sample");
+	} else if (algo_type == HIFI_FFT_CPLX_32x32) {
+		snprintf(dsp_call_params.cmd, sizeof(dsp_call_params.cmd), "hifi-fft-cplx");
+	} else {
+		snprintf(dsp_call_params.cmd, sizeof(dsp_call_params.cmd), "undefine-cmd");
+	}
+
 	ret = hb_dsp_init(dsp_id);
 	if (ret < 0) {
 		pr_err("hb_dsp_init failed, return ret %d\n", ret);
@@ -159,13 +173,13 @@ int32_t dsp_sample() {
 	ret = hb_dsp_mem_alloc(dsp_id, buf_size, hbmem_flag, &input_va, &input_iova);
 	if (ret) {
 		pr_err("hbmem input failed, return ret 0x%x\n", ret);
-		return ret;
+		goto __failed_to_end1;
 	}
 
 	ret = hb_dsp_mem_alloc(dsp_id, buf_size, hbmem_flag, &output_va, &output_iova);
 	if (ret) {
 		pr_err("hbmem output failed, return ret 0x%x\n", ret);
-		return ret;
+		goto __failed_to_end2;
 	}
 
 	pr_debug("input va:0x%lx iova:0x%lx, output va:0x%lx iova:0x%lx\n",
@@ -176,13 +190,13 @@ int32_t dsp_sample() {
 	ret = hb_ipcfhal_getchan_byjson(chan_name, &chan, json_path);
 	if (ret < 0) {
 		pr_err("parse json failed %d\n", ret);
-		return ret;
+		goto __failed_to_end3;
 	}
 
 	ret = hb_ipcfhal_init(&chan);
 	if (ret < 0) {
 		pr_err("ipcfhal init error\n");
-		return ret;
+		goto __failed_to_end3;
 	}
 
 	strcpy(pathname, dsp_path);
@@ -191,18 +205,11 @@ int32_t dsp_sample() {
 	ret = hb_dsp_start(dsp_id, timeout, pathname);
 	if (ret < 0) {
 		pr_err("hb_dsp_start failed return ret %d\n", ret);
-		return ret;
+		goto __failed_to_end4;
 	}
 
-	struct dsp_call_params_s dsp_call_params = {
-		.cmd = "horizon-algo-sample",
-		.type = HORIZON_ALGO_SAMPLE,
-		.buf_width = width,
-		.buf_height = height,
-		.dsp_buf0 = input_iova,
-		.dsp_buf1 = output_iova,
-	};
-	dsp_call_params.type = algo_type;
+	dsp_call_params.dsp_buf0 = input_iova;
+	dsp_call_params.dsp_buf1 = output_iova;
 	dump_dsp_call_params_s(&dsp_call_params);
 
 	ret = hb_dsp_get_status(dsp_id, &status);
@@ -210,31 +217,33 @@ int32_t dsp_sample() {
 	ret = dsp_call((uint8_t *)&dsp_call_params, sizeof(dsp_call_params), &chan);
 	if (ret) {
 		pr_err("dsp call fail:%d\n", ret);
-		return ret;
+		goto __failed_to_end;
 	}
 
-	ret = hb_ipcfhal_deinit(&chan);
-	if (ret < 0) {
-		pr_err("ipcfhal deinit error\n");
-		return ret;
-	}
-
+__failed_to_end:
 	ret = hb_dsp_stop(dsp_id);
 	if (ret) {
 		pr_err("dsp stop fail:%d\n", ret);
-		return ret;
 	}
-
+__failed_to_end4:
+	ret = hb_ipcfhal_deinit(&chan);
+	if (ret < 0) {
+		pr_err("ipcfhal deinit error\n");
+	}
+__failed_to_end3:
 	ret = hb_dsp_mem_free(dsp_id, input_va);
 	if (ret) {
 		pr_err("hbmem free input failed, return ret 0x%x\n", ret);
-		return ret;
 	}
-
+__failed_to_end2:
 	ret = hb_dsp_mem_free(dsp_id, output_va);
 	if (ret) {
 		pr_err("hbmem free output failed, return ret 0x%x\n", ret);
-		return ret;
+	}
+__failed_to_end1:
+	ret = hb_dsp_deinit(0);
+	if (ret) {
+		pr_err("dsp deinit failed, return ret 0x%x\n", ret);
 	}
 
 	return ret;

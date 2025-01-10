@@ -43,8 +43,8 @@ static void command_help() {
 	printf("***************  Command Lists  ***************\n");
 	printf(" g	-- get single frame \n");
 	printf(" l	-- get a set frames \n");
-	printf(" x      -- only enable lpwm \n");
-	printf(" y      -- only disable lpwm \n");
+	printf(" x      -- only enable lpwm, support sc035hgs sensor \n");
+	printf(" y      -- only disable lpwm, support sc035hgs sensor \n");
 	printf(" q	-- quit  \n");
 	printf(" h	-- print help message\n");
 }
@@ -279,17 +279,6 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 	hbn_vnode_releaseframe(vin_node_handle, ochn_id, &out_img);
 }
 
-/*
-enum lpwm_dynamic_enable {
-        LPWM_CHANGE_ATTR,
-        LPWM_ONLY_ENABLE,
-        LPWM_ONLY_DISABLE,
-        LPWM_DYNAMIC_MAX,
-};
- */
-
-
-
 static int lpwm_enable_chn(hbn_vnode_handle_t vin_node_handle, uint8_t enable, uint8_t chn)
 {
 	vin_attr_ex_t vin_attr_ex = {0};
@@ -328,6 +317,7 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 	char option = 'a';
 	hbn_vnode_handle_t vin_node_handle;
 	int running = 1;
+	const char *sensor_name;
 
 	command_help();
 	printf("\nCommand: ");
@@ -354,14 +344,28 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 				break;
 			case 'x':
 				for (i = 0; i < sensor_count; i ++) {
-					vin_node_handle = pipe_contex[i].vin_node_handle;
-					(void)lpwm_enable_chn(vin_node_handle, 1, 0);
+					sensor_name = pipe_contex[i].sensor_config->sensor_name;
+					if (sensor_name != NULL && (strcmp(sensor_name, "sc035hgs") == 0 ||
+									strcmp(sensor_name, "sc035hgs-vc0") == 0 ||
+									strcmp(sensor_name, "sc035hgs-vc1") == 0)) {
+						vin_node_handle = pipe_contex[i].vin_node_handle;
+						(void)lpwm_enable_chn(vin_node_handle, 1, 0);
+					} else {
+						printf("only support rx0 sc035hgs.\n");
+					}
 				}
 				break;
 			case 'y':
 				for (i = 0; i < sensor_count; i ++) {
-					vin_node_handle = pipe_contex[i].vin_node_handle;
-					(void)lpwm_enable_chn(vin_node_handle, 0, 0);
+					sensor_name = pipe_contex[i].sensor_config->sensor_name;
+					if (sensor_name != NULL && (strcmp(sensor_name, "sc035hgs") == 0 ||
+									strcmp(sensor_name, "sc035hgs-vc0") == 0 ||
+									strcmp(sensor_name, "sc035hgs-vc1") == 0)) {
+						vin_node_handle = pipe_contex[i].vin_node_handle;
+						(void)lpwm_enable_chn(vin_node_handle, 0, 0);
+					} else {
+						printf("only support rx0 sc035hgs.\n");
+					}
 				}
 				break;
 			case 'h':

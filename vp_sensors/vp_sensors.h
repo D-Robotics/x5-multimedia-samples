@@ -69,6 +69,8 @@ typedef struct vp_sensor_config_s {
 	isp_attr_t      *isp_attr;
 	isp_ichn_attr_t *isp_ichn_attr;
 	isp_ochn_attr_t *isp_ochn_attr;
+	deserial_config_t *deserial_node_attr;
+	mipi_config_t *mipi_cfg_attr;
 } vp_sensor_config_t;
 
 extern vp_sensor_config_t *vp_sensor_config_list[];

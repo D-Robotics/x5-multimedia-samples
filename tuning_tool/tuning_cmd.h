@@ -1,6 +1,6 @@
 /***************************************************************************
  *                      COPYRIGHT NOTICE
- *             Copyright(C) 2024, D-Robotics Co., Ltd.
+ *             Copyright(C) 2024-2025, D-Robotics Co., Ltd.
  *                     All rights reserved.
  ***************************************************************************/
 
@@ -17,24 +17,33 @@ typedef struct tuning_cmd_func {
 } tuning_cmd_func_t;
 
 /* app cmd */
-#define PARSE_SHORT_OPTS "c:v:d:r:s:w:f:"
+#define PARSE_SHORT_OPTS "s:t:m:w:f:l:d:r:H:W:F:h"
 #define PARSE_LONG_OPTS {\
-		{"cam_path", 1, 0, 'c'},\
-		{"vpm_path", 1, 0, 'v'},\
-		{"dump_mask", 1, 0, 'd'},\
-		{"send_raw", 1, 0, 'r'},\
-		{"dump_stream", 1, 0, 's'},\
-		{"work_mode", 1, 0, 'w'},\
-		{"feedback_times", 1, 0, 'f'},\
+		{"sensor_index", required_argument, 0, 's'},\
+		{"settle_value", optional_argument, 0, 't'},\
+		{"sensor_mode", optional_argument, 0, 'm'},\
+		{"send_raw", required_argument, 0, 'r'},\
+		{"dump_stream", required_argument, 0, 'l'},\
+		{"online", no_argument, 0, 0},\
+		{"offline", no_argument, 0, 0},\
+		{"mcm", no_argument, 0, 0},\
+		{"work_mode", required_argument, 0, 'w'},\
+		{"feedback_times", required_argument, 0, 'f'},\
+		{"hight", required_argument, 0, 'H'},\
+		{"width", required_argument, 0, 'W'},\
+		{"format", required_argument, 0, 'F'},\
+		{"help", no_argument, 0, 'h'},\
 		{ NULL, 0, 0, 0 },\
 	}
 
-#define PARSE_SHOW_OPTS "-c        camera json path\n"\
-			"-v        vpm json path\n"\
+
+#define PARSE_SHOW_OPTS "-s        Specify sensor index\n"\
+			"-t        Specify settle time for debug\n"\
+			"-m        Specify sensor mode of camera_config_t\n"\
 			"-r        send raw to hbplayer\n"\
-			"-s        dump stream flag\n"\
+			"-l        dump stream flag\n"\
 			"-w        work mode mask\n"\
-			"-f        feedback raw list times\n"\
+			"-f -H -W -F       feedback raw file xx with specified height, width, and format(raw8/raw10/raw12)\n"\
 			"-h        usage help\n"
 
 #define parse_opts_print(prog) do {\
@@ -143,13 +152,17 @@ void tuning_time_delay(const char *func_name);
 	} while(0)
 
 #define TUNING_API_EQ(func, pattr, retfunc) do { \
-		int32_t func_ret; \
-		RECORD_START(); \
-		func_ret = func(global_ctx->vnode_fd[1], pattr); \
-		RECORD_END(#func); \
-		if ((func_ret) != 0) { \
-			pr_tuning("error: %s(%d)%s fail!\n", __func__, __LINE__, #func); \
-			retfunc; \
+		int i = 0; \
+		for (i = 0; i < global_ctx->sensor_count; i++) { \
+			hbn_vnode_handle_t isp_node_handle = global_ctx->pipe_contex_info[i].pipe_contex.isp_node_handle; \
+			int32_t func_ret; \
+			RECORD_START(); \
+			func_ret = func(isp_node_handle, pattr); \
+			RECORD_END(#func); \
+			if ((func_ret) != 0) { \
+				pr_tuning("error: %s(%d)%s fail for sensor %d!\n", __func__, __LINE__, #func, i); \
+				retfunc; \
+			} \
 		} \
 	} while(0)
 

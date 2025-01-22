@@ -1,6 +1,6 @@
 /***************************************************************************
  *                      COPYRIGHT NOTICE
- *             Copyright(C) 2024, D-Robotics Co., Ltd.
+ *             Copyright(C) 2024-2025, D-Robotics Co., Ltd.
  *                     All rights reserved.
  ***************************************************************************/
 
@@ -13,6 +13,8 @@ void tuning_dump_sif_raw(tuning_context_t *ctx)
 	hbn_vnode_image_t raw_img = {0};
 	char file_name[128] = {0};
 	static int32_t raw_stream_cnt = 0;
+	int32_t sensor_count = ctx->sensor_count;
+	int32_t select_sensor_id = 0;
 
 	if (!ctx->is_offline) {
 		pr_tuning("cannot dump raw when sif otf isp\n");
@@ -24,24 +26,24 @@ void tuning_dump_sif_raw(tuning_context_t *ctx)
 	}
 
 	read_p("typing the number to dump: ", "%d", &dump_cnt);
+	for (i = 0; i < sensor_count; i++) {
+		for (raw_stream_cnt = 0; raw_stream_cnt < dump_cnt; raw_stream_cnt++) {
+			printf("select_sensor_id:%d\n",ctx->pipe_contex_info[i].select_sensor_id);
+			select_sensor_id = ctx->pipe_contex_info[i].select_sensor_id;
+			ret = hbn_vnode_getframe_cond(ctx->pipe_contex_info[i].pipe_contex.vin_node_handle, 0, 1000, 0, &raw_img);
+			if (ret) {
+				pr_tuning("get buffer from sif fail\n");
+				continue;
+			}
 
-	for (i = 0; i < dump_cnt; i++) {
-		ret = hbn_vnode_getframe_cond(ctx->vnode_fd[0], 0, 1000, 0, &raw_img);
-		if (ret) {
-			pr_tuning("get buffer from sif fail\n");
-			continue;
+			snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/sensor%dstream%d.raw", DEF_DUMP_PATH, select_sensor_id, raw_stream_cnt);
+
+			tuning_dump_file(file_name, &raw_img);
+
+			hbn_vnode_releaseframe(ctx->pipe_contex_info[i].pipe_contex.vin_node_handle, 0, &raw_img);
 		}
-
-		if (!ctx->dump_stream_flag)
-			tuning_get_filename(file_name, DEF_DUMP_PATH, &raw_img, SIF_MNI);
-		else
-			snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/stream%d.raw", DEF_DUMP_PATH, raw_stream_cnt);
-
-		tuning_dump_file(file_name, &raw_img);
-
-		hbn_vnode_releaseframe(ctx->vnode_fd[0], 0, &raw_img);
+		raw_stream_cnt++;
 	}
-	raw_stream_cnt++;
 }
 
 void tuning_handle_set_expsoure(tuning_context_t *ctx)

@@ -1,6 +1,6 @@
 /***************************************************************************
  *                      COPYRIGHT NOTICE
- *             Copyright(C) 2024, D-Robotics Co., Ltd.
+ *             Copyright(C) 2024-2025, D-Robotics Co., Ltd.
  *                     All rights reserved.
  ***************************************************************************/
 
@@ -10,18 +10,31 @@
 #include "hbn_isp_api.h"
 #include "isp_cfg.h"
 #include "tuning_utils.h"
+#include "common_utils.h"
 
-#define DEF_CAM_PATH "/app/platform_samples/tuning_tool/tuning_cfg/sc1330t_rx0/cam_x5_config.json"
-#define DEF_VPM_PATH "/app/platform_samples/tuning_tool/tuning_cfg/sc1330t_rx0/vpm_x5_config.json"
+
 #define DEF_DUMP_PATH "/userdata"
 
+#define MAX_SENSORS 4
 #define HBPLAYER_EN 1
 #define FEEDBACK_MASK 0
 #define START_DUMP_MASK 1
 
+typedef enum pipeline_mode_e {
+	Online = 0,
+	MCM = 1,
+	Offline = 2,
+} pipeline_mode_t;
+typedef struct pipe_contex_info {
+	pipe_contex_t pipe_contex;
+	uint32_t active_mipi_host;
+	uint32_t select_sensor_id;
+
+} pipe_contex_info_t;
+
 typedef struct tuning_context {
-	char cam_json[128];
-	char vpm_json[128];
+	pipe_contex_info_t pipe_contex_info[MAX_SENSORS];
+	uint32_t sensor_count;
 	uint32_t dump_mask;
 	uint32_t send_raw;
 	uint32_t dump_stream_flag;
@@ -34,8 +47,6 @@ typedef struct tuning_context {
 	pthread_t main_thid;
 	pthread_t api_thid;
 	uint32_t err_cnt;
-	hbn_vflow_handle_t vflow_fd;
-	hbn_vnode_handle_t vnode_fd[2];	// 0-sif, 1-isp
 	tool_event_t *hbplayer_event;
 
 	int32_t img_num;

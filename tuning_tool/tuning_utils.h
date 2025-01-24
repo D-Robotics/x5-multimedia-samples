@@ -18,6 +18,7 @@
 #define tuning_pr_warp(p_func_, fmt, ...) do { p_func_(tuning_fmt(fmt), ##__VA_ARGS__); } while(0)
 #define pr_tuning(fmt, ...) tuning_pr_warp(printf, fmt, ##__VA_ARGS__)
 #define apr_tuning(fmt, ...) android_printLog(6, NULL, fmt, ##__VA_ARGS__)
+#define FLOAT288INT(x) ((int)((x) * 256.0f))
 
 #define pr_linear(param_name, level, type, val) do {\
 		int32_t l; \

@@ -16,6 +16,9 @@ typedef struct tuning_cmd_func {
 	void (*api_func)(tuning_context_t *ctx);
 } tuning_cmd_func_t;
 
+#define LUT_SIZE 10
+#define LUT_KNEE 150
+
 /* app cmd */
 #define PARSE_SHORT_OPTS "s:t:m:w:f:l:d:r:H:W:F:h"
 #define PARSE_LONG_OPTS {\
@@ -77,6 +80,7 @@ typedef struct tuning_cmd_func {
 			"c -> set dpcc attr\n"\
 			"C -> get dpcc attr\n"\
 			"g -> set bayer pattern attr\n"\
+			"i -> handle with 3dlut\n"\
 			"q -> quit\n"\
 			"h -> help\n"
 
@@ -111,6 +115,7 @@ typedef struct tuning_cmd_func {
 	{'c',	tuning_handle_set_dpcc_attr},\
 	{'C',	tuning_handle_get_dpcc_attr},\
 	{'g',	tuning_handle_set_pattern_attr},\
+	{'i',	tuning_handle_3dlut},\
 }
 
 void tuning_dump_sif_raw(tuning_context_t *ctx);
@@ -138,6 +143,8 @@ void tuning_hanle_get_awb_preference_attr(tuning_context_t *ctx);
 void tuning_handle_set_dpcc_attr(tuning_context_t *ctx);
 void tuning_handle_get_dpcc_attr(tuning_context_t *ctx);
 void tuning_handle_set_pattern_attr(tuning_context_t *ctx);
+void lut3d_map_init();
+void tuning_handle_3dlut(tuning_context_t *ctx);
 
 
 void tuning_time_point();

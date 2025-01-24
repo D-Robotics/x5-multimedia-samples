@@ -266,7 +266,6 @@ static int32_t tuning_feeback_prepare_next(tuning_context_t *ctx)
 
 	fread(ctx->src_img.buffer.virt_addr[0], 1, statbuf.st_size, file);
 	fclose(file);
-	hb_mem_flush_buf(ctx->src_img.buffer.fd[0], 0, ctx->src_img.buffer.size[0]);
 
 	if ((ctx->feedback_times <= 1) &&
 		((ctx->cur_img + 1) >= ctx->img_num)) {
@@ -497,15 +496,13 @@ destroy_cam:
 	for (int i = 0; i < ctx->sensor_count; ++i) {
 		ret = hbn_vflow_stop(ctx->pipe_contex_info[i].pipe_contex.vflow_fd);
 		if (ret != 0) {
-			printf("hbn_vflow_stop failed for sensor %d. ret = %d\n", sensor_indexes[i], ret);
+			pr_tuning("hbn_vflow_stop failed for sensor %d. ret = %d\n", sensor_indexes[i], ret);
 		}
-		pr_tuning("vflow destory done\n");
-		hbn_vnode_close(ctx->pipe_contex_info[i].pipe_contex.vin_node_handle);
-		hbn_vnode_close(ctx->pipe_contex_info[i].pipe_contex.isp_node_handle);
 		hbn_camera_destroy(ctx->pipe_contex_info[i].pipe_contex.cam_fd);
 		hbn_vflow_destroy(ctx->pipe_contex_info[i].pipe_contex.vflow_fd);
 	}
 
+	pr_tuning("vflow destory done\n");
 
 	if (ctx->err_cnt) {
 		pr_tuning("some error: %d occurred\n", ctx->err_cnt);
@@ -753,6 +750,8 @@ int32_t main(int argc, char *argv[])
 		pr_tuning("tuning_tool run with feedback\n");
 		ctx.feedback_times = ctx.feedback_times == 0 ? 0xFFFF : ctx.feedback_times;
 	}
+
+	lut3d_map_init();
 
 	for (int i = 0; i < ctx.sensor_count; ++i) {
 		// printf("pipelinemode: %d\n",pipelinemode);

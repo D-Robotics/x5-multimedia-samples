@@ -1,5 +1,4 @@
 #!/bash
-cd out
 CUR_TEST_SHELL=$(readlink -f $0)
 COMMON_DIR=$(pwd)
 
@@ -13,11 +12,12 @@ function print_usage() {
 	echo "run with [-f filename -H height -W width -F format]: feedback raw filename with specified height, width, and format(raw8/raw10/raw12)"
 	exit 1
 }
+
 function get_case() {
 	if [ -z "$1" ]; then
 		echo "Please input the index of the sensor which you want to run."
 		echo "eg: --run 1"
-		exit -1
+		exit 1
 	fi
 }
 
@@ -132,8 +132,9 @@ function suit_case_run() {
 function vtuner_control() {
 	if [ -z "$1" ]; then
 		echo "Please input --tune 1 to open the vtuner_server."
-		exit -1
+		exit 1
 	fi
+
 	if [ "$1" == "1" ]; then
 		echo 1 > /sys/kernel/debug/isp/tune
 		echo "Open vtuner_server Success! Please connect VtunerClient"
@@ -142,9 +143,28 @@ function vtuner_control() {
 		echo "Close vtuner_server done!"
 	else
 		echo "Please input --tune 0/1 to close/open the vtuner_server."
-		exit -1
+		exit 1
 	fi
 }
+
+function log_control() {
+	if [ -z "$1" ]; then
+		echo "Please input --log 1 to print the camera_server log."
+		exit 1
+	fi
+
+	if [ "$1" == "1" ]; then
+		echo 31 31 31 > /sys/kernel/debug/isp/log
+		echo "logcat show verbose log"
+	elif [ "$1" == "0" ]; then
+		echo 3 3 3 > /sys/kernel/debug/isp/log
+		echo "logcat just show import log"
+	else
+		echo "Please input --log 0/1 to control loglevel."
+		exit 1
+	fi
+}
+
 function specify_command() {
 	local _command=$1
 	shift 1
@@ -156,6 +176,8 @@ function specify_command() {
 		print_usage
 	elif [ "$_command" == "--tune" ]; then
 		vtuner_control "$@"
+	elif [ "$_command" == "--log" ]; then
+		log_control "$@"
 	else
 		echo "invaild cmd input : $_command "
 		print_usage

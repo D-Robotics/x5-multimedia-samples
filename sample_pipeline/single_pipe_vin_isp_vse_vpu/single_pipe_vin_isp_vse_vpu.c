@@ -16,6 +16,7 @@
 #include "hb_media_codec.h"
 #include "hb_media_error.h"
 #include "common_utils.h"
+#include "ping_pang_file_saver.h"
 
 #define VSE_MAX_CHANNELS 6
 
@@ -455,21 +456,34 @@ void vp_vin_print_hb_mem_graphic_buf_t(
 	}
 	printf("\n");
 }
+int delete_file_if_exists(const char *filename) {
+    struct stat buffer;
 
+    // 使用 stat 检查文件是否存在
+    if (stat(filename, &buffer) == 0) {
+        // 文件存在，尝试删除
+        if (remove(filename) == 0) {
+            // printf("File '%s' deleted successfully.\n", filename);
+            return 0;  // 删除成功
+        } else {
+            perror("Error deleting file");
+            return -1; // 删除失败
+        }
+    } else {
+        printf("File '%s' does not exist.\n", filename);
+        return 0; // 文件不存在，不视为错误
+    }
+}
 void *read_vse_data(void *context) {
 	pipe_contex_t *pipe_context = (pipe_contex_t *)context;
 	hbn_vnode_handle_t vse_node_handle = pipe_context->vse_node_handle;
 	hbn_vnode_image_t out_img[VSE_MAX_CHANNELS] = {0};
 	char dst_file[128] = {0};
-	uint32_t count = 0;
+	uint64_t count = 0;
 	int ret = 0;
 	media_codec_buffer_t input_buffer = {0};
 	media_codec_buffer_t ouput_buffer = {0};
 	media_codec_output_buffer_info_t info;
-	FILE *fp_output = fopen("single_pipe_vin_isp_vse_vpu.h264", "w+b");
-	if (NULL == fp_output) {
-		printf("Failed to open output file\n");
-	}
 
 	uint8_t uuid[] = "dc45e9bd-e6d948b7-962cd820-d923eeef+SEI_D-Robotics";
 
@@ -480,6 +494,8 @@ void *read_vse_data(void *context) {
 		return NULL;
 	}
 
+	ping_pang_file_saver_t *ping_pang_file_saver = NULL;
+	ping_pang_file_saver = ping_pang_file_saver_create("single_pipe_vin_isp_vse_vpu.h264", 30 * 60);
 	while (running) {
 		for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
 			ret = hbn_vnode_getframe(vse_node_handle, i, 1000, &out_img[i]);
@@ -512,9 +528,14 @@ void *read_vse_data(void *context) {
 			printf("hb_mm_mc_dequeue_output_buffer failed\n");
 			break;
 		}
-		fwrite(ouput_buffer.vstream_buf.vir_ptr,
-				ouput_buffer.vstream_buf.size, 1, fp_output);
-		printf("count:%d\n", count);
+		if(ping_pang_file_saver != NULL){
+			ret = ping_pang_file_saver_write(ping_pang_file_saver,
+				ouput_buffer.vstream_buf.size, ouput_buffer.vstream_buf.vir_ptr);
+			if(ret != 0){
+				printf("ping pang file saver failed\n");
+			}
+			//printf("count:%d\n", count);
+		}
 		ret = hb_mm_mc_queue_output_buffer(&media_context,
 											&ouput_buffer, 2000);
 		if (ret != 0) {
@@ -523,7 +544,7 @@ void *read_vse_data(void *context) {
 		}
 		if (count % 60 == 0) {
 			for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
-				snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%d.yuv",
+				snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%ld.yuv",
 						i, count);
 				dump_2plane_yuv_to_file(dst_file,
 					out_img[i].buffer.virt_addr[0],
@@ -534,6 +555,15 @@ void *read_vse_data(void *context) {
 						" #######################\n", i);
 				vp_vin_print_hbn_vnode_image_t(&out_img[i]);
 			}
+
+			if(count >= 60){
+				uint64_t old_count = count - 60;
+				for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
+					snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%ld.yuv",
+							i, old_count);
+					delete_file_if_exists(dst_file);
+				}
+			}
 		}
 		for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
 			hbn_vnode_releaseframe(vse_node_handle, i, &out_img[i]);
@@ -541,8 +571,7 @@ void *read_vse_data(void *context) {
 
 		count++;
 	}
-	fclose(fp_output);
-
+	ping_pang_file_saver_destroy(ping_pang_file_saver);
 	return NULL;
 }
 

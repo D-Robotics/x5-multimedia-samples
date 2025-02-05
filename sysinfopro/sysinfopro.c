@@ -454,7 +454,7 @@ void get_kernel_modules() {
 }
 
 // 定义选项对应的函数指针类型
-typedef void (*OptionHandler)();
+typedef void (*OptionHandler)(int argc, char *argv[]);
 
 // 选项映射表
 typedef struct {
@@ -486,7 +486,7 @@ void handle_os() {
 	get_bpu_hw_io_version();
 }
 
-void print_usage(const char* program_name);
+void print_usage(int argc, char *argv[]);
 
 OptionMap options[] = {
 	{'a', handle_all, "Show all information"},
@@ -500,8 +500,16 @@ OptionMap options[] = {
 	{'h', (OptionHandler)print_usage, "Show this help message"},
 };
 
-void print_usage(const char* program_name) {
-	printf("Usage: %s [options]\n", program_name);
+void print_usage(int argc, char *argv[]) {
+	// 检查 argv[0] 是否以 "./" 开头
+	if (strncmp(argv[0], "./", 2) == 0) {
+		// 去掉 "./" 部分，将指针向后移动两位
+		argv[0] += 2;
+	}
+	printf("\n%s - display system information and hardware details.\n\n", argv[0]);
+	printf("Usage: %s [options]\n\n", argv[0]);
+	printf("Options can be combined. For example:\n");
+	printf("\t ./%s -m -i -o\n\n", argv[0]);
 	printf("Options:\n");
 	for (size_t i = 0; i < sizeof(options) / sizeof(options[0]); i++) {
 		printf("\t-%c\t%s\n", options[i].option, options[i].description);
@@ -528,7 +536,7 @@ int main(int argc, char* argv[]) {
 	for (int i = 1; i < argc; i++) {
 		if (argv[i][0] != '-' || strlen(argv[i]) != 2) {
 			printf("Invalid option: %s\n", argv[i]);
-			print_usage(argv[0]);
+			print_usage(argc, argv);
 			return 1;
 		}
 
@@ -536,10 +544,10 @@ int main(int argc, char* argv[]) {
 		OptionHandler handler = find_handler(option);
 
 		if (handler) {
-			handler();
+			handler(argc, argv);
 		} else {
-			printf("Invalid option: %c\n", option);
-			print_usage(argv[0]);
+			printf("Invalid option: -%c\n", option);
+			print_usage(argc, argv);
 			return 1;
 		}
 	}

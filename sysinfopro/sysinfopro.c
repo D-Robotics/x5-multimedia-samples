@@ -396,6 +396,8 @@ void get_hbre_version() {
 	const char* libsecure_storage_version_info = hb_libsecure_storage_get_version_info();
 	// libhbplayer
 	const char* libhbplayer_version_info = hb_libhbplayer_get_version_info();
+	// libdnn
+	const char* libdnn_version_info = hbDNNGetVersion();
 	// libNano2D libNano2Dutil
 	const char* libNano2D_version_info = n2d_get_version_info();
 	// gc8000l lib version
@@ -418,6 +420,7 @@ void get_hbre_version() {
 	printf("\t%-30s %s\n", "libpowerctl", libpowerctl_version_info);
 	printf("\t%-30s %s\n", "libsecure_storage", libsecure_storage_version_info);
 	printf("\t%-30s %s\n", "libhbplayer", libhbplayer_version_info);
+	printf("\t%-30s %s\n", "libdnn", libdnn_version_info);
 	printf("\t%-30s %s\n", "gc8000l", gc8000l_version_info);
 	printf("\t%-30s %s\n", "x5_camsys", x5_camsys_libs_version_info);
 	printf("\t%-30s %s\n\n", "libNano2D/libNano2Dutil", libNano2D_version_info);

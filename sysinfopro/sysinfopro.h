@@ -18,5 +18,6 @@
 #include "nano2D.h"
 #include "mem_list.h"
 #include "gc_hal_version.h"
+#include "hb_dnn.h"
 
 #endif // SYSINFOPRO_H

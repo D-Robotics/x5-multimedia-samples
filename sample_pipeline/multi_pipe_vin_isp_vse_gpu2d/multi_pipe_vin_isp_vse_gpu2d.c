@@ -447,16 +447,16 @@ int create_and_run_vin_isp_vflow(pipe_contex_t *pipe_contex,
 
 void *encode_vse_chn_data(void *context)
 {
-	// 通过索引获取两个 pipeline_info_t
-	thread_args_t *args = (thread_args_t *)context;
-	pipeline_info_t *pipeline_info = args->pipeline_info[0];  // 第一个 sensor
-	pipeline_info_t *pipeline_info1 = args->pipeline_info[1]; // 第二个 sensor
-	pipeline_info_t *current_pipeline[] = {pipeline_info, pipeline_info1};
-	hbn_vnode_image_t vse_chn_frame = {0};
-
 	int ret = 0;
 	uint32_t count = 0;
+	// 根据输入传参决定使用几路pipeline
+	thread_args_t *args = (thread_args_t *)context;
+	pipeline_info_t *current_pipeline[total_pipeline_num];
+	for (int i = 0; i < total_pipeline_num; i++) {
+		current_pipeline[i] = args->pipeline_info[i];
+	}
 
+	hbn_vnode_image_t vse_chn_frame = {0};
 	error = n2d_open();
 	if (N2D_IS_ERROR(error)) {
 		printf("open context failed! error=%d.\n", error);
@@ -473,10 +473,9 @@ void *encode_vse_chn_data(void *context)
 
 	while (running) {
 		for (int index = 0; index < total_pipeline_num; index++) {
-
-			ret = hbn_vnode_getframe(current_pipeline[index]->pipe_contexts.isp_node_handle, pipeline_info->gpu2d_channel, 1000, &vse_chn_frame);//current_pipeline[index]->pipe_contexts.gdc_node_handle
+			ret = hbn_vnode_getframe(current_pipeline[index]->pipe_contexts.isp_node_handle, args->pipeline_info[index]->gpu2d_channel, 1000, &vse_chn_frame);//current_pipeline[index]->pipe_contexts.gdc_node_handle
 			if (ret != 0) {
-				printf("hbn_vnode_getframe GDC channel %d failed, error code %d\n", 0, ret);
+				printf("sensor_%s_hbn_vnode_getframe GDC channel %d failed, error code %d\n",current_pipeline[index]->output_file, 0, ret);
 				continue;
 			}
 
@@ -538,7 +537,7 @@ void *encode_vse_chn_data(void *context)
 			}
 
 			// 释放帧
-			hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.isp_node_handle, pipeline_info->gpu2d_channel, &vse_chn_frame);
+			hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.isp_node_handle, args->pipeline_info[index]->gpu2d_channel, &vse_chn_frame);
 			N2D_ON_ERROR(n2d_free(&src));
 		}
 		count++;

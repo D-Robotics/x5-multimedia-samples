@@ -34,6 +34,7 @@ extern vp_sensor_config_t imx586_linear_3480x2160_raw10_30fps_4lane;
 extern vp_sensor_config_t os08c10_linear_3480x2160_raw12_30fps_2lane;
 extern vp_sensor_config_t ar0233_linear_1920x1080_raw12_30fps_2lane;
 extern vp_sensor_config_t ar0820std_linear_3840x2160_yuv422_30fps_4lane;
+extern vp_sensor_config_t sc1336_linear_1280x720_raw10_15fps_2lane;
 
 
 vp_sensor_config_t *vp_sensor_config_list[] = {
@@ -56,6 +57,7 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&os08c10_linear_3480x2160_raw12_30fps_2lane,
 	&ar0233_linear_1920x1080_raw12_30fps_2lane,
 	&ar0820std_linear_3840x2160_yuv422_30fps_4lane,
+	&sc1336_linear_1280x720_raw10_15fps_2lane,
 };
 
 uint32_t vp_get_sensors_list_number() {

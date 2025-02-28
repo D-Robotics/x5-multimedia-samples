@@ -4,7 +4,7 @@ RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DI
 
 TARGET = generate_bin
 
-SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
+SRCS := $(wildcard *.c)
 OBJS :=  $(SRCS:.c=.o)
 
 .PHONY: all clean install

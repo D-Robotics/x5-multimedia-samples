@@ -4,7 +4,7 @@ RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DI
 
 TARGET = sample_ca
 
-SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
+SRCS := $(wildcard *.c)
 OBJS := $(SRCS:.c=.o)
 LIBS += -lteec
 INCS += -I../../../../../out/deploy/system/usr/include/

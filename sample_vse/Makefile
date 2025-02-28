@@ -4,6 +4,7 @@ RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DI
 
 TARGET = sample_vse
 
+SRC_PATH := $(CUR_DIR)/../utils $(CUR_DIR)
 SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
 OBJS :=  $(SRCS:.c=.o)
 

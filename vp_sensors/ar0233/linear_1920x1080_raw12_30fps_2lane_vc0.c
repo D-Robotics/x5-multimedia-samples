@@ -4,14 +4,13 @@
 #define SENSOR_HEIGHT  1080
 #define SENSOE_FPS 30
 
-#define RAW12 0x2C
 
 static mipi_config_t ar0233_mipi_config = {
 	.rx_enable = 1,
 	.rx_attr = {
 		.phy = 0,
 		.lane = 2,
-		.datatype = RAW12,
+		.datatype = SENSOR_DATA_TYPE_RAW12,
 		.fps = SENSOE_FPS,
 		.mclk = 24,
 		.mipiclk = 2400,
@@ -42,7 +41,7 @@ static camera_config_t ar0233_camera_config = {
 	.eeprom_addr = 0x51,
 	.sensor_mode = PWL_M,
 	.fps = SENSOE_FPS,
-	.format = RAW12,
+	.format = SENSOR_DATA_TYPE_RAW12,
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
 	.extra_mode = 7,
@@ -84,7 +83,7 @@ static vin_ichn_attr_t ar0233_vin_ichn_attr = {
 
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
-	.format = RAW12,
+	.format = SENSOR_DATA_TYPE_RAW12,
 
 };
 
@@ -94,7 +93,7 @@ static vin_ochn_attr_t ar0233_vin_ochn_attr = {
 	.ddr_en = 1,
 	.ochn_attr_type = VIN_BASIC_ATTR,
 	.vin_basic_attr = {
-		.format = RAW12,
+		.format = SENSOR_DATA_TYPE_RAW12,
 		.wstride = (SENSOR_WIDTH) * 2,
 	},
 
@@ -129,7 +128,8 @@ vp_sensor_config_t ar0233_linear_1920x1080_raw12_30fps_2lane_vc0 = {
 	.chip_id = 0xa55a,
 	.sensor_i2c_addr_list = {0x11},
 	.sensor_name = "ar0233-30fps",
-	.config_file = "linear_1920x1080_raw12_30fps_2lane.c",
+	.sensor_type = SENSOR_TYPE_GMSL_RAW,
+	.config_file = "ar0233_linear_1920x1080_raw12_30fps_2lane_vc0.c",
 	.camera_config = &ar0233_camera_config,
 	.vin_ichn_attr = &ar0233_vin_ichn_attr,
 	.vin_node_attr = &ar0233_vin_node_attr,

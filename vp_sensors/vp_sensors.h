@@ -15,6 +15,15 @@
 #define VP_MAX_BUF_SIZE 256
 #define VP_MAX_VCON_NUM 4
 
+#define SENSOR_TYPE_NORMAL	0
+#define SENSOR_TYPE_GMSL_RAW	1
+#define SENSOR_TYPE_GMSL_YUV	2
+#define SENSOR_TYPE_GMSL_RGBIR	3
+
+#define SENSOR_DATA_TYPE_RAW12 0x2C
+#define SENSOR_DATA_TYPE_RAW10 0x2B
+#define SENSOR_DATA_TYPE_YUV422 0x1E
+
 typedef struct {
 	int index;
 	int is_valid;
@@ -71,6 +80,7 @@ typedef struct vp_sensor_config_s {
 	isp_ochn_attr_t *isp_ochn_attr;
 	deserial_config_t *deserial_node_attr;
 	mipi_config_t *mipi_cfg_attr;
+	uint16_t sensor_type;
 } vp_sensor_config_t;
 
 extern vp_sensor_config_t *vp_sensor_config_list[];

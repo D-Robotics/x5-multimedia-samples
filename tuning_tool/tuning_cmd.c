@@ -4,50 +4,42 @@
  *                     All rights reserved.
  ***************************************************************************/
 
-#define CL_TARGET_OPENCL_VERSION 120
 #include "tuning_cmd.h"
-#include <CL/cl.h>
 #include <time.h>
 #include <math.h>
 
 void tuning_dump_sif_raw(tuning_context_t *ctx)
 {
-	int32_t i = 0, ret;
+	int32_t i, ret;
 	uint32_t dump_cnt = 0;
 	hbn_vnode_image_t raw_img = {0};
 	char file_name[128] = {0};
 	static int32_t raw_stream_cnt = 0;
-	int32_t sensor_count = ctx->sensor_count;
-	int32_t select_sensor_id = 0;
+	pipe_contex_info_t *pipe_info;
 
-	if (!ctx->is_offline) {
-		pr_tuning("cannot dump raw when sif otf isp\n");
+	pipe_info = &ctx->pipe_contex_info[ctx->handle_id];
+	if (!pipe_info->is_offline) {
+		pr_tuning("Cannot dump raw when sif otf isp\n");
 		return ;
 	}
 	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
-		pr_tuning("can not dump raw in feedback mode\n");
-		return;
+		pr_tuning("Can not dump raw in feedback mode\n");
+		return ;
 	}
 
-	read_p("typing the number to dump: ", "%d", &dump_cnt);
-	for (i = 0; i < sensor_count; i++) {
-		for (raw_stream_cnt = 0; raw_stream_cnt < dump_cnt; raw_stream_cnt++) {
-			printf("select_sensor_id:%d\n",ctx->pipe_contex_info[i].select_sensor_id);
-			select_sensor_id = ctx->pipe_contex_info[i].select_sensor_id;
-			ret = hbn_vnode_getframe_cond(ctx->pipe_contex_info[i].pipe_contex.vin_node_handle, 0, 1000, 0, &raw_img);
-			if (ret) {
-				pr_tuning("get buffer from sif fail\n");
-				continue;
-			}
-
-			snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/sensor%dstream%d.raw", DEF_DUMP_PATH, select_sensor_id, raw_stream_cnt);
-
-			tuning_dump_file(file_name, &raw_img);
-
-			hbn_vnode_releaseframe(ctx->pipe_contex_info[i].pipe_contex.vin_node_handle, 0, &raw_img);
+	read_p("Typing the number to dump: ", "%d", &dump_cnt);
+	for (i = 0; i < dump_cnt; i++) {
+		ret = hbn_vnode_getframe_cond(pipe_info->pipe_contex.vin_node_handle, 0, 1000, 0, &raw_img);
+		if (ret) {
+			pr_tuning("get buffer from sif fail\n");
+			break;
 		}
-		raw_stream_cnt++;
+
+		snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/SIF_S%d_STREAM%d.raw", DEF_DUMP_PATH, ctx->handle_id, raw_stream_cnt);
+		tuning_dump_file(file_name, &raw_img);
+		hbn_vnode_releaseframe(pipe_info->pipe_contex.vin_node_handle, 0, &raw_img);
 	}
+	raw_stream_cnt++;
 }
 
 void tuning_handle_set_expsoure(tuning_context_t *ctx)
@@ -304,7 +296,10 @@ void tuning_hanle_get_ae_zone_weight(tuning_context_t *ctx)
 
 void tuning_dump_yuv(tuning_context_t *ctx)
 {
-	read_p("typing the number to dump: ", "%d", &ctx->yuv_dump_cnt);
+	pipe_contex_info_t *pipe_info;
+
+	pipe_info = &ctx->pipe_contex_info[ctx->handle_id];
+	read_p("typing the number to dump: ", "%d", &pipe_info->yuv_dump_cnt);
 }
 
 void tuning_get_ae_statistics(tuning_context_t *ctx)
@@ -750,36 +745,16 @@ void tuning_handle_set_pattern_attr(tuning_context_t *ctx)
 	TUNING_API_EQ(hbn_isp_set_pattern_attr, &pattern, return);
 }
 
-int32_t lut3d_map[LUT_SIZE][LUT_SIZE][LUT_SIZE][3];
-
-void lut3d_map_init()
-{
-	int r, g, b;
-
-	for (r = 0; r < LUT_SIZE; r++) {
-		for (g = 0; g < LUT_SIZE; g++) {
-			for (b = 0; b < LUT_SIZE; b++) {
-				if (r < LUT_SIZE / 2 && g < LUT_SIZE / 2 && b < LUT_SIZE / 2) {
-					lut3d_map[r][g][b][0] = FLOAT288INT((LUT_KNEE * r) / ((LUT_SIZE - 1) / 2.0));
-					lut3d_map[r][g][b][1] = FLOAT288INT((LUT_KNEE * g) / ((LUT_SIZE - 1) / 2.0));
-					lut3d_map[r][g][b][2] = FLOAT288INT((LUT_KNEE * b) / ((LUT_SIZE - 1) / 2.0));
-				} else {
-					lut3d_map[r][g][b][0] = FLOAT288INT(((255.0 - LUT_KNEE) * (r - LUT_SIZE / 2.0)) / ((LUT_SIZE - 1) / 2.0) + LUT_KNEE);
-					lut3d_map[r][g][b][1] = FLOAT288INT(((255.0 - LUT_KNEE) * (g - LUT_SIZE / 2.0)) / ((LUT_SIZE - 1) / 2.0) + LUT_KNEE);
-					lut3d_map[r][g][b][2] = FLOAT288INT(((255.0 - LUT_KNEE) * (b - LUT_SIZE / 2.0)) / ((LUT_SIZE - 1) / 2.0) + LUT_KNEE);
-				}
-				// lut3d_map[r][g][b][0] = (255.0 * r) / ((LUT_SIZE - 1));
-				// lut3d_map[r][g][b][1] = (255.0 * g) / ((LUT_SIZE - 1));
-				// lut3d_map[r][g][b][2] = (255.0 * b) / ((LUT_SIZE - 1));
-			}
-		}
-	}
-}
-
-static void tuning_cpu_3dlut(int32_t img_height, int32_t img_width, unsigned char *buf_src, unsigned char *buf_cpu)
+#ifdef CPU_3DLUT
+static void tuning_cpu_3dlut(tuning_context_t *ctx, unsigned char *buf_src, unsigned char *buf_cpu)
 {
 	int32_t height, width;
-	int32_t off = img_width * img_height;
+	int32_t off;
+	int32_t img_height, img_width;
+
+	img_width = ctx->pipe_contex_info[ctx->handle_id].img_width;
+	img_height = ctx->pipe_contex_info[ctx->handle_id].img_height;
+	off = img_width * img_height;
 
 	for (height = 0; height < img_height; height++) {
 	for (width = 0; width < img_width; width++) {
@@ -842,203 +817,76 @@ static void tuning_cpu_3dlut(int32_t img_height, int32_t img_width, unsigned cha
 	}
 	}
 }
+#endif
 
-const char *kernelSource =
-"__kernel void apply_3dlut(__global const unsigned char* buf_src, __global unsigned char* buf_opencl, __global int* lut3d_map, int lut_size, int img_height, int img_width) {\n"
-"	int height = get_global_id(0);\n"
-"	int width = get_global_id(1);\n"
-"	int off = img_width * img_height;\n"
-
-"	int y_pos = height * img_width + width;\n"
-"	int u_pos = off + (height / 2) * img_width + (width & ~1u);\n"
-"	int v_pos = off + (height / 2) * img_width + (width | 1u);\n"
-
-"	unsigned char Y = buf_src[y_pos];\n"
-"	unsigned char U = buf_src[u_pos];\n"
-"	unsigned char V = buf_src[v_pos];\n"
-
-"	int R = Y + (int)(1.403 * (V - 128));\n"
-"	int G = Y - (int)(0.344136 * (U - 128) + 0.714136 * (V - 128));\n"
-"	int B = Y + (int)(1.772 * (U - 128));\n"
-
-"	R = clamp(R, 0, 255);\n"
-"	G = clamp(G, 0, 255);\n"
-"	B = clamp(B, 0, 255);\n"
-
-"	float x = R / 255.0f * (lut_size - 1);\n"
-"	float y = G / 255.0f * (lut_size - 1);\n"
-"	float z = B / 255.0f * (lut_size - 1);\n"
-
-"	int x0 = (int)x, y0 = (int)y, z0 = (int)z;\n"
-"	int x1 = min(x0 + 1, lut_size - 1);\n"
-"	int y1 = min(y0 + 1, lut_size - 1);\n"
-"	int z1 = min(z0 + 1, lut_size - 1);\n"
-
-"	float dx = x - x0;\n"
-"	float dy = y - y0;\n"
-"	float dz = z - z0;\n"
-
-"	float tmp[3] = {0};\n"
-"	for (int i = 0; i < 3; i++) {\n"
-"		tmp[i] = (1 - dx) * (1 - dy) * (1 - dz) * lut3d_map[((x0 * lut_size + y0) * lut_size + z0) * 3 + i] +\n"
-"			dx * (1 - dy) * (1 - dz) * lut3d_map[((x1 * lut_size + y0) * lut_size + z0) * 3 + i] +\n"
-"			(1 - dx) * dy * (1 - dz) * lut3d_map[((x0 * lut_size + y1) * lut_size + z0) * 3 + i] +\n"
-"			(1 - dx) * (1 - dy) * dz * lut3d_map[((x0 * lut_size + y0) * lut_size + z1) * 3 + i] +\n"
-"			dx * (1 - dy) * dz * lut3d_map[((x1 * lut_size + y0) * lut_size + z1) * 3 + i] +\n"
-"			(1 - dx) * dy * dz * lut3d_map[((x0 * lut_size + y1) * lut_size + z1) * 3 + i] +\n"
-"			dx * dy * (1 - dz) * lut3d_map[((x1 * lut_size + y1) * lut_size + z0) * 3 + i] +\n"
-"			dx * dy * dz * lut3d_map[((x1 * lut_size + y1) * lut_size + z1) * 3 + i];\n"
-"		tmp[i] = min(tmp[i], 65280.0f);\n"
-"	}\n"
-
-"	unsigned char R_R = ((unsigned char)tmp[0]) >> 8;\n"
-"	unsigned char G_R = ((unsigned char)tmp[1]) >> 8;\n"
-"	unsigned char B_R = ((unsigned char)tmp[2]) >> 8;\n"
-
-"	int Y_R = (int)(0.299 * R_R + 0.587 * G_R + 0.114 * B_R);\n"
-"	int U_R = (int)(-0.169 * R_R - 0.331 * G_R + 0.500 * B_R + 128);\n"
-"	int V_R = (int)(0.500 * R_R - 0.419 * G_R - 0.081 * B_R + 128);\n"
-
-"	buf_opencl[y_pos] = (unsigned char)clamp(Y_R, 0, 255);\n"
-"	buf_opencl[u_pos] = (unsigned char)clamp(U_R, 0, 255);\n"
-"	buf_opencl[v_pos] = (unsigned char)clamp(V_R, 0, 255);\n"
-"} \n";
-
-static void tuning_opencl_3dlut(int32_t img_height, int32_t img_width, unsigned char *buf_src, unsigned char *buf_opencl)
+static void tuning_opencl_3dlut(tuning_context_t *ctx, unsigned char *buf_src, unsigned char *buf_opencl)
 {
 	cl_int ret;
+	tuning_opencl_ctx_t *opencl_ctx;
+	int32_t img_size, img_width, img_height;
 
-	cl_platform_id platform;
-	ret = clGetPlatformIDs(1, &platform, NULL);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clGetPlatformIDs fail, ret: %d\n", ret);
-		return;
-	}
+	opencl_ctx = &ctx->pipe_contex_info[ctx->handle_id].opencl_ctx;
+	img_width = ctx->pipe_contex_info[ctx->handle_id].img_width;
+	img_height = ctx->pipe_contex_info[ctx->handle_id].img_height;
+	img_size = img_width * img_height * 1.5;
 
-	cl_device_id device;
-	ret = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clGetDeviceIDs fail, ret: %d\n", ret);
-		return;
-	}
-
-	cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, &ret);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clCreateContext fail, ret: %d\n", ret);
-		return;
-	}
-
-	cl_command_queue queue = clCreateCommandQueue(context, device, 0, &ret);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clCreateCommandQueue fail, ret: %d\n", ret);
-		return;
-	}
-
-	cl_program program = clCreateProgramWithSource(context, 1, &kernelSource, NULL, &ret);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clCreateCommandQueue fail, ret: %d\n", ret);
-		return;
-	}
-
-	size_t log_size;
-	char *log;
-	ret = clBuildProgram(program, 1, &device, NULL, NULL, NULL);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clBuildProgram fail, ret: %d\n", ret);
-		clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
-
-		log = (char*)malloc(log_size + 1);
-		if (log) {
-			clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
-			log[log_size] = '\0';
-			printf("Build Log: \n%s\n", log);
-			free(log);
-		}
-		return;
-	}
-
-	cl_kernel kernel = clCreateKernel(program, "apply_3dlut", &ret);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clCreateKernel fail, ret: %d\n", ret);
-		return;
-	}
-
-	size_t img_size = img_height * img_width * 1.5;
-	cl_mem input_image = clCreateBuffer(context, CL_MEM_READ_ONLY, img_size, NULL, &ret);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clCreateBuffer fail, ret: %d\n", ret);
-		return;
-	}
-
-	cl_mem output_image = clCreateBuffer(context, CL_MEM_WRITE_ONLY, img_size, NULL, &ret);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clCreateBuffer fail, ret: %d\n", ret);
-		return;
-	}
-
-	cl_mem lut_buffer = clCreateBuffer(context, CL_MEM_READ_ONLY, LUT_SIZE * LUT_SIZE * LUT_SIZE * 3 * sizeof(int), NULL, &ret);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clCreateBuffer fail, ret: %d\n", ret);
-		return;
-	}
-
-	ret = clEnqueueWriteBuffer(queue, input_image, CL_TRUE, 0, img_size, buf_src, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(opencl_ctx->queue, opencl_ctx->input_image, CL_TRUE, 0, img_size, buf_src, 0, NULL, NULL);
 	if (ret != CL_SUCCESS) {
 		pr_tuning("clEnqueueWriteBuffer fail, ret: %d\n", ret);
 		return;
 	}
 
-	ret = clEnqueueWriteBuffer(queue, lut_buffer, CL_TRUE, 0, LUT_SIZE * LUT_SIZE * LUT_SIZE * 3 * sizeof(int), lut3d_map, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(opencl_ctx->queue, opencl_ctx->lut_buffer, CL_TRUE, 0, LUT_SIZE * LUT_SIZE * LUT_SIZE * 3 * sizeof(int), lut3d_map, 0, NULL, NULL);
 	if (ret != CL_SUCCESS) {
 		pr_tuning("clEnqueueWriteBuffer fail, ret: %d\n", ret);
 		return;
 	}
 
 	int lut_size = LUT_SIZE;
-	ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), &input_image);
-	ret |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &output_image);
-	ret |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &lut_buffer);
-	ret |= clSetKernelArg(kernel, 3, sizeof(int), &lut_size);
-	ret |= clSetKernelArg(kernel, 4, sizeof(int), &img_height);
-	ret |= clSetKernelArg(kernel, 5, sizeof(int), &img_width);
+	ret = clSetKernelArg(opencl_ctx->kernel, 0, sizeof(cl_mem), &opencl_ctx->input_image);
+	ret |= clSetKernelArg(opencl_ctx->kernel, 1, sizeof(cl_mem), &opencl_ctx->output_image);
+	ret |= clSetKernelArg(opencl_ctx->kernel, 2, sizeof(cl_mem), &opencl_ctx->lut_buffer);
+	ret |= clSetKernelArg(opencl_ctx->kernel, 3, sizeof(int), &lut_size);
+	ret |= clSetKernelArg(opencl_ctx->kernel, 4, sizeof(int), &img_height);
+	ret |= clSetKernelArg(opencl_ctx->kernel, 5, sizeof(int), &img_width);
 	if (ret != CL_SUCCESS) {
 		pr_tuning("clSetKernelArg fail, ret: %d\n", ret);
 		return;
 	}
 
 	size_t global_work_size[2] = {img_height, img_width};
-	ret = clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
+	ret = clEnqueueNDRangeKernel(opencl_ctx->queue, opencl_ctx->kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
 	if (ret != CL_SUCCESS) {
 		pr_tuning("clEnqueueNDRangeKernel fail, ret: %d\n", ret);
 		return;
 	}
 
-	ret = clEnqueueReadBuffer(queue, output_image, CL_TRUE, 0, img_size, buf_opencl, 0, NULL, NULL);
+	ret = clEnqueueReadBuffer(opencl_ctx->queue, opencl_ctx->output_image, CL_TRUE, 0, img_size, buf_opencl, 0, NULL, NULL);
 	if (ret != CL_SUCCESS) {
 		pr_tuning("clEnqueueReadBuffer fail, ret: %d\n", ret);
 		return;
 	}
-
-	clReleaseMemObject(input_image);
-	clReleaseMemObject(output_image);
-	clReleaseMemObject(lut_buffer);
-	clReleaseKernel(kernel);
-	clReleaseProgram(program);
-	clReleaseCommandQueue(queue);
-	clReleaseContext(context);
 }
 
 void tuning_handle_3dlut(tuning_context_t *ctx)
 {
-	int32_t ret, img_height, img_width;
-	unsigned char *buf_src = NULL, *buf_cpu = NULL, *buf_opencl = NULL;
+	int32_t ret;
+	unsigned char *buf_src = NULL, *buf_opencl = NULL;
+#ifdef CPU_3DLUT
+	unsigned char *buf_cpu = NULL;
+#endif
 	hbn_vnode_image_t yuv_img = {0};
 	hbn_vnode_handle_t isp_node_handle;
 	char file_name[128] = {0};
 	int32_t size;
 	FILE *Fr;
 
-	isp_node_handle = ctx->pipe_contex_info[0].pipe_contex.isp_node_handle;
+	if (!BIT_ENABLE(ctx->work_mode, LUT3D_MASK)) {
+		pr_tuning("Tuning tool not in 3dlut mode, try run with -a 1\n");
+		return ;
+	}
+
+	isp_node_handle = ctx->pipe_contex_info[ctx->handle_id].pipe_contex.isp_node_handle;
 
 	ret = hbn_vnode_getframe(isp_node_handle, 0, 1000, &yuv_img);
 	if (ret) {
@@ -1048,9 +896,15 @@ void tuning_handle_3dlut(tuning_context_t *ctx)
 	size = yuv_img.buffer.size[0] + yuv_img.buffer.size[1];
 
 	buf_src = (unsigned char *)malloc(size);
+#ifdef CPU_3DLUT
 	buf_cpu = (unsigned char *)malloc(size);
+#endif
 	buf_opencl = (unsigned char *)malloc(size);
-	if (!buf_src || !buf_cpu || !buf_opencl) {
+	if (!buf_src
+#ifdef CPU_3DLUT
+		|| !buf_cpu
+#endif
+		|| !buf_opencl) {
 		pr_tuning("malloc fail\n");
 		return;
 	}
@@ -1058,26 +912,26 @@ void tuning_handle_3dlut(tuning_context_t *ctx)
 	memcpy(buf_src, (unsigned char *)yuv_img.buffer.virt_addr[0], yuv_img.buffer.size[0]);
 	memcpy(buf_src + yuv_img.buffer.size[0], (unsigned char *)yuv_img.buffer.virt_addr[1], yuv_img.buffer.size[1]);
 
-	img_width = yuv_img.buffer.width;
-	img_height = yuv_img.buffer.height;
-
 	snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/lut_src.yuv", DEF_DUMP_PATH);
 	tuning_dump_file(file_name, &yuv_img);
 
 	hbn_vnode_releaseframe(isp_node_handle, 0, &yuv_img);
 
+#ifdef CPU_3DLUT
 	clock_t start_cpu = clock();
-	tuning_cpu_3dlut(img_height, img_width, buf_src, buf_cpu);
+	tuning_cpu_3dlut(ctx, buf_src, buf_cpu);
 	clock_t end_cpu = clock();
 	double time_cpu = ((double)(end_cpu - start_cpu)) / CLOCKS_PER_SEC;
 	printf("CPU execution time: %f seconds\n", time_cpu);
+#endif
 
 	clock_t start_opencl = clock();
-	tuning_opencl_3dlut(img_height, img_width, buf_src, buf_opencl);
+	tuning_opencl_3dlut(ctx, buf_src, buf_opencl);
 	clock_t end_opencl = clock();
 	double time_opencl = ((double)(end_opencl - start_opencl)) / CLOCKS_PER_SEC;
 	printf("OpenCL execution time: %f seconds\n", time_opencl);
 
+#ifdef CPU_3DLUT
 	snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/lut_res_cpu.yuv", DEF_DUMP_PATH);
 	Fr = fopen(file_name, "w");
 	if (Fr == NULL) {
@@ -1088,6 +942,7 @@ void tuning_handle_3dlut(tuning_context_t *ctx)
 	fflush(stdout);
 	fwrite(buf_cpu, 1, size, Fr);
 	fflush(Fr);
+#endif
 
 	memset(file_name, 0, sizeof(file_name));
 	snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/lut_res_opencl.yuv", DEF_DUMP_PATH);
@@ -1104,8 +959,10 @@ void tuning_handle_3dlut(tuning_context_t *ctx)
 
 	if (buf_src)
 		free(buf_src);
+#ifdef CPU_3DLUT
 	if (buf_cpu)
 		free(buf_cpu);
+#endif
 	if (buf_opencl)
 		free(buf_opencl);
 }

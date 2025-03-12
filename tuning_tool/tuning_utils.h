@@ -57,6 +57,7 @@
 	} while(0)
 
 #define BIT_ENABLE(val, shift) ((val) & (1 << (shift)))
+#define bit_mask(val, shift) ((val) |= (1 << (shift)))
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #define TUNING_PRINT_SIZE_MAX		128

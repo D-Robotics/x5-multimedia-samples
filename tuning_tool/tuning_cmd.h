@@ -10,17 +10,15 @@
 #include "tuning_tool.h"
 
 extern tuning_context_t *global_ctx;
+extern int32_t lut3d_map[LUT_SIZE][LUT_SIZE][LUT_SIZE][3];
 
 typedef struct tuning_cmd_func {
 	char cmd;
 	void (*api_func)(tuning_context_t *ctx);
 } tuning_cmd_func_t;
 
-#define LUT_SIZE 10
-#define LUT_KNEE 150
-
 /* app cmd */
-#define PARSE_SHORT_OPTS "s:t:m:w:f:l:d:r:H:W:F:h"
+#define PARSE_SHORT_OPTS "s:t:m:w:f:l:d:r:H:W:F:h:a:"
 #define PARSE_LONG_OPTS {\
 		{"sensor_index", required_argument, 0, 's'},\
 		{"settle_value", optional_argument, 0, 't'},\
@@ -35,6 +33,7 @@ typedef struct tuning_cmd_func {
 		{"hight", required_argument, 0, 'H'},\
 		{"width", required_argument, 0, 'W'},\
 		{"format", required_argument, 0, 'F'},\
+		{"lut3d", required_argument, 0, 'a'},\
 		{"help", no_argument, 0, 'h'},\
 		{ NULL, 0, 0, 0 },\
 	}
@@ -46,6 +45,7 @@ typedef struct tuning_cmd_func {
 			"-r        send raw to hbplayer\n"\
 			"-l        dump stream flag\n"\
 			"-w        work mode mask\n"\
+			"-a        run with opencl for 3dlut func\n"\
 			"-f -H -W -F       feedback raw file xx with specified height, width, and format(raw8/raw10/raw12)\n"\
 			"-h        usage help\n"
 
@@ -143,7 +143,6 @@ void tuning_hanle_get_awb_preference_attr(tuning_context_t *ctx);
 void tuning_handle_set_dpcc_attr(tuning_context_t *ctx);
 void tuning_handle_get_dpcc_attr(tuning_context_t *ctx);
 void tuning_handle_set_pattern_attr(tuning_context_t *ctx);
-void lut3d_map_init();
 void tuning_handle_3dlut(tuning_context_t *ctx);
 
 
@@ -159,17 +158,15 @@ void tuning_time_delay(const char *func_name);
 	} while(0)
 
 #define TUNING_API_EQ(func, pattr, retfunc) do { \
-		int i = 0; \
-		for (i = 0; i < global_ctx->sensor_count; i++) { \
-			hbn_vnode_handle_t isp_node_handle = global_ctx->pipe_contex_info[i].pipe_contex.isp_node_handle; \
-			int32_t func_ret; \
-			RECORD_START(); \
-			func_ret = func(isp_node_handle, pattr); \
-			RECORD_END(#func); \
-			if ((func_ret) != 0) { \
-				pr_tuning("error: %s(%d)%s fail for sensor %d!\n", __func__, __LINE__, #func, i); \
-				retfunc; \
-			} \
+		int32_t func_ret; \
+		hbn_vnode_handle_t isp_node_handle; \
+		isp_node_handle = global_ctx->pipe_contex_info[global_ctx->handle_id].pipe_contex.isp_node_handle; \
+		RECORD_START(); \
+		func_ret = func(isp_node_handle, pattr); \
+		RECORD_END(#func); \
+		if ((func_ret) != 0) { \
+			pr_tuning("Error[%d]: %s fail!\n", __LINE__, #func); \
+			retfunc; \
 		} \
 	} while(0)
 

@@ -2,14 +2,19 @@
 CUR_TEST_SHELL=$(readlink -f $0)
 COMMON_DIR=$(pwd)
 
+FEEDBACK_IMG_H="1080"
+FEEDBACK_IMG_W="1920"
+RAW_FORMAT="raw10"
+
 function print_usage() {
 	echo "run_tuning.sh --list: list all case"
 	echo "run_tuning.sh --run [sensor_index]: run this sensor"
 	echo "run_tuning.sh --online/offline/mcm/: Open the data stream in online/offline/mcm/ mode"
 	echo "run_tuning.sh --tune 0/1: close/open tuning_server"
+	echo "run_tuning.sh --log 0/1: increase/decrease log level in logcat"
 	echo "run with [-w 2]: dump 20 yuv from the start"
 	echo "run with [-r 1]: send raw to hbplayer"
-	echo "run with [-f filename -H height -W width -F format]: feedback raw filename with specified height, width, and format(raw8/raw10/raw12)"
+	echo "run with [-f xx]: feedback raw list xx times"
 	exit 1
 }
 
@@ -30,9 +35,9 @@ function suit_case_run() {
 	local dummy_index=$(./isp_tuning | grep "sensor_name: dummy" | awk '{print $2}' | tr -d :) # 获取dummy_index
 
 	# dummy sensor
-	local user_height="1080"
-	local user_width="1920"
-	local user_format="raw10"
+	local user_height=${FEEDBACK_IMG_H}
+	local user_width=${FEEDBACK_IMG_W}
+	local user_format=${RAW_FORMAT}
 	local user_specified_params=0  # 是否用户指定了-H -W -F
 
 	while [[ $# -gt 0 ]]; do
@@ -85,7 +90,7 @@ function suit_case_run() {
 					fi
 					# 如果是 dummy sensor 且未指定 -H -W -F，则使用默认值
 					if [[ "$1" == "$dummy_index" && "$user_specified_params" -eq 0 ]]; then
-						extra_args+=(-H $user_height -W $user_width -F $user_format)
+						extra_args+=(-H $user_height -W $user_width -F $user_format -w 1)
 					fi
 				else
 					extra_args+=("$1")
@@ -113,11 +118,6 @@ function suit_case_run() {
 		esac
 		shift
 	done
-
-	# 如果检测到 `-f` 参数，则追加 `-w 1`
-	if [[ "$has_f_param" -eq 1 ]]; then
-		extra_args+=("-w" "1")
-	fi
 
 	if [[ ${#sensor_args[@]} -eq 0 ]]; then
 		echo "Please input the index of the sensor which you want to run."

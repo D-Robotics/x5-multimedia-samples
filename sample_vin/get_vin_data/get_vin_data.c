@@ -332,8 +332,8 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 
 	// 处理不同数据格式
 	switch (date_type) {
-		case SENSOR_TYP_RAW10:
-		case SENSOR_TYP_RAW12:
+		case SENSOR_DATA_TYPE_RAW10:
+		case SENSOR_DATA_TYPE_RAW12:
 			strcat(dst_file, ".raw");
 			printf("Dumping RAW data: handle %d, resolution: %dx%d (stride: %d), size: %ld, frame id: %d, timestamp: %ld\n",
 					(int)vin_node_handle,
@@ -345,7 +345,7 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 			dump_image_to_file(dst_file, out_img.buffer.virt_addr[0], out_img.buffer.size[0]);
 			break;
 
-		case SENSOR_TYP_YUV422:
+		case SENSOR_DATA_TYPE_YUV422:
 			strcat(dst_file, ".yuv");
 			printf("Dumping YUV data: handle %d, resolution: %dx%d (stride: %d), size: %ld + %ld, frame id: %d, timestamp: %ld\n",
 					(int)vin_node_handle,

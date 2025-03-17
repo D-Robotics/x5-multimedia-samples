@@ -16,6 +16,13 @@
 #include "common_utils.h"
 
 #define VSE_MAX_CHANNELS 6
+#define DEBUG
+
+#ifdef DEBUG
+#define DEBUG_PRINT(fmt, ...) printf(fmt, ##__VA_ARGS__)
+#else
+#define DEBUG_PRINT(fmt, ...)
+#endif
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
@@ -23,10 +30,14 @@ static struct option const long_options[] = {
 };
 
 
-int32_t running = 0;
+static int32_t running = 0;
+static uint32_t sensor_type = 0;
+static uint32_t link_port = 0;
 
 int create_and_run_vflow(pipe_contex_t *pipe_contex);
 void *read_vse_data(void *contex);
+int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
+int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
 
 static void print_help() {
 	printf("single_pipe_vin_isp_vse -s/--sensor sensor_index\n");
@@ -65,11 +76,15 @@ int main(int argc, char** argv) {
 				index,
 				vp_sensor_config_list[index]->sensor_name,
 				vp_sensor_config_list[index]->config_file);
-		ret = vp_sensor_fixed_mipi_host(pipe_contex.sensor_config, &pipe_contex.csi_config);
-		if (ret != 0) {
-			printf("No Camera Sensor found. Please check if the specified "
-				"sensor is connected to the Camera interface.\n");
-			return ret;
+		sensor_type = pipe_contex.sensor_config->sensor_type;
+		DEBUG_PRINT("sensor_type:%d\n", sensor_type);
+		if(sensor_type == SENSOR_TYPE_NORMAL) {
+			ret = vp_sensor_fixed_mipi_host(pipe_contex.sensor_config, &pipe_contex.csi_config);
+			if (ret != 0) {
+				printf("No Camera Sensor found. Please check if the specified "
+					"sensor is connected to the Camera interface.\n");
+				return ret;
+			}
 		}
 	} else {
 		printf("Unsupport sensor index:%d\n", index);
@@ -111,6 +126,28 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 	return 0;
 }
 
+static int creat_deserial_node(pipe_contex_t *pipe_contex) {
+
+	vp_sensor_config_t *sensor_config = NULL;
+	deserial_config_t *deserial_config = NULL;
+	deserial_handle_t *des_handle = NULL;
+
+	int32_t ret = 0;
+	des_handle = &pipe_contex->des_fd;
+
+	sensor_config = pipe_contex->sensor_config;
+	deserial_config = sensor_config->deserial_node_attr;
+
+	ret = hbn_deserial_create(deserial_config, des_handle);
+	if(ret != 0){
+		printf("hbn_deserial_create failed ret = %d\n", ret);
+		return ret;
+	}
+	DEBUG_PRINT("deserial_config:%02x_%s, des_handle:%ld \n\r" ,deserial_config->addr,
+	deserial_config->name, *des_handle);
+	return 0;
+}
+
 static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vp_sensor_config_t *sensor_config = NULL;
 	vin_node_attr_t *vin_node_attr = NULL;
@@ -131,6 +168,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
+	link_port = vin_node_attr->cim_attr.vc_index;
+	DEBUG_PRINT("link_port:%d \n", link_port);
 	if(pipe_contex->csi_config.mclk_is_not_configed){
 		//设备树中没有配置mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
@@ -327,9 +366,20 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 							pipe_contex->vse_node_handle,
 							0);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
+
+	if(sensor_type != SENSOR_TYPE_NORMAL) {
+		ret = creat_deserial_node(pipe_contex);
+		ERR_CON_EQ(ret, 0);
+		ret = hbn_camera_attach_to_deserial(pipe_contex->cam_fd, pipe_contex->des_fd, link_port);
+		ERR_CON_EQ(ret, 0);
+		ret = hbn_deserial_attach_to_vin(pipe_contex->des_fd, link_port, pipe_contex->vin_node_handle);
+		ERR_CON_EQ(ret, 0);
+	}else {
+		ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
 							pipe_contex->vin_node_handle);
-	ERR_CON_EQ(ret, 0);
+		ERR_CON_EQ(ret, 0);
+	}
+
 	ret = hbn_vflow_start(pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 
@@ -418,7 +468,7 @@ void *read_vse_data(void *context) {
 
 	while (running) {
 		for (uint32_t i = 0; i < VSE_MAX_CHANNELS; ++i) {
-			ret = hbn_vnode_getframe(vse_node_handle, i, 1000, &out_img[i]);
+			ret = hbn_vnode_getframe(vse_node_handle, i, 2000, &out_img[i]);
 			if (ret != 0) {
 				printf("hbn_vnode_getframe VSE channel %d failed\n", i);
 				continue;

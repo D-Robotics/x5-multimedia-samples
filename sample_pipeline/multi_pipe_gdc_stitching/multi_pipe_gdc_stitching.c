@@ -1,6 +1,6 @@
 /***************************************************************************
  *                      COPYRIGHT NOTICE
- *             Copyright(C) 2024, D-Robotics Co., Ltd.
+ *             Copyright(C) 2024-2025, D-Robotics Co., Ltd.
  *                     All rights reserved.
  ***************************************************************************/
 
@@ -13,6 +13,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <ctype.h>
+#include <signal.h>
 
 #include "hbn_api.h"
 #include "gdc_cfg.h"
@@ -47,7 +48,7 @@ static int32_t total_pipeline_num = 0;
 static int32_t verbose_flag = 0;
 static int32_t used_mipi_host = 0;
 
-static int32_t running = 0;
+volatile sig_atomic_t running = 1;
 
 void *read_vse_data(void *contex);
 
@@ -68,6 +69,11 @@ static void print_help(void) {
 	printf("-h, --help\tShow help message\n");
 	printf("Support sensor list:\n");
 	vp_show_sensors_list();
+}
+
+void handle_sigint(int sig) {
+	printf("\nReceived SIGINT (Ctrl + C), exiting gracefully...\n");
+	running = 0;
 }
 
 uint64_t get_timestamp_ms()
@@ -843,6 +849,8 @@ void *encode_isp_chn_data(void *media)
 		hbn_vnode_releaseframe(isp_node_handle1, pipeinfo1->ispchn_id, &isp_out_img_1);
 		hbn_vnode_releaseframe(media_info->gdc_node_handle, 0, &out_img);
 		count++;
+		if (!running)
+			break;
 	}
 
 	return NULL;
@@ -859,6 +867,8 @@ int main(int argc, char** argv) {
 		print_help();
 		return 0;
 	}
+
+	signal(SIGINT, handle_sigint);
 
 	while ((c = getopt_long(argc, argv, "c:vh", long_options, NULL)) != -1) {
 		switch (c) {

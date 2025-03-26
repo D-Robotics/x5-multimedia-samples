@@ -628,7 +628,7 @@ void *get_data_from_feedback_vse(void *context){
 				channel_status[i] = 1;
 			}
 			performance_test_stop(&performace_test_param_for_send_vse);
-			ret = sync_queue_repay_unused_object(vse_to_n2d, 2000, data_item);
+			ret = sync_queue_repay_unused_object(vse_to_n2d, 5000, data_item);
 			if(ret != 0){
 				printf("sync_queue_repay_unused_object failed\n");
 				break;
@@ -1023,13 +1023,13 @@ void *get_stitch_data(void *context){
 		multi_pipe_stitch_info->n2d_frame_index = -1;
 		//4. sync queue process
 		performance_test_start(&performace_test_param_save_queue);
-		ret = sync_queue_save_inused_object(n2d_to_output, 2000, n2d_data_item);
+		ret = sync_queue_save_inused_object(n2d_to_output, 5000, n2d_data_item);
 		if(ret != 0){
 			printf("sync_queue_save_inused_object n2d_to_output failed\n");
 			break;
 		}
 
-		ret = sync_queue_repay_unused_object(vse_to_n2d, 2000, data_item);
+		ret = sync_queue_repay_unused_object(vse_to_n2d, 5000, data_item);
 		if(ret != 0){
 			printf("sync_queue_repay_unused_object failed\n");
 			break;

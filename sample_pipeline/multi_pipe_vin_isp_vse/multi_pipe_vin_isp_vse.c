@@ -20,17 +20,11 @@
 
 #define MAX_PIPE_NUM 4
 
-#ifdef DEBUG
-#define DEBUG_PRINT(fmt, ...) printf(fmt, ##__VA_ARGS__)
-#else
-#define DEBUG_PRINT(fmt, ...)
-#endif
-
 typedef struct {
 	int select_sensor_id;
 	uint32_t sensor_mode;
 	pipe_contex_t pipe_contexts;
-	int active_mipi_host; // 根据实际的硬件连接情况确定使用对应的mipi host
+	int active_mipi_host; // 根据实际的硬件连接情况确定使用对应的 mipi host
 	int vse_bind_codec_chn;
 	char encode_type[32];
 	media_codec_context_t media_context;
@@ -366,7 +360,7 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 				print_help();
 				exit(0);
 			}
-			//gmsl模组需要初始化后才能检测到addr
+			//gmsl 模组需要初始化后才能检测到 addr
 			if(sensor_type == SENSOR_TYPE_NORMAL) {
 				ret = vp_sensor_multi_fixed_mipi_host(pipeline_info->pipe_contexts.sensor_config, used_mipi_host,
 													&pipeline_info->pipe_contexts.csi_config);
@@ -422,7 +416,7 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 	}
 }
 
-static int creat_deserial_node(pipe_contex_t *pipe_contex) {
+static int create_deserial_node(pipe_contex_t *pipe_contex) {
 
 	vp_sensor_config_t *sensor_config = NULL;
 	deserial_config_t *deserial_config = NULL;
@@ -439,8 +433,10 @@ static int creat_deserial_node(pipe_contex_t *pipe_contex) {
 		printf("hbn_deserial_create failed ret = %d\n", ret);
 		return ret;
 	}
-	DEBUG_PRINT("deserial_config:%02x_%s, des_handle:%ld \n\r" ,deserial_config->addr,
-	deserial_config->name, *des_handle);
+	if (verbose_flag) {
+		printf("deserial_config:%02x_%s, des_handle:%ld \n\r" ,deserial_config->addr,
+		deserial_config->name, *des_handle);
+	}
 	return 0;
 }
 
@@ -451,27 +447,24 @@ int create_serdes_fd_and_attach(pipeline_info_t *pipeline_info, int sensor_count
 
 	// 打印每个传入管道的信息
 	for (int i = 0; i < sensor_count; i++) {
-		DEBUG_PRINT("port_link[%d]: %d, cam_fd[%d]: %ld\n"
-		,i ,port_link[i], i, pipeline_info[i].pipe_contexts.cam_fd);
+		printf("port_link[%d]: %d, cam_fd[%d]: %ld\n"
+		,i ,link_port[i], i, pipeline_info[i].pipe_contexts.cam_fd);
 	}
 
-	DEBUG_PRINT("creat_deserial_node\n");
-	ret = creat_deserial_node(&pipeline_info[0].pipe_contexts); // 只传递第一个管道的 pipe_context 创建 des_fd
+	ret = create_deserial_node(&pipeline_info[0].pipe_contexts);
 	tdes[0] = pipeline_info[0].pipe_contexts.des_fd;
 	ERR_CON_EQ(ret, 0);
 
-		//通过camera和deserial的handle，选择对应的kink_port将两者绑定，
+	// 通过 camera 和 deserial 的 handle，选择对应的 link_port 将两者绑定，
 	for (int i = 0; i < sensor_count; i++) {
-		DEBUG_PRINT("hbn_camera_attach_to_deserial,cam_fd_index_%d:%ld\n" ,i, pipeline_info[i].pipe_contexts.cam_fd);
 		ret = hbn_camera_attach_to_deserial(pipeline_info[i].pipe_contexts.cam_fd, tdes[0], link_port[i]);
 		ERR_CON_EQ(ret, 0);
 	}
 
-	//硬件上带有解串器，将deserial与vin node 绑定，并初始化gmsl模组
+	// 硬件上带有解串器，将 deserial 与 vin node 绑定，并初始化 gmsl 模组
 	for (int i = 0; i < sensor_count; i++) {
 		ret = hbn_deserial_attach_to_vin(tdes[0], link_port[i], pipeline_info[i].pipe_contexts.vin_node_handle);
 		ERR_CON_EQ(ret, 0);
-		DEBUG_PRINT("hbn_deserial_index:%d_attach_to_vin\n" , sensor_count);
 	}
 	return 0;
 }
@@ -528,9 +521,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host, int
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
 	link_port[index] = vin_node_attr->cim_attr.vc_index;
-	DEBUG_PRINT("link_port_index:%d:%d \n" ,index, link_port[index]);
 	if(pipe_contex->csi_config.mclk_is_not_configed){
-		//设备树中没有配置mclk：使用外部晶振
+		// 设备树中没有配置 mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
@@ -667,7 +659,7 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex,
 {
 	int32_t ret = 0;
 
-	// 创建pipeline中的每个node
+	// 创建 pipeline 中的每个 node
 	ret = create_camera_node(pipe_contex, sensor_mode);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vin_node(pipe_contex, active_mipi_host, index);
@@ -677,7 +669,7 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex,
 	ret = create_vse_node(pipe_contex, vse_bind_index);
 	ERR_CON_EQ(ret, 0);
 
-	// 创建HBN flow
+	// 创建 HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,

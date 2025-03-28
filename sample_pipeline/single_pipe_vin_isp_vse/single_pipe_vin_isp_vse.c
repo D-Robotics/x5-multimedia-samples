@@ -18,12 +18,6 @@
 #define VSE_MAX_CHANNELS 6
 #define DEBUG
 
-#ifdef DEBUG
-#define DEBUG_PRINT(fmt, ...) printf(fmt, ##__VA_ARGS__)
-#else
-#define DEBUG_PRINT(fmt, ...)
-#endif
-
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
 	{NULL, 0, NULL, 0}
@@ -77,7 +71,6 @@ int main(int argc, char** argv) {
 				vp_sensor_config_list[index]->sensor_name,
 				vp_sensor_config_list[index]->config_file);
 		sensor_type = pipe_contex.sensor_config->sensor_type;
-		DEBUG_PRINT("sensor_type:%d\n", sensor_type);
 		if(sensor_type == SENSOR_TYPE_NORMAL) {
 			ret = vp_sensor_fixed_mipi_host(pipe_contex.sensor_config, &pipe_contex.csi_config);
 			if (ret != 0) {
@@ -126,7 +119,7 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 	return 0;
 }
 
-static int creat_deserial_node(pipe_contex_t *pipe_contex) {
+static int create_deserial_node(pipe_contex_t *pipe_contex) {
 
 	vp_sensor_config_t *sensor_config = NULL;
 	deserial_config_t *deserial_config = NULL;
@@ -143,7 +136,7 @@ static int creat_deserial_node(pipe_contex_t *pipe_contex) {
 		printf("hbn_deserial_create failed ret = %d\n", ret);
 		return ret;
 	}
-	DEBUG_PRINT("deserial_config:%02x_%s, des_handle:%ld \n\r" ,deserial_config->addr,
+	printf("deserial_config:%02x_%s, des_handle:%ld \n\r" ,deserial_config->addr,
 	deserial_config->name, *des_handle);
 	return 0;
 }
@@ -169,9 +162,8 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
 	link_port = vin_node_attr->cim_attr.vc_index;
-	DEBUG_PRINT("link_port:%d \n", link_port);
 	if(pipe_contex->csi_config.mclk_is_not_configed){
-		//设备树中没有配置mclk：使用外部晶振
+		// 设备树中没有配置 mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
@@ -288,7 +280,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 	vse_ochn_attr[2].target_w = 224;
 	vse_ochn_attr[2].target_h = 224;
 
-	// 设置VSE通道2输出属性，ROI为原图中心点不变，宽、高各裁剪一半，输出图像宽、高等于ROI区域宽高
+	// 设置 VSE 通道 2 输出属性， ROI 为原图中心点不变，宽、高各裁剪一半，输出图像宽、高等于 ROI 区域宽高
 	vse_ochn_attr[3].roi.x = input_width / 2 - input_width / 4;
 	vse_ochn_attr[3].roi.y = input_height / 2 - input_height / 4;
 	vse_ochn_attr[3].roi.w = input_width / 2;
@@ -332,7 +324,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	int32_t ret = 0;
 
-	// 创建pipeline中的每个node
+	// 创建 pipeline 中的每个 node
 	ret = create_camera_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vin_node(pipe_contex);
@@ -342,7 +334,7 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	ret = create_vse_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
 
-	// 创建HBN flow
+	// 创建 HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
@@ -368,7 +360,7 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	ERR_CON_EQ(ret, 0);
 
 	if(sensor_type != SENSOR_TYPE_NORMAL) {
-		ret = creat_deserial_node(pipe_contex);
+		ret = create_deserial_node(pipe_contex);
 		ERR_CON_EQ(ret, 0);
 		ret = hbn_camera_attach_to_deserial(pipe_contex->cam_fd, pipe_contex->des_fd, link_port);
 		ERR_CON_EQ(ret, 0);

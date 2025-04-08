@@ -52,44 +52,54 @@ typedef struct
 
 	bpu_handle_t	m_bpu_handle;
 
-	shm_stream_t 	*venc_shm; /* H264 H265 码流，最大支持32路 */
 	tsThread 		m_venc_thread; /* 图像编码、输出给vo、算法图像前处理 */
 	tsThread 		m_vdec_thread; /* 读取h264视频文件解码 */
 	tsThread		m_bpu_thread;
+
+	void *media;
+	uint64_t first_frame_timestamp;
+	const char *media_type;
+
 } vpp_box_t;
 
 static vpp_box_t g_vpp_box[VPP_BOX_MAX_CHANNELS];
 
+static int32_t send_video_frame_info(int pipeline_id, int frame_id, int64_t timestamp)
+{
+	int32_t ret = 0;
+	char *ws_msg = NULL;
+
+	ws_msg = malloc(200);
+	if (NULL == ws_msg) {
+		SC_LOGE("Failed to allocate memory for ws_msg");
+		return -1;
+	}
+	sprintf(ws_msg, "{\"kind\":11, \"pipeline\":%d, \"frame_id\":%d, \"timestamp\":%ld}", pipeline_id + 1, frame_id, timestamp);
+	ret = SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_SEND_MSG, (void*)ws_msg);
+	free(ws_msg);
+	return ret;
+}
+
 static void vpp_box_push_stream(vpp_box_t *vpp_box, ImageFrame *stream, int pipline_id)
 {
-	int32_t frame_rate = 0;
-	media_codec_id_t codec_type;
-	media_codec_context_t *codec_context = &vpp_box->m_encode_context;
-
-	media_codec_buffer_t *buffer = NULL;
-
-	if(codec_context == NULL || stream == NULL) {
+	if(stream == NULL) {
 		SC_LOGE("Param is NULL");
 		return;
 	}
+	media_codec_buffer_t *buffer = (media_codec_buffer_t *)(stream->frame_buffer);
 
-	codec_type = codec_context->codec_id;
-	frame_rate = vpp_box->m_encode_context.video_enc_params.rc_params.h264_cbr_params.frame_rate;
+	send_video_frame_info(pipline_id, buffer->vstream_buf.src_idx, buffer->vstream_buf.pts);
 
-	buffer = (media_codec_buffer_t *)(stream->frame_buffer);
+	T_SDK_MEDIA_SRV_PUSH_PARAM push_param = {
+		.media = vpp_box->media,
+		.data = (const char*)buffer->vstream_buf.vir_ptr,
+		.data_length = buffer->vstream_buf.size,
+		.pts = buffer->vstream_buf.pts /1000,
+		.dts = buffer->vstream_buf.pts /1000,
+		.codec_name = vpp_box->media_type
+	};
 
-	frame_info info;
-	info.type		= codec_type;
-	info.key		= pipline_id;
-	info.seq		= buffer->vstream_buf.src_idx;
-	info.pts		= buffer->vstream_buf.pts;
-	info.length		= buffer->vstream_buf.size;
-	info.t_time		= (unsigned int)time(0);
-	info.framerate	= frame_rate;
-	info.width		= vpp_box->m_encode_context.video_enc_params.width;
-	info.height		= vpp_box->m_encode_context.video_enc_params.height;
-
-	shm_stream_put(vpp_box->venc_shm, info, (unsigned char*)buffer->vstream_buf.vir_ptr, buffer->vstream_buf.size);
+	SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_PUSH_DATA, &push_param);
 }
 
 static int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, int w, int h, int32_t format)
@@ -462,7 +472,6 @@ int32_t vpp_box_init(void)
 	hb_mem_module_open();
 
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
-		g_vpp_box[i].venc_shm = NULL;
 		if (strlen(g_vpp_box[i].m_stream_path) == 0)
 			continue;
 
@@ -576,40 +585,25 @@ int32_t vpp_box_start(void)
 			continue;
 		g_vpp_box[i].pipline_id = i;
 		vp_vflow_contex = &g_vpp_box[i].vp_vflow_contex;
+
+		//media server
+		char meida_name[64];
+		sprintf(meida_name, "ch%d", g_vpp_box[i].pipline_id);
+		g_vpp_box[i].media_type = vp_codec_get_codec_type_string(g_vpp_box[i].m_encode_context.codec_id);
+
+		T_SDK_MEDIA_SRV_CREATE_PARAM create_param = {
+			.media_name = meida_name,
+			.stream_name = "main",
+			.codec_type_name = g_vpp_box[i].media_type,
+			.media = NULL,
+		};
+		SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_CREATE, &create_param);
+		 	g_vpp_box[i].media = create_param.media;
+
+		///////////////////////////////////////////////
 		ret = vp_vse_start(vp_vflow_contex);
 		ret |= vp_vflow_start(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vp_vse_start or vp_vflow_start failed");
-
-		if(g_vpp_box[i].venc_shm == NULL) {
-			T_SDK_VENC_INFO venc_chn_info;
-
-			media_codec_context_t *codec_context = &g_vpp_box[i].m_encode_context;
-			media_codec_id_t codec_type = codec_context->codec_id;
-
-			venc_chn_info.channel = i;
-			ret = SDK_Cmd_Impl(SDK_CMD_VPP_VENC_CHN_PARAM_GET, (void*)&venc_chn_info);
-
-			char shm_id[32] = {0}, shm_name[32] = {0};
-			sprintf(shm_id, "cam_id_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
-					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
-					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), i);
-			sprintf(shm_name, "name_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
-					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
-					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), i);
-			g_vpp_box[i].venc_shm = shm_stream_create(shm_id, shm_name,
-					STREAM_MAX_USER, venc_chn_info.suggest_buffer_item_count,
-					venc_chn_info.suggest_buffer_region_size,
-					SHM_STREAM_WRITE, SHM_STREAM_MALLOC);
-
-			SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, max user: %d, framerate: %d, stream_buf_size: %d bitrate:%d region size:%d, item count %d.",
-				shm_id, shm_name, STREAM_MAX_USER,
-				venc_chn_info.framerate, venc_chn_info.stream_buf_size, venc_chn_info.bitrate,
-				venc_chn_info.suggest_buffer_region_size, venc_chn_info.suggest_buffer_item_count);
-		}else{
-			SC_LOGE("channel %d's venc_shm is not null, exit(-1)", i);
-			exit(-1);
-		}
-
 
 		if (g_vpp_box[i].m_encode_context.codec_id != MEDIA_CODEC_ID_NONE) {
 			ret = vp_codec_start(&g_vpp_box[i].m_encode_context);
@@ -686,11 +680,6 @@ int32_t vpp_box_stop(void)
 		if (g_vpp_box[i].m_decode_context.codec_id != MEDIA_CODEC_ID_NONE) {
 			mThreadStop(&g_vpp_box[i].m_vdec_thread);
 		}
-
-		if(g_vpp_box[i].venc_shm != NULL){
-			shm_stream_destory(g_vpp_box[i].venc_shm);
-			g_vpp_box[i].venc_shm = NULL;
-		}
 	}
 
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
@@ -721,6 +710,11 @@ int32_t vpp_box_stop(void)
 		ret = vp_vflow_stop(vp_vflow_contex);
 		ret |= vp_vse_stop(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vp_vflow_stop or vp_vse_stop failed");
+
+		SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_DESTROY, g_vpp_box[i].media);
+		// media_server_destroy_media(g_vpp_camera[i].media);
+		g_vpp_box[i].media = NULL;
+		g_vpp_box[i].media_type = NULL;
 
 		if (strlen(g_vpp_box[i].m_bpu_handle.m_model_name) == 0)
 			continue;

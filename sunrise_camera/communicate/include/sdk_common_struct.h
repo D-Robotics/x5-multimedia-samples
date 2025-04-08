@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 #include <time.h>
+#include <stdint.h>
 
 ///////////////////////////////up2p///////////////////////////////////////
 typedef struct
@@ -89,6 +90,22 @@ typedef struct
 }T_SDK_RTSP_SRV_PARAM;
 
 
+typedef struct
+{
+	const char* media_name;
+	const char* stream_name;
+	const char* codec_type_name;
+	void* media; //	返回值
+}T_SDK_MEDIA_SRV_CREATE_PARAM;
+
+typedef struct {
+	void *media;
+	const char* data;
+	int data_length;
+	uint64_t pts;
+	uint64_t dts;
+	const char *codec_name;
+}T_SDK_MEDIA_SRV_PUSH_PARAM;
 ///////////////////////////////camera///////////////////////////////////////
 typedef void* P_RINGBUFFER;
 

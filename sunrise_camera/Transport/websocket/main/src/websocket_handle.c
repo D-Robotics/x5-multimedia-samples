@@ -25,7 +25,8 @@ int websocket_init()
 
 int websocket_uninit()
 {
-	ws_wrap_destory(s_websocket_handle.instance);
+	printf("websocket_uninit ...\n");
+	// ws_wrap_destory(s_websocket_handle.instance);
 	s_websocket_handle.state = WEBSOCKET_STATE_UNINIT;
 	return 0;
 }

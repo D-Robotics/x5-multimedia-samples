@@ -60,6 +60,9 @@ endif
 ifeq ($(MODULE_WEBSOCKET), y)
 	MODULE_LIB += -lwebsocket
 endif
+ifeq ($(MODULE_MEDIA_SERVER), y)
+	MODULE_LIB += -lmedia_server  -lstdc++
+endif
 
 CC := $(COMPILE_PREFIX)gcc
 CFLAGS := $(INC) -Werror -O0 -DBSD=1 -fPIC $(CFLAGS_EX)

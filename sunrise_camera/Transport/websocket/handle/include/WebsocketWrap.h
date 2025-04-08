@@ -40,6 +40,7 @@ typedef struct {
 ws_wrap_t *ws_wrap_instace();
 void ws_wrap_destory(ws_wrap_t *instance);
 int ws_wrap_start(int port_num);
+int ws_wrap_stop(void);
 int ws_send_message(const char *message, uint64_t length);
 int ws_send_binary(ws_client *n, unsigned char *message, uint64_t length);
 int ws_send_nalu_to_wfs(ws_client *n, uint32_t header_info,

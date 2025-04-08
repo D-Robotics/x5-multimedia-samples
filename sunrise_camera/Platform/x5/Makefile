@@ -26,7 +26,7 @@ LIB += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/lib/aarch64-linux-gnu
 endif
 
 CC := $(COMPILE_PREFIX)gcc
-CFLAGS := $(INC) -Werror -O0 -DBSD=1 -fPIC $(CFLAGS_EX) -Wno-error=unused-function
+CFLAGS := $(INC) -Werror -O0 -DBSD=1 -fPIC $(CFLAGS_EX) -Wno-error=unused-function -DVERSION=\"$(VERSION)\"
 CXX := $(COMPILE_PREFIX)c++
 CXXFLAGS := $(CFLAGS)
 LINK := $(COMPILE_PREFIX)c++ -o
@@ -60,11 +60,13 @@ install: $(TARGET)
 	-mkdir -p $(GLOBAL_INSTALL_DIR)/test_data
 	-mkdir -p $(GLOBAL_INSTALL_DIR)/model_zoom
 	-mkdir -p $(GLOBAL_INSTALL_DIR)/gdc_bin
+	-mkdir -p $(GLOBAL_INSTALL_DIR)/config
 	mv $(TARGET) $(GLOBAL_INSTALL_DIR)/lib
-	cp -rf tools/* $(GLOBAL_INSTALL_DIR)/bin
+	# cp -rf tools/* $(GLOBAL_INSTALL_DIR)/bin
 	cp -rf test_data/* $(GLOBAL_INSTALL_DIR)/test_data
 	cp -rf model_zoom/* $(GLOBAL_INSTALL_DIR)/model_zoom
 	cp -rf vp_sensors/gdc_bin/* $(GLOBAL_INSTALL_DIR)/gdc_bin
+	cp -rf config/* $(GLOBAL_INSTALL_DIR)/config
 
 clean:
 	@rm -rf $(OBJ) $(DEP) $(TARGET)

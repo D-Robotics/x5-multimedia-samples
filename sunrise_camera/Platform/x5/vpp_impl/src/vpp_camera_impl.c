@@ -20,7 +20,6 @@
 #include "utils/cqueue.h"
 #include "utils/common_utils.h"
 #include "utils/stream_define.h"
-#include "utils/stream_manager.h"
 #include "utils/mthread.h"
 #include "utils/mqueue.h"
 #include "utils/time_utils.h"
@@ -54,7 +53,6 @@ typedef struct
 
 	bpu_handle_t	m_bpu_handle;
 
-	shm_stream_t 	*venc_shm; /* H264 H265 码流，最大可能是32路 */
 	tsThread 		m_vse_thread; /* 从vse获取图像，送入编码 */
 	tsThread 		m_venc_thread; /*从编码器获取图像，送入共享内存 */
 	tsQueue			m_vse_to_enc_queue;
@@ -64,44 +62,60 @@ typedef struct
 	tsThread		m_bpu_thread;
 
 	bpu_model_user_info_t bpu_model_user_info;
+
+	void *media;
+	uint64_t first_frame_timestamp;
+	const char *media_type;
+	int vpp_impl_index;
 } vpp_camera_t;
 
 static vp_drm_context_t g_drm_context;
 static vpp_camera_t g_vpp_camera[VPP_CAM_MAX_CHANNELS];
 
+static int32_t send_video_frame_info(int pipeline_id, int frame_id, int64_t timestamp)
+{
+	int32_t ret = 0;
+	char *ws_msg = NULL;
+
+	ws_msg = malloc(200);
+	if (NULL == ws_msg) {
+		SC_LOGE("Failed to allocate memory for ws_msg");
+		return -1;
+	}
+	sprintf(ws_msg, "{\"kind\":11, \"pipeline\":%d, \"frame_id\":%d, \"timestamp\":%ld}", pipeline_id + 1, frame_id, timestamp);
+	ret = SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_SEND_MSG, (void*)ws_msg);
+	free(ws_msg);
+	return ret;
+}
+
 static void vpp_camera_push_stream(vpp_camera_t *vpp_camera, ImageFrame *stream)
 {
-	int32_t frame_rate = 0;
-	int32_t venc_ist_id = 0;
-	media_codec_id_t codec_type;
-	media_codec_context_t *codec_context = &vpp_camera->m_encode_context;
-
-	media_codec_buffer_t *buffer = NULL;
-
-	if(codec_context == NULL || stream == NULL) {
+	if(stream == NULL) {
 		SC_LOGE("Param is NULL");
 		return;
 	}
 
-	venc_ist_id = codec_context->instance_index;
-	codec_type = codec_context->codec_id;
-	frame_rate = vpp_camera->m_encode_context.video_enc_params.rc_params.h264_cbr_params.frame_rate;
+	media_codec_buffer_t *buffer = (media_codec_buffer_t *)(stream->frame_buffer);
+	if(vpp_camera->first_frame_timestamp == 0){
+		vpp_camera->first_frame_timestamp = buffer->vstream_buf.pts / 1000;
+		SC_LOGI("channel %d recved first frame, and pts is %lld.", vpp_camera->pipline_id, buffer->vstream_buf.pts / 1000);
+	}
+	send_video_frame_info(vpp_camera->vpp_impl_index, buffer->vstream_buf.src_idx, buffer->vstream_buf.pts);
 
-	buffer = (media_codec_buffer_t *)(stream->frame_buffer);
+	T_SDK_MEDIA_SRV_PUSH_PARAM push_param = {
+		.media = vpp_camera->media,
+		.data = (const char*)buffer->vstream_buf.vir_ptr,
+		.data_length = buffer->vstream_buf.size,
+		.pts = buffer->vstream_buf.pts /1000,
+		.dts = buffer->vstream_buf.pts /1000,
+		.codec_name = vpp_camera->media_type
+	};
 
-	frame_info info;
-	info.type		= codec_type;
-	info.key		= venc_ist_id;
-	info.seq		= buffer->vstream_buf.src_idx;
-	info.pts		= buffer->vstream_buf.pts;
-	info.length		= buffer->vstream_buf.size;
-	info.t_time		= (unsigned int)time(0);
-	info.framerate	= frame_rate;
-	info.width		= vpp_camera->m_encode_context.video_enc_params.width;
-	info.height		= vpp_camera->m_encode_context.video_enc_params.height;
-
-	// SC_LOGI("codec put size %lld", buffer->vstream_buf.size);
-	shm_stream_put(vpp_camera->venc_shm, info, (unsigned char*)buffer->vstream_buf.vir_ptr, buffer->vstream_buf.size);
+	SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_PUSH_DATA, &push_param);
+	#if 0
+	media_server_push_video(vpp_camera->media, (const char*)buffer->vstream_buf.vir_ptr,
+		buffer->vstream_buf.size, buffer->vstream_buf.pts /1000, buffer->vstream_buf.pts / 1000, vpp_camera->media_type);
+	#endif
 }
 static void update_osd_info(vp_vflow_contex_t* vp_vflow_contex, uint64_t *next_update_time_ms){
 	uint64_t current_time_ms = get_timestamp_ms();
@@ -376,6 +390,7 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			SC_LOGI("Ignore camera sensor [%s] [%d/%d].", sensor_name, i, pipeline_count);
 			continue;
 		}
+		g_vpp_camera[i].vpp_impl_index = vpp_camera_index;
 		g_vpp_camera[i].vp_vflow_contex.mipi_csi_rx_index =solution_cfg->cam_solution.cam_vpp[i].csi_index;
 		g_vpp_camera[i].vp_vflow_contex.sensor_config = vp_get_sensor_config_by_name(sensor_name);
 		g_vpp_camera[i].vp_vflow_contex.mclk_is_not_configed =solution_cfg->cam_solution.cam_vpp[i].mclk_is_not_configed;
@@ -757,11 +772,10 @@ int32_t vpp_camera_init(void)
 	int32_t i = 0;
 	vp_vflow_contex_t *vp_vflow_contex = NULL;
 
+
 	hb_mem_module_open();
 
 	for (i = 0; i < VPP_CAM_MAX_CHANNELS; i++) {
-		g_vpp_camera[i].venc_shm = NULL;
-
 		if (g_vpp_camera[i].vp_vflow_contex.sensor_config == NULL)
 			continue;
 
@@ -881,6 +895,20 @@ int32_t vpp_camera_start(void)
 		g_vpp_camera[i].pipline_id = i;
 		vp_vflow_contex = &g_vpp_camera[i].vp_vflow_contex;
 
+		char meida_name[64];
+		sprintf(meida_name, "ch%d", g_vpp_camera[i].vpp_impl_index);
+		g_vpp_camera[i].media_type = vp_codec_get_codec_type_string(g_vpp_camera[i].m_encode_context.codec_id);
+
+		T_SDK_MEDIA_SRV_CREATE_PARAM create_param = {
+			.media_name = meida_name,
+			.stream_name = "main",
+			.codec_type_name = g_vpp_camera[i].media_type,
+			.media = NULL,
+		};
+		SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_CREATE, &create_param);
+		 	g_vpp_camera[i].media = create_param.media;
+
+		// g_vpp_camera[i].media = media_server_create_media(meida_name, "main", g_vpp_camera[i].media_type);
 		//队列的个数根据 vse 输出buffer的个数设置
 		teQueueStatus status = mQueueCreate(&g_vpp_camera[i].m_vse_to_enc_queue, VPP_VSE_OUTBUFFER_COUNT + 1); //必须是加1：mqueue 为了判断空和满的区别，保留了一个item
 		if(status != E_QUEUE_OK){
@@ -925,36 +953,6 @@ int32_t vpp_camera_start(void)
 		ret |= vp_vflow_start(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_start");
 
-		if(g_vpp_camera[i].venc_shm == NULL) {
-			T_SDK_VENC_INFO venc_chn_info;
-
-			media_codec_context_t *codec_context = &g_vpp_camera[i].m_encode_context;
-			media_codec_id_t codec_type = codec_context->codec_id;
-			int32_t venc_ist_id = codec_context->instance_index;
-			venc_chn_info.channel = venc_ist_id;
-			ret = SDK_Cmd_Impl(SDK_CMD_VPP_VENC_CHN_PARAM_GET, (void*)&venc_chn_info);
-
-			char shm_id[32] = {0}, shm_name[32] = {0};
-			sprintf(shm_id, "cam_id_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
-					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
-					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), venc_ist_id);
-			sprintf(shm_name, "name_%s_chn%d", codec_type == MEDIA_CODEC_ID_H264 ? "h264" :
-					(codec_type == MEDIA_CODEC_ID_H265 ? "h265" :
-					(codec_type == MEDIA_CODEC_ID_JPEG) ? "jpeg" : "other"), venc_ist_id);
-			g_vpp_camera[i].venc_shm = shm_stream_create(shm_id, shm_name,
-					STREAM_MAX_USER, venc_chn_info.suggest_buffer_item_count,
-					venc_chn_info.suggest_buffer_region_size,
-					SHM_STREAM_WRITE, SHM_STREAM_MALLOC);
-
-			SC_LOGI("video_stream_create => shm_id: %s, shm_name: %s, max user: %d, framerate: %d, stream_buf_size: %d bitrate:%d region size:%d, item count %d.",
-				shm_id, shm_name, STREAM_MAX_USER,
-				venc_chn_info.framerate, venc_chn_info.stream_buf_size, venc_chn_info.bitrate,
-				venc_chn_info.suggest_buffer_region_size, venc_chn_info.suggest_buffer_item_count);
-		}else{
-			SC_LOGE("channel %d's venc_shm is not null, exit(-1)", i);
-			exit(-1);
-		}
-
 		g_vpp_camera[i].m_vse_thread.pvThreadData = (void*)&g_vpp_camera[i];
 		mThreadStart(vse_get_stream_proc, &g_vpp_camera[i].m_vse_thread, E_THREAD_JOINABLE);
 
@@ -996,10 +994,6 @@ int32_t vpp_camera_stop(void)
 		vp_vflow_contex = &g_vpp_camera[i].vp_vflow_contex;
 		mThreadStop(&g_vpp_camera[i].m_venc_thread);
 		mThreadStop(&g_vpp_camera[i].m_vse_thread);
-		if(g_vpp_camera[i].venc_shm != NULL){
-			shm_stream_destory(g_vpp_camera[i].venc_shm);
-			g_vpp_camera[i].venc_shm = NULL;
-		}
 
 		int enc_remain_count = 0;
 		int vse_remain_count = 0;
@@ -1029,6 +1023,10 @@ int32_t vpp_camera_stop(void)
 			free(hbn_vnode_image);
 			vse_remain_count++;
 		}
+		SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_DESTROY, g_vpp_camera[i].media);
+		// media_server_destroy_media(g_vpp_camera[i].media);
+		g_vpp_camera[i].media = NULL;
+		g_vpp_camera[i].media_type = NULL;
 		SC_LOGI("channel %d enc queue remain %d, vse queue remain %d .\n",
 				&g_vpp_camera[i].pipline_id , enc_remain_count, vse_remain_count);
 

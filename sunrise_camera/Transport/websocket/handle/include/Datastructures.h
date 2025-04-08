@@ -104,15 +104,8 @@ typedef struct ws_client_n {
 	pthread_t thread_id;
 	ws_header *headers;
 	ws_message *message;
-	tsThread stream_thread;
-	int32_t stream_count; // 使能多少路码流
-	int32_t venc_chns_status; // 编码通道使能状态，对比的bit位为1，则说明使能了对应编码通道
-	shm_stream_t* shm_source[64]; // 支持传输多路码流
-	int32_t stream_chn[64]; // fShmSource 对应的编码通道号
-	struct ws_client_n *next;
 
-	int codec_type[64];
-	char *codec_type_string[64];
+	struct ws_client_n *next;
 } ws_client;
 
 typedef struct {

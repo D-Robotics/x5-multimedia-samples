@@ -1271,3 +1271,17 @@ void vp_codec_print_media_codec_output_buffer_info(ImageFrame *frame)
 			break;
 	}
 }
+
+const char *vp_codec_get_codec_type_string(int codec_type){
+	switch(codec_type){
+		case MEDIA_CODEC_ID_H264:
+			return "h264";
+		case MEDIA_CODEC_ID_H265:
+			return "h265";
+		case MEDIA_CODEC_ID_JPEG:
+			return "jpeg";
+		default:
+			return "other";
+	}
+	return "other";
+}

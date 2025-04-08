@@ -13,11 +13,6 @@ echo 105000 > /sys/class/thermal/thermal_zone1/trip_point_1_temp
 # 设置cpu运行在高性能模式
 echo performance > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
 
-# Start web server
-echo "============= Start Web Server ==============="
-cd "${local_path}"/WebServer || exit 1
-./start_lighttpd.sh || true
-
 modprobe panel-jc-050hd134
 modprobe galcore
 modprobe vio_n2d
@@ -28,4 +23,8 @@ modprobe vs_drm
 cd "${local_path}"/sunrise_camera/bin || exit 1
 echo "============= Start Sunrise Camera ==============="
 export LD_LIBRARY_PATH=../bin:"${LD_LIBRARY_PATH}"
-./sunrise_camera
+if [ "$#" -eq 0 ]; then
+	./sunrise_camera
+else
+	gdb -ex "handle SIGUSR2 nostop" -ex "handle SIGPIPE nostop" -ex "run"  ./sunrise_camera
+fi

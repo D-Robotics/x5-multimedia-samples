@@ -131,6 +131,7 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 {
 	int32_t cmd_ret;
 	int32_t raw_type;
+	int32_t bit_width;
 	const char short_options[] = PARSE_SHORT_OPTS;
 	const struct option long_options[] = PARSE_LONG_OPTS;
 	int option_index = 0;
@@ -218,7 +219,9 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 		raw_type = (!strcmp(feedback_raw_format, "raw8")) ? 0x2A : 
 			(!strcmp(feedback_raw_format, "raw10")) ? 0x2B :
 			(!strcmp(feedback_raw_format, "raw12")) ? 0x2C : 0x2B;
-
+		bit_width = (!strcmp(feedback_raw_format, "raw8")) ? 8 :
+			(!strcmp(feedback_raw_format, "raw10")) ? 10 :
+			(!strcmp(feedback_raw_format, "raw12")) ? 12 : 10;
 		if(strcmp(ctx->pipe_contex_info[i].pipe_contex.sensor_config->sensor_name, "dummy") == 0){
 			printf("feedback_raw_width: %d feedback_raw_hight:  %d raw_type: %#X\n",feedback_raw_width, feedback_raw_hight,raw_type);
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->format = raw_type;
@@ -235,6 +238,7 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->isp_attr->crop.h = feedback_raw_hight;
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->isp_ichn_attr->height = feedback_raw_hight;
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->isp_ichn_attr->width = feedback_raw_width;
+			ctx->pipe_contex_info[i].pipe_contex.sensor_config->isp_ichn_attr->bit_width = bit_width;
 
 		}
 	}

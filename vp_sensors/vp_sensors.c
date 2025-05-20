@@ -728,8 +728,12 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 			for (int j = 0; j < vp_get_sensors_list_number(); j++) {
 				if(!mclk_is_not_configed){
 					/* enable mclk */
-					write_mipi_host_freq(i, vp_sensor_config_list[j]->vin_attr_ex->mclk_ex_attr.mclk_freq);
-					enable_mipi_host_clock(i, 1);
+					if (vp_sensor_config_list[j]->vin_attr_ex->vin_attr_ex_mask)
+					{
+						write_mipi_host_freq(i, vp_sensor_config_list[j]->vin_attr_ex->mclk_ex_attr.mclk_freq);
+						enable_mipi_host_clock(i, 1);
+					}
+
 				}
 				for (int k = 0; k < 8; ++k) {
 					if (vcon_props_array[i].gpio_oth[k] != 0) {
@@ -773,6 +777,7 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 	int32_t ret = -1, j = 0;
 	static int32_t i = 0;
 	uint32_t frequency = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
+	uint64_t vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
 	int is_need_used_csi[VP_MAX_VCON_NUM] = {true, true, true, true};
 	should_used_csi(is_need_used_csi);
 
@@ -801,8 +806,11 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 		if (vcon_props_array[i].status[0] == 'o') { // okay
 			if(!mclk_is_not_configed){
 				/* enable mclk */
-				write_mipi_host_freq(i, frequency);
-				enable_mipi_host_clock(i, 1);
+				if (vin_attr_ex_mask)
+				{
+					write_mipi_host_freq(i, frequency);
+					enable_mipi_host_clock(i, 1);
+				}
 			}
 			// 检测该vcon上连接的 sensor
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
@@ -838,6 +846,7 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 {
 	int32_t ret = 0, i = 0, j = 0;
 	uint32_t frequency = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
+	uint64_t vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
 	int is_need_used_csi[VP_MAX_VCON_NUM] = {true, true, true, true};
 	should_used_csi(is_need_used_csi);
 
@@ -862,9 +871,11 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 		if (vcon_props_array[i].status[0] == 'o') { // okay
 			if(!mclk_is_not_configed){
 				/* enable mclk */
-				write_mipi_host_freq(i, frequency);
-				enable_mipi_host_clock(i, 1);
-
+				if (vin_attr_ex_mask)
+				{
+					write_mipi_host_freq(i, frequency);
+					enable_mipi_host_clock(i, 1);
+				}
 			}
 			// 检测该vcon上连接的 sensor
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */

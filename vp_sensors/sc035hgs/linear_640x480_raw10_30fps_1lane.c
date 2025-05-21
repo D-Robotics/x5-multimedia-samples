@@ -141,8 +141,8 @@ static isp_ochn_attr_t sc035hgs_isp_ochn_attr = {
 };
 
 vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_1lane = {
-	.chip_id_reg = 0x3107,
-	.chip_id = 0x005A,
+	.chip_id_reg = 0x3108,
+	.chip_id = 0x31,
 	.sensor_name = "sc035hgs",
 	.config_file = "linear_640x480_raw10_30fps_1lane.c",
 	.camera_config = &sc035hgs_camera_config,

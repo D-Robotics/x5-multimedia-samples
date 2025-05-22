@@ -10,6 +10,7 @@ OBJS :=  $(SRCS:.c=.o)
 # -lssl
 LIBS += -lcrypto
 INCS += -I../../../../../out/deploy/system/usr/include/
+CFLAGS += -Wno-deprecated-declarations
 
 .PHONY: all clean install
 

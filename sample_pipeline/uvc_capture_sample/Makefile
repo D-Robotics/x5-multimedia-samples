@@ -9,7 +9,6 @@ SRCS := $(wildcard *.c)
 OBJS := $(SRCS:.c=.o)
 
 INCS += ./
-CFLAGS += $(addprefix -I, $(INCS))
 
 LIBSDIR += -L../libs
 LIBS += -levent_pthreads -lhbplayer -lpthread -levent -lalog -lrt
@@ -18,7 +17,7 @@ LIBS += -levent_pthreads -lhbplayer -lpthread -levent -lalog -lrt
 
 %.o: %.c
 	@mkdir -p $(abspath $(dir $@))
-	$(CC) -std=c11 -Wall $(CFLAGS) -c $< -o $@
+	$(CC) -std=c11 -Wall $(INCS) $(CFLAGS) -c $< -o $@
 
 $(TARGET): $(OBJS)
 	$(CC) -std=c11 -Wall -O0 -o $@ $(OBJS) $(LIBSDIR) $(LIBS) $(CFLAGS)

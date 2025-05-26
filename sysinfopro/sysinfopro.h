@@ -16,8 +16,8 @@
 #include "hb_powerctl_out_version.h"
 #include "hb_tool_server.h"
 #include "nano2D.h"
-#include "mem_list.h"
 #include "gc_hal_version.h"
 #include "hb_dnn.h"
 
+extern const char* hb_libhal_get_version_info(void);
 #endif // SYSINFOPRO_H

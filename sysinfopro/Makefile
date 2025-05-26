@@ -21,7 +21,7 @@ LIBS += -lcrypto -lhbmem -lalog -lcam -lvpf -ldsp -lboardinfo -lefuse -lhbmem \
 		-lhbipcfhal -lalog -lmultimedia -lte600_engine -lz -lminizip -lota_common \
 		-lupdate -lpowerctl -lsecure_storage -lteec -lgpiod -ljsoncpp -lkcapi \
 		-levent_pthreads -levent -lhbplayer -lNano2D -lebase -loslayer -lversion -lcommon -lisc \
-		-lcamlog -lhal -lGAL -lEGL -ldrm -lgbm -lgbm_viv -lcnn_intf -lhbrt_bayes_aarch64 -ldnn
+		-lcamlog -lhal -lGAL -lEGL -ldrm_vivante -ldrm -lgbm -lgbm_viv -lcnn_intf -lhbrt_bayes_aarch64 -ldnn
 
 INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
 INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/dnn

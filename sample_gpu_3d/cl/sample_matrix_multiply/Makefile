@@ -2,19 +2,21 @@ include ../../../Makefile.in
 CUR_DIR := $(shell pwd)
 RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DIR))
 
-TARGET = bezier
+TARGET = matrix_multiply
 
 SRC_PATH = ${CUR_DIR}
 SRC_PATH += ${CUR_DIR}/../common
+
 SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
 OBJS :=  $(SRCS:.c=.o)
 
 .PHONY: all clean install
 
 INCS += -I $(CUR_DIR)/../common/
-LIBS = -lGLESv2 -lGLSLC -lGAL -lVSC -lEGL -lgbm -lgbm_viv -ldrm -lVDK -lm
+LIBS = -lOpenCL -lm -lGAL -lCLC -lEGL -lGLESv2 -lSPIRV_viv -lCLC -lVSC -lgbm -lgbm_viv -ldrm_vivante -ldrm
 INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
 INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+
 
 %.o:%.c
 	@mkdir -p $(abspath $(dir $@))

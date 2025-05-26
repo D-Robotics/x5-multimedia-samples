@@ -14,7 +14,7 @@ SRC_DIRS += $(shell find ../vp_sensors -maxdepth 1 -type d)
 SRC_FILES := $(foreach cf, $(SRC_DIRS), $(wildcard $(cf)/*.c))
 OBJ_FILES := $(patsubst %.c,${TUNING_BUILD_DIR}/%.o,$(SRC_FILES))
 LIBS += -levent_pthreads -lhbplayer -lpthread -levent -lalog -lm
-LIBS += -lOpenCL -lVDK -lGAL -lEGL -lVSC -lCLC -lGLESv2 -lSPIRV_viv -ldrm -lgbm -lgbm_viv
+LIBS += -lOpenCL -lVDK -lGAL -lEGL -lVSC -lCLC -lGLESv2 -lSPIRV_viv -ldrm_vivante -ldrm -lgbm -lgbm_viv
 # CFLAGS += -D TUNING_DEBUG
 # CFLAGS += -D TUNING_API_DELAY_DEBUG
 

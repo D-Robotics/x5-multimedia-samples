@@ -667,7 +667,7 @@ static void should_used_csi(int *is_need_used_csi)
 			printf("[INFO] board_id is %s, so skip csi test for index 1\n", board_id);
 			is_need_used_csi[1] = false;// board 201 not use csi1
 		}
-		if (board_id[0] == '3' || board_id[0] == '5') {
+		if (strncmp(board_id, "0x03", 4) == 0 || strncmp(board_id, "0x05", 4) == 0) {
 			printf("[INFO] RDK board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
 			is_need_used_csi[1] = false;
 			is_need_used_csi[3] = false;

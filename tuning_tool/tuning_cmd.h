@@ -57,6 +57,7 @@ typedef struct tuning_cmd_func {
 /* api cmd */
 #define VALID_CMD_USAGE "s -> dump frame sif raw\n"\
 			"y -> dump yuv\n"\
+			"a -> dump raw and yuv\n"\
 			"e -> set ae attr\n"\
 			"E -> get ae attr\n"\
 			"r -> set ae roi\n"\
@@ -100,6 +101,7 @@ typedef struct tuning_cmd_func {
 	{'t',	tuning_hanle_set_ae_table},\
 	{'T',	tuning_hanle_get_ae_table},\
 	{'y',	tuning_dump_yuv},\
+	{'a',	tuning_dump_raw_and_yuv},\
 	{'b',	tuning_get_ae_statistics},\
 	{'f',	tuning_get_af_statistics},\
 	{'m',	tuning_set_module_control},\
@@ -128,6 +130,7 @@ void tuning_hanle_get_ae_table(tuning_context_t *ctx);
 void tuning_hanle_set_exp_roi(tuning_context_t *ctx);
 void tuning_hanle_get_exp_roi(tuning_context_t *ctx);
 void tuning_dump_yuv(tuning_context_t *ctx);
+void tuning_dump_raw_and_yuv(tuning_context_t *ctx);
 void tuning_get_ae_statistics(tuning_context_t *ctx);
 void tuning_set_module_control(tuning_context_t *ctx);
 void tuning_get_module_control(tuning_context_t *ctx);

@@ -42,6 +42,41 @@ void tuning_dump_sif_raw(tuning_context_t *ctx)
 	raw_stream_cnt++;
 }
 
+void tuning_dump_raw_and_yuv(tuning_context_t *ctx)
+{
+	int32_t i, ret;
+	uint32_t dump_cnt = 0;
+	hbn_vnode_image_t raw_img = {0};
+	char file_name[128] = {0};
+	static int32_t raw_stream_cnt = 0;
+	pipe_contex_info_t *pipe_info;
+
+	pipe_info = &ctx->pipe_contex_info[ctx->handle_id];
+	if (!pipe_info->is_offline) {
+		pr_tuning("Cannot dump raw when sif otf isp\n");
+		return ;
+	}
+	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
+		pr_tuning("Can not dump raw in feedback mode\n");
+		return ;
+	}
+
+	read_p("Typing the number to dump: ", "%d", &dump_cnt);
+	for (i = 0; i < dump_cnt; i++) {
+		ret = hbn_vnode_getframe_cond(pipe_info->pipe_contex.vin_node_handle, 0, 1000, 0, &raw_img);
+		if (ret) {
+			pr_tuning("get buffer from sif fail\n");
+			break;
+		}
+
+		snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/SIF_S%d_STREAM%d.raw", DEF_DUMP_PATH, ctx->handle_id, raw_stream_cnt);
+		tuning_dump_file(file_name, &raw_img);
+		hbn_vnode_releaseframe(pipe_info->pipe_contex.vin_node_handle, 0, &raw_img);
+	}
+	raw_stream_cnt++;
+	pipe_info->yuv_dump_cnt = dump_cnt;
+}
+
 void tuning_handle_set_expsoure(tuning_context_t *ctx)
 {
 	hbn_isp_exposure_attr_t exp_attr = {0};

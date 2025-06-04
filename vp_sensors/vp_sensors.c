@@ -389,8 +389,8 @@ static int32_t vp_i2c_read_reg16_data16(uint32_t bus, uint8_t i2c_addr, uint16_t
 {
 	int32_t ret;
 	struct i2c_rdwr_ioctl_data data;
-	uint8_t sendbuf[32] = {0};
-	uint8_t readbuf[32] = {0};
+	uint8_t sendbuf[2] = {0};
+	uint8_t readbuf[2] = {0};
 	struct i2c_msg msgs[I2C_RDRW_IOCTL_MAX_MSGS] = {0};
 	char filename[20];
 	int file;
@@ -440,8 +440,8 @@ static int32_t vp_i2c_read_reg16_data8(uint32_t bus, uint8_t i2c_addr, uint16_t 
 {
 	int32_t ret;
 	struct i2c_rdwr_ioctl_data data;
-	uint8_t sendbuf[32] = {0};
-	uint8_t readbuf[32] = {0};
+	uint8_t sendbuf[2] = {0};
+	uint8_t readbuf[1] = {0};
 	struct i2c_msg msgs[I2C_RDRW_IOCTL_MAX_MSGS] = {0};
 	char filename[20];
 	int file;
@@ -465,9 +465,9 @@ static int32_t vp_i2c_read_reg16_data8(uint32_t bus, uint8_t i2c_addr, uint16_t 
 	data.msgs[0].flags = 0;
 	data.msgs[0].buf = sendbuf;
 
-	data.msgs[1].len = 2;
+	data.msgs[1].len = 1;
 	data.msgs[1].addr = i2c_addr;
-	data.msgs[1].flags = 1;
+	data.msgs[1].flags = I2C_M_RD;
 	data.msgs[1].buf = readbuf;
 
 	ret = ioctl(file, I2C_RDWR, (uint64_t)&data);

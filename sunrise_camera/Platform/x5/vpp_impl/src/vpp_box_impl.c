@@ -439,6 +439,33 @@ int32_t vpp_box_init_param(void)
 	return vpp_box_init_param_full(&g_solution_config);
 }
 
+int32_t vpp_box_decode_param_get(solution_cfg_t* solution_cfg, solution_decode_param_info_t *solution_param_info){
+	solution_cfg_box_vpp_t *cfg_box_vpp = NULL;
+	solution_param_info->valid_count = 0;
+	for (int i = 0; i < solution_cfg->box_solution.pipeline_count; i++) {
+		cfg_box_vpp = &solution_cfg->box_solution.box_vpp[i];
+		solution_decode_param_single_t *param_single = &solution_param_info->params[solution_param_info->valid_count];
+		param_single->input_file = cfg_box_vpp->stream;
+		if(cfg_box_vpp->decode_type == MEDIA_CODEC_ID_H264){
+			param_single->codec_type = "h264";
+		}else if(cfg_box_vpp->decode_type == MEDIA_CODEC_ID_H265){
+			param_single->codec_type = "h265";
+		}else if(cfg_box_vpp->decode_type == MEDIA_CODEC_ID_JPEG){
+			param_single->codec_type = "jpeg";
+		}else{
+			SC_LOGI("%d recv unsupport codec type %d, so exit.", cfg_box_vpp->decode_type);
+			exit(-1);
+		}
+
+		solution_param_info->valid_count++;
+
+		SC_LOGI("vpp_box_decode_param_get [%d] input file %s, codec type is %s",
+			solution_param_info->valid_count, param_single->input_file, param_single->codec_type);
+	}
+	return 0;
+}
+
+
 int32_t vpp_box_ion_param_get(solution_cfg_t* solution_cfg, solution_ion_param_info_t *solution_param_info){
 	return 0;
 }

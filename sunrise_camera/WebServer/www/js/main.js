@@ -65,7 +65,7 @@ class App {
 			this.startStream();
 		}else{
 			console.log("app switch is error:", message.app_status);
-			this.showAppStatus(message.app_status);
+			this.showAppStatus(message.app_status, message.detailed);
 			this.showErrorModal();
 
 			if (message.solution_configs) {
@@ -182,9 +182,17 @@ class App {
 		  console.error('下载文件失败:', error);
 		}
 	  }
-	showAppStatus(message) {
+	showAppStatus(message, detailed) {
 		const errorText = document.getElementById("errorText");
-		errorText.textContent = message; // 更新错误信息内容
+		 // 如果 detailed 存在且是数组，处理数组内容
+		 if (detailed && Array.isArray(detailed)) {
+			// 将数组中的字符串用换行符连接
+			const detailedString = detailed.join('\n');
+			// 将 detailed 内容追加到 message 之后，并换行
+			message += '\n' + detailedString.replace(/"/g, '');
+		}
+		// 更新 errorText 的内容
+		errorText.textContent = message;
 	}
 	showErrorModal() {
 		document.getElementById("errorModal").style.display = "flex";

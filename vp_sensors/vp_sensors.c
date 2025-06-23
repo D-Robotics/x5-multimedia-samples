@@ -54,6 +54,7 @@ extern vp_sensor_config_t imx477_linear_1280x960_raw10_120fps_2lane;
 extern vp_sensor_config_t imx477_linear_1920x1080_raw12_50fps_2lane;
 extern vp_sensor_config_t imx477_linear_2016x1520_raw12_40fps_2lane;
 extern vp_sensor_config_t imx477_linear_4000x3000_raw12_10fps_2lane;
+extern vp_sensor_config_t ov50h40_linear_4096x3072_raw10_30fps_4lane;
 
 vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc1330t_linear_1280x960_raw10_30fps_1lane,
@@ -95,6 +96,7 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&imx477_linear_1920x1080_raw12_50fps_2lane,
 	&imx477_linear_2016x1520_raw12_40fps_2lane,
 	&imx477_linear_4000x3000_raw12_10fps_2lane,
+	&ov50h40_linear_4096x3072_raw10_30fps_4lane,
 };
 
 uint32_t vp_get_sensors_list_number() {

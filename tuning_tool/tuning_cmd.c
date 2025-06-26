@@ -47,9 +47,20 @@ void tuning_dump_raw_and_yuv(tuning_context_t *ctx)
 	int32_t i, ret;
 	uint32_t dump_cnt = 0;
 	hbn_vnode_image_t raw_img = {0};
-	char file_name[128] = {0};
+	hbn_vnode_image_t yuv_img = {0};
 	static int32_t raw_stream_cnt = 0;
 	pipe_contex_info_t *pipe_info;
+
+	// Structure to Store we want to dump
+	typedef struct {
+		char raw_filename[128];
+		char yuv_filename[128];
+		hbn_vnode_image_t raw_image;
+		hbn_vnode_image_t yuv_image;
+		hbn_isp_exposure_attr_t exp_attr;
+	} dump_buffer_t;
+
+	dump_buffer_t *buffers = NULL;
 
 	pipe_info = &ctx->pipe_contex_info[ctx->handle_id];
 	if (!pipe_info->is_offline) {
@@ -62,19 +73,80 @@ void tuning_dump_raw_and_yuv(tuning_context_t *ctx)
 	}
 
 	read_p("Typing the number to dump: ", "%d", &dump_cnt);
+	if (dump_cnt == 0) {
+		return;
+	}
+
+	// Allocate buffers
+	buffers = malloc(dump_cnt * sizeof(dump_buffer_t));
+	if (!buffers) {
+		pr_tuning("Failed to allocate memory for dump buffers\n");
+		return;
+	}
+
 	for (i = 0; i < dump_cnt; i++) {
 		ret = hbn_vnode_getframe_cond(pipe_info->pipe_contex.vin_node_handle, 0, 1000, 0, &raw_img);
 		if (ret) {
 			pr_tuning("get buffer from sif fail\n");
 			break;
 		}
+		ret = hbn_vnode_getframe_cond(pipe_info->pipe_contex.isp_node_handle, 0, 1000, 0, &yuv_img);
+		if (ret) {
+			pr_tuning("get buffer from sif fail\n");
+			hbn_vnode_releaseframe(pipe_info->pipe_contex.vin_node_handle, 0, &raw_img);
+			break;
+		}
 
-		snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/SIF_S%d_STREAM%d.raw", DEF_DUMP_PATH, ctx->handle_id, raw_stream_cnt);
-		tuning_dump_file(file_name, &raw_img);
+		// Get exposure attributes
+		TUNING_API_EQ(hbn_isp_get_exposure_attr, &buffers[i].exp_attr, return);
+		snprintf(buffers[i].raw_filename, sizeof(buffers[i].raw_filename),
+				"%s/SIF_S%d_frameid_%d_ts_%ld.raw", DEF_DUMP_PATH, ctx->handle_id,
+				raw_img.info.frame_id, raw_img.info.timestamps);
+		snprintf(buffers[i].yuv_filename, sizeof(buffers[i].yuv_filename),
+				"%s/ISP_S%d_frameid_%d_ts_%ld.yuv", DEF_DUMP_PATH, ctx->handle_id,
+				yuv_img.info.frame_id, yuv_img.info.timestamps);
+
+		memcpy(&buffers[i].raw_image, &raw_img, sizeof(hbn_vnode_image_t));
+		memcpy(&buffers[i].yuv_image, &yuv_img, sizeof(hbn_vnode_image_t));
+
+		hbn_vnode_releaseframe(pipe_info->pipe_contex.isp_node_handle, 0, &yuv_img);
 		hbn_vnode_releaseframe(pipe_info->pipe_contex.vin_node_handle, 0, &raw_img);
 	}
 	raw_stream_cnt++;
-	pipe_info->yuv_dump_cnt = dump_cnt;
+	FILE *exp_fp = fopen("/userdata/AE_INFO.txt", "w");
+	if (!exp_fp) {
+		pr_tuning("Failed to open AE_INFO.txt for writing\n");
+		free(buffers);
+		return;
+	}
+	// dump all buffered data
+	for (int j = 0; j < i; j++) {
+		fprintf(exp_fp,
+			"[AE_INFO Info] Frame %d:"
+			"  exp_time: %.2f"
+			"  again: %.2f"
+			"  dgain: %.2f"
+			"  ispgain: %.2f"
+			"  ae_exp: %.2f"
+			"  cur_lux: %u"
+			"  frame_id: %u"
+			"  timestamps: %lu\n",
+			j,
+			buffers[j].exp_attr.manual_attr.exp_time,
+			buffers[j].exp_attr.manual_attr.again,
+			buffers[j].exp_attr.manual_attr.dgain,
+			buffers[j].exp_attr.manual_attr.ispgain,
+			buffers[j].exp_attr.manual_attr.ae_exp,
+			buffers[j].exp_attr.manual_attr.cur_lux,
+			buffers[j].exp_attr.manual_attr.frame_id,
+			buffers[j].exp_attr.manual_attr.timestamps);
+		// Dump files
+		tuning_dump_file(buffers[j].raw_filename, &buffers[j].raw_image);
+		tuning_dump_file(buffers[j].yuv_filename, &buffers[j].yuv_image);
+	}
+
+	free(buffers);
+	fclose(exp_fp);
 }
 
 void tuning_handle_set_expsoure(tuning_context_t *ctx)

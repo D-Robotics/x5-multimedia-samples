@@ -167,7 +167,7 @@ static int drm_setup_kms(vp_drm_context_t *ctx)
 	drmModeModeInfo *mode = NULL;
 	for (int i = 0; i < connector->count_modes; i++)
 	{
-		if (connector->modes[i].hdisplay == ctx->width && connector->modes[i].vdisplay == ctx->height)
+		if (connector->modes[i].hdisplay == ctx->width && connector->modes[i].vdisplay == ctx->height && !(connector->modes[i].flags & DRM_MODE_FLAG_INTERLACE))
 		{
 			mode = &connector->modes[i];
 			fps = __mode_vrefresh(mode);

@@ -53,6 +53,7 @@ typedef struct
 
 	bpu_handle_t	m_bpu_handle;
 
+	int m_vse_for_bpu_channel;
 	tsThread 		m_vse_thread; /* 从vse获取图像，送入编码 */
 	tsThread 		m_venc_thread; /*从编码器获取图像，送入共享内存 */
 	tsQueue			m_vse_to_enc_queue;
@@ -323,13 +324,14 @@ static void *send_yuv_to_bpu(void *ptr) {
 	};
 	mThreadSetNameWidthIndex(privThread, __func__, vpp_camera->pipline_id);
 
+	int32_t vse_channel = vpp_camera->m_vse_for_bpu_channel;
 	while(privThread->eState == E_THREAD_RUNNING) {
-		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, 1, &vse_frame);
+		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, vse_channel, &vse_frame);
 		if (ret != 0) {
 			// 当线程接收到退出信号时，getframe 接口会立即报超时退出
 			// 所以只有当线程是正常运行状态下的异常才属于真异常
 			if (privThread->eState == E_THREAD_RUNNING) {
-				SC_LOGE("vp_vse_get_frame chn 1 failed(%d).", ret);
+				SC_LOGE("vp_vse_get_frame chn %d failed(%d).", vse_channel, ret);
 				vp_print_debug_infos_when_error();
 			}
 			break;
@@ -344,7 +346,7 @@ static void *send_yuv_to_bpu(void *ptr) {
 		// print_bpu_buffer_info(&bpu_input_buffer);
 
 		bpu_wrap_send_frame(&vpp_camera->m_bpu_handle, &bpu_input_buffer);
-		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, 1, &vse_frame);
+		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, vse_channel, &vse_frame);
 		if (ret != 0) {
 			SC_LOGE("vp_vse_release_frame failed");
 			break;
@@ -358,7 +360,8 @@ static void *send_yuv_to_bpu(void *ptr) {
 }
 
 int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
-	int32_t i = 0, vse_chn = 0, ret = 0;
+	int32_t i = 0;
+	int32_t ret = 0;
 	camera_config_t *camera_config = NULL;
 	isp_ichn_attr_t *isp_ichn_attr = NULL;
 	vse_config_t *vse_config = NULL;
@@ -455,12 +458,16 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 		bpu_model_info->is_enable = 0;
 		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) > 1
 			&& strcmp(g_vpp_camera[i].m_bpu_handle.m_model_name, "null") != 0) {
+			int32_t vse_chn = 0;
 			bpu_model_info->is_enable = 1;
 			ret = bpu_wrap_get_model_user_info(g_vpp_camera[i].m_bpu_handle.m_model_name, bpu_model_info);
 			if (bpu_model_info->input_width > input_width || bpu_model_info->input_height > input_height)
 				vse_chn = 5;
 			else
 				vse_chn = 1;
+
+			SC_LOGI("[%d] VSE channel %d: input_width: %d input_height: %d model_width: %d model_height: %d ", i,
+				vse_chn, input_width, input_height, bpu_model_info->input_width, bpu_model_info->input_height);
 			// ret = bpu_wrap_get_model_hw(g_vpp_camera[i].m_bpu_handle.m_model_name, &model_width, &model_height);
 			vse_config->vse_ochn_attr[vse_chn].chn_en = CAM_TRUE;
 			vse_config->vse_ochn_attr[vse_chn].roi.x = 0;
@@ -471,6 +478,8 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			vse_config->vse_ochn_attr[vse_chn].target_h = bpu_model_info->input_height;
 			vse_config->vse_ochn_attr[vse_chn].fmt = FRM_FMT_NV12;
 			vse_config->vse_ochn_attr[vse_chn].bit_width = 8;
+
+			g_vpp_camera[i].m_vse_for_bpu_channel = vse_chn;
 		}
 		//配置OSD
 		osd_user_info_t *osd_info = &g_vpp_camera[i].vp_vflow_contex.osd_info;

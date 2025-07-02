@@ -111,6 +111,18 @@ void create_n2d_buffer_performance_test(struct PerformanceTestParam *param)
 	memset(performance_test_file_name, 0, sizeof(performance_test_file_name));
 	sprintf(performance_test_file_name, "./performance_test_%d_%d_create_n2d_buffer_to_%d_%d.nv12",
 		src.width, src.height, dst.width, dst.height);
+
+	ret = hb_mem_invalidate_buf_with_vaddr((uint64_t)hbn_mem_dst.virt_addr[0], hbn_mem_dst.size[0]);
+	if(ret != 0){
+		printf("hb mem invvalidate failed.\n");
+		goto on_error;
+	}
+	ret = hb_mem_invalidate_buf_with_vaddr((uint64_t)hbn_mem_dst.virt_addr[1], hbn_mem_dst.size[1]);
+	if(ret != 0){
+		printf("hb mem invvalidate failed.\n");
+		goto on_error;
+	}
+
 	ret = dump_image_to_file(performance_test_file_name, hbn_mem_dst.virt_addr[0], dst.width*dst.height*1.5);
 	if(ret != 0){
 		printf("save file %s failed.\n", performance_test_file_name);
@@ -320,7 +332,7 @@ n2d_error_t create_n2d_buffer_and_stitch_sample()
 
 	//3. 拼接 下半部分（src 放到 dst 的下半部分）
 	dst_rect.x = 0;
-    dst_rect.y = dst.height / 2 -1;
+    dst_rect.y = dst.height / 2;
     dst_rect.width  = dst.width;
     dst_rect.height = dst.height / 2;
 	N2D_ON_ERROR(n2d_blit(&dst, &dst_rect, &src, NULL, N2D_BLEND_NONE));
@@ -348,6 +360,16 @@ n2d_error_t create_n2d_buffer_and_stitch_sample()
 
 	memset(output_file_name, 0, sizeof(output_file_name));
 	sprintf(output_file_name, "./create_n2d_buffer_stitch_sample_hbn_%d_%d.yuv", dst.width, dst.height);
+	ret = hb_mem_invalidate_buf_with_vaddr((uint64_t)hbn_mem_dst.virt_addr[0], hbn_mem_dst.size[0]);
+	if(ret != 0){
+		printf("hb mem invvalidate failed.\n");
+		goto on_error;
+	}
+	ret = hb_mem_invalidate_buf_with_vaddr((uint64_t)hbn_mem_dst.virt_addr[1], hbn_mem_dst.size[1]);
+	if(ret != 0){
+		printf("hb mem invvalidate failed.\n");
+		goto on_error;
+	}
 	ret = dump_image_to_file(output_file_name, hbn_mem_dst.virt_addr[0], dst.width*dst.height*1.5);
 	if(ret != 0){
 		printf("save file %s failed.\n", output_file_name);
@@ -452,6 +474,16 @@ n2d_error_t create_n2d_buffer_from_normal_memory_sample()
 
 	memset(output_file_name, 0, sizeof(output_file_name));
 	sprintf(output_file_name, "./create_n2d_buffer_normal_memory_sample_hbn_%d_%d.yuv", dst.width, dst.height);
+	ret = hb_mem_invalidate_buf_with_vaddr((uint64_t)hbn_mem_dst.virt_addr[0], hbn_mem_dst.size[0]);
+	if(ret != 0){
+		printf("hb mem invvalidate failed.\n");
+		goto on_error;
+	}
+	ret = hb_mem_invalidate_buf_with_vaddr((uint64_t)hbn_mem_dst.virt_addr[1], hbn_mem_dst.size[1]);
+	if(ret != 0){
+		printf("hb mem invvalidate failed.\n");
+		goto on_error;
+	}
 	ret = dump_image_to_file(output_file_name, hbn_mem_dst.virt_addr[0], dst.width*dst.height*1.5);
 	if(ret != 0){
 		printf("save file %s failed.\n", output_file_name);

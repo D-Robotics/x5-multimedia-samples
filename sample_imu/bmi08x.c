@@ -1,3 +1,9 @@
+/***************************************************************************
+ *                      COPYRIGHT NOTICE
+ *             Copyright(C) 2024-2025, D-Robotics Co., Ltd.
+ *                     All rights reserved.
+ ***************************************************************************/
+
 #include "imu_interface.h"
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,3 +1,9 @@
+/***************************************************************************
+ *                      COPYRIGHT NOTICE
+ *             Copyright(C) 2024-2025, D-Robotics Co., Ltd.
+ *                     All rights reserved.
+ ***************************************************************************/
+
 #ifndef SAMPLE_IMU_H
 #define SAMPLE_IMU_H
 

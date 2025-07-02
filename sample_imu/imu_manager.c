@@ -1,3 +1,9 @@
+/***************************************************************************
+ *                      COPYRIGHT NOTICE
+ *             Copyright(C) 2024-2025, D-Robotics Co., Ltd.
+ *                     All rights reserved.
+ ***************************************************************************/
+
 #include "imu_manager.h"
 #include "imu_interface.h"
 #include <string.h>
@@ -14,12 +20,16 @@
 
 // 前向声明具体传感器实现
 extern const struct SensorDriver bmi08x_driver;
+extern const struct SensorDriver icm42688_driver_gyro;
+extern const struct SensorDriver icm42688_driver_accel;
 // extern const struct SensorDriver asm330_driver;
 // extern const struct SensorDriver iam20685_driver;
 
 // 可用传感器驱动列表
 static const struct SensorDriver* drivers[] = {
     &bmi08x_driver,
+    &icm42688_driver_gyro,
+    &icm42688_driver_accel,
     // &asm330_driver,
     // &iam20685_driver,
     NULL  // 列表结束标记
@@ -92,6 +102,8 @@ static int check_file_access(const char *path) {
 static int validate_iio_device(const char *dev_path, const char *expected_name) {
     char test_path[MAX_PATH_LEN];
     struct stat st;
+    int accel_found = 0;
+    int gyro_found = 0;
 
     // 检查设备目录有效性
     if (stat(dev_path, &st) || !S_ISDIR(st.st_mode)) {
@@ -117,19 +129,27 @@ static int validate_iio_device(const char *dev_path, const char *expected_name) 
     }
     fclose(name_fp);
 
-    // 检查加速度计通道
     const char *axes[] = {"x", "y", "z"};
+    // 检查加速度计通道，找到一个就+1
     for (int i = 0; i < 3; i++) {
         snprintf(test_path, sizeof(test_path), "%s/in_accel_%s_raw",
                 dev_path, axes[i]);
-        if (check_file_access(test_path)) return -1;
+        if (check_file_access(test_path))
+            accel_found += 1;
     }
 
     // 检查陀螺仪通道
     for (int i = 0; i < 3; i++) {
         snprintf(test_path, sizeof(test_path), "%s/in_anglvel_%s_raw",
                 dev_path, axes[i]);
-        if (check_file_access(test_path)) return -1;
+        if (check_file_access(test_path))
+            gyro_found += 1;
+    }
+
+    // 验证设备至少有一个有效通道
+    if (!accel_found && !gyro_found) {
+        fprintf(stderr, "No valid IMU channels found at: %s\n", dev_path);
+        return -1;
     }
 
     printf("Device validation passed at: %s\n", dev_path);

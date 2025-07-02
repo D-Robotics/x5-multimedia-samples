@@ -1,3 +1,9 @@
+/***************************************************************************
+ *                      COPYRIGHT NOTICE
+ *             Copyright(C) 2024-2025, D-Robotics Co., Ltd.
+ *                     All rights reserved.
+ ***************************************************************************/
+
 #ifndef SENSOR_MANAGER_H
 #define SENSOR_MANAGER_H
 

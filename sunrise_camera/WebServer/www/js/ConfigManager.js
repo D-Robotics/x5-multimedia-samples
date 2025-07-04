@@ -44,7 +44,7 @@ const configFieldInfoTable = {
 		chinese_name: "解码类型",
 		type: "stringlist",
 		options: "codec_type_list",
-		value_is_index: false
+		value_is_index: true
 	},
 	"decode_width": {
 		chinese_name: "解码宽度",

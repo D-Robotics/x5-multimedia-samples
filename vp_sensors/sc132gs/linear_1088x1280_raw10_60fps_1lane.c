@@ -2,7 +2,7 @@
 
 #define SENSOR_WIDTH  1088
 #define SENSOR_HEIGHT  1280
-#define SENSOE_FPS 30
+#define SENSOE_FPS 60
 #define RAW10 0x2B
 
 static mipi_config_t mipi_config = {
@@ -138,12 +138,12 @@ static isp_ochn_attr_t isp_ochn_attr = {
 	.bit_width = 8,
 };
 
-vp_sensor_config_t sc132gs_linear_1088x1280_raw10_30fps_1lane = {
+vp_sensor_config_t sc132gs_linear_1088x1280_raw10_60fps_1lane = {
 	.chip_id_reg = 0x3107,
 	.chip_id = 0x0132,
 	.sensor_i2c_addr_list = {0x30, 0x33},
 	.sensor_name = "sc132gs-1280p",
-	.config_file = "linear_1088x1280_raw10_30fps_1lane.c",
+	.config_file = "linear_1088x1280_raw10_60fps_1lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,
 	.vin_node_attr = &vin_node_attr,

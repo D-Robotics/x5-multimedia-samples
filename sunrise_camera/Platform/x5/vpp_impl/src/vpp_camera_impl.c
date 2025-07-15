@@ -37,9 +37,28 @@
 #include "vpp_preparam.h"
 #include "vpp_camera_impl.h"
 
-#define VPP_VSE_OUTBUFFER_COUNT 3
+#define VPP_VSE_OUTBUFFER_COUNT 5
 #define VPP_VSE_OUTBUFFER_RELEASE_COUNT 2
 #define VPP_CAM_MAX_CHANNELS 32
+
+typedef enum {
+	WaitFrameFromFlowQueue = 0,
+	SendToCodec,
+	WaitDataFromCodec,
+	GiveBackFrameToFlow,
+	GiveBackFrameToFlowQueue,
+	SendVideoFrameInfo,
+	PushStreamToMediaServer,
+	GiveBackDataToCodec,
+	EncodeThreadStepSentry,
+}encode_thread_step_t;
+
+typedef enum {
+	BPUWaitFrameFromFlowQueue = 0,
+	SendFrameToBPUQueue,
+	BPUGiveBackFrameToFlow,
+	BPUThreadStepSentry
+}bpu_thread_step_t;
 
 typedef struct
 {
@@ -68,11 +87,69 @@ typedef struct
 	uint64_t first_frame_timestamp;
 	const char *media_type;
 	int vpp_impl_index;
+
+	//for debug
+	int bpu_thread_run_counter;
+	int flow_thread_run_counter;
+	int codec_thread_run_counter;
+
+	int flow_frame_counter;
+	bpu_thread_step_t bpu_thread_step;
+	encode_thread_step_t encode_thread_step;
 } vpp_camera_t;
 
 static vp_drm_context_t g_drm_context;
 static vpp_camera_t g_vpp_camera[VPP_CAM_MAX_CHANNELS];
 
+const char* encode_thread_step_name(encode_thread_step_t step) {
+	static const char* step_names[] = {
+		"WaitFrameFromFlowQueue",
+		"SendToCodec",
+		"WaitDataFromCodec",
+		"GiveBackFrameToFlow",
+		"GiveBackFrameToFlowQueue",
+		"SendVideoFrameInfo",
+		"PushStreamToMediaServer",
+		"GiveBackDataToCodec",
+		"EncodeThreadStepSentry"
+	};
+	if (step < EncodeThreadStepSentry) {
+		return step_names[step];
+	}
+	return "UnknownEncodeStep";
+}
+const char* bpu_thread_step_name(bpu_thread_step_t step) {
+	static const char* step_names[] = {
+		"BPUWaitFrameFromFlowQueue",
+		"SendFrameToBPUQueue",
+		"BPUGiveBackFrameToFlow",
+		"BPUThreadStepSentry"
+	};
+	if (step < BPUThreadStepSentry) {
+		return step_names[step];
+	}
+	return "UnknownBpuStep";
+}
+
+static void vp_print_debug_infos_for_multithread(vpp_camera_t *vpp_camera){
+	SC_LOGI("[%d] thread counter: [flow thread: %d][encode thread: %d] [bpu thread: %d]",
+		vpp_camera->pipline_id,
+		vpp_camera->flow_thread_run_counter,
+		vpp_camera->codec_thread_run_counter,
+		vpp_camera->bpu_thread_run_counter);
+	SC_LOGI("[%d] thread status: [encode thread: %s] [bpu thread: %s]\n",
+		vpp_camera->pipline_id,
+		encode_thread_step_name(vpp_camera->encode_thread_step),
+		bpu_thread_step_name(vpp_camera->bpu_thread_step));
+
+	SC_LOGI("[%d] queue status:[vse_to_enc_queue: %d] [enc_to_vse_queue:%d]\n",
+		vpp_camera->pipline_id,
+		mQueueGetCount(&vpp_camera->m_vse_to_enc_queue),
+		mQueueGetCount(&vpp_camera->m_enc_to_vse_queue));
+	int get_frame_form_flow = __sync_fetch_and_add(&vpp_camera->flow_frame_counter, 0);
+	SC_LOGI("[%d] get frame from flow: %d\n", vpp_camera->pipline_id, get_frame_form_flow);
+
+}
 static int32_t send_video_frame_info(int pipeline_id, int frame_id, int64_t timestamp)
 {
 	int32_t ret = 0;
@@ -95,7 +172,7 @@ static void vpp_camera_push_stream(vpp_camera_t *vpp_camera, ImageFrame *stream)
 		SC_LOGE("Param is NULL");
 		return;
 	}
-
+	__sync_lock_test_and_set(&vpp_camera->encode_thread_step, SendVideoFrameInfo);
 	media_codec_buffer_t *buffer = (media_codec_buffer_t *)(stream->frame_buffer);
 	if(vpp_camera->first_frame_timestamp == 0){
 		vpp_camera->first_frame_timestamp = buffer->vstream_buf.pts / 1000;
@@ -112,6 +189,7 @@ static void vpp_camera_push_stream(vpp_camera_t *vpp_camera, ImageFrame *stream)
 		.codec_name = vpp_camera->media_type
 	};
 
+	__sync_lock_test_and_set(&vpp_camera->encode_thread_step, PushStreamToMediaServer);
 	SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_PUSH_DATA, &push_param);
 	#if 0
 	media_server_push_video(vpp_camera->media, (const char*)buffer->vstream_buf.vir_ptr,
@@ -147,14 +225,17 @@ static void* venc_get_stream_proc(void *ptr)
 	int enqueue_vse_count = 0;
 	//线程退出时，保证hbn_vnode_image 已经处理完： 放到 m_enc_to_vse_queue
 	while (privThread->eState == E_THREAD_RUNNING){
+		__sync_lock_test_and_set(&vpp_camera->encode_thread_step, WaitFrameFromFlowQueue);
+
 		status = mQueueDequeueTimed(&vpp_camera->m_vse_to_enc_queue, 2000, (void **)&hbn_vnode_image);
 		if(status != E_QUEUE_OK){
-			SC_LOGI("channel %d dequeue from enc_to_vse_queue failed:%d\n", vpp_camera->pipline_id ,status);
+			SC_LOGI("channel %d dequeue from vse_to_enc_queue failed:%d\n", vpp_camera->pipline_id ,status);
 			continue;
 		}
 		dequeue_enc_count++;
 
 		// 送进编码器
+		__sync_lock_test_and_set(&vpp_camera->encode_thread_step, SendToCodec);
 		vse_frame.hbn_vnode_image = hbn_vnode_image;
 		ret = vp_codec_encoder_set_input(&vpp_camera->m_encode_context, &vse_frame);
 		if(ret != 0){
@@ -163,24 +244,38 @@ static void* venc_get_stream_proc(void *ptr)
 			}
 			break;
 		}
-
-		// 从编码器获取码流
-		ret = vp_codec_get_output(&vpp_camera->m_encode_context, &encode_stream, 2000);
-		if(ret != 0){
-			if (privThread->eState == E_THREAD_RUNNING) {
-				SC_LOGE("vp_codec_get_output failed.");
+		__sync_lock_test_and_set(&vpp_camera->encode_thread_step, WaitDataFromCodec);
+		while(privThread->eState == E_THREAD_RUNNING){
+			// 从编码器获取码流
+			ret = vp_codec_get_output(&vpp_camera->m_encode_context, &encode_stream, 2000);
+			if(ret != 0){
+				if (privThread->eState == E_THREAD_RUNNING) {
+					SC_LOGE("vp_codec_get_output failed.");
+				}
+				if(ret == -2){
+					continue;
+				}else{
+					exit(-1);
+				}
+			}else{
+				break;
 			}
-			break;
 		}
+
 		// 编码器用完VSE的数据 就释放
+		__sync_lock_test_and_set(&vpp_camera->encode_thread_step, GiveBackFrameToFlow);
 		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, 0, &vse_frame);
 		if (ret != 0) {
 			SC_LOGE("vp_vse_release_frame failed.");
 			break;
+		}else{
+			int used_count_tmp = __sync_sub_and_fetch(&vpp_camera->vse_buffer_used_count, 1);
+			if(used_count_tmp < 0 ){
+				SC_LOGE("pipline %d vse used count %d < 0, should not run here.", vpp_camera->pipline_id, vpp_camera->vse_buffer_used_count);
+			}
 		}
-		vpp_camera->vse_buffer_used_count--;
-
 		// 编码器用完VnodeBuffer,就归还给 VSE
+		__sync_lock_test_and_set(&vpp_camera->encode_thread_step, GiveBackFrameToFlowQueue);
 		while(privThread->eState == E_THREAD_RUNNING){
 			status = mQueueEnqueueEx(&vpp_camera->m_enc_to_vse_queue, hbn_vnode_image);
 			if (status != E_QUEUE_OK){
@@ -192,14 +287,16 @@ static void* venc_get_stream_proc(void *ptr)
 			enqueue_vse_count++;
 			break;
 		}
-
-
 		vpp_camera_push_stream(vpp_camera, &encode_stream);
+
+		__sync_lock_test_and_set(&vpp_camera->encode_thread_step, GiveBackDataToCodec);
 		ret = vp_codec_release_output(&vpp_camera->m_encode_context, &encode_stream);
 		if (ret != 0) {
 			SC_LOGE("vp_codec_release_output failed.");
 			break;
 		}
+		__sync_fetch_and_add(&vpp_camera->codec_thread_run_counter, 1);
+		__sync_sub_and_fetch(&vpp_camera->flow_frame_counter, 1);
 
 	}
 
@@ -256,22 +353,28 @@ static void* vse_get_stream_proc(void *ptr)
 				// 当线程接收到退出信号时，getframe 接口会立即报超时退出
 				// 所以只有当线程是正常运行状态下的异常才属于真异常
 				if (privThread->eState == E_THREAD_RUNNING) {
-					if(vpp_camera->vse_buffer_used_count > VPP_VSE_OUTBUFFER_COUNT - VPP_VSE_OUTBUFFER_RELEASE_COUNT){
-						SC_LOGI("vp_vse_get_frame chn not geted data(%d), because buffer is not enough, vse used count %d, vse all count %d, wait %d",
-							ret, vpp_camera->vse_buffer_used_count, VPP_VSE_OUTBUFFER_COUNT, wait_count);
+					int used_count_tmp = __sync_fetch_and_add(&vpp_camera->vse_buffer_used_count, 0);
+					if(used_count_tmp > VPP_VSE_OUTBUFFER_COUNT - VPP_VSE_OUTBUFFER_RELEASE_COUNT){
+						SC_LOGI("[%d] vp_vse_get_frame chn not geted data(%d), because buffer is not enough, vse used count %d, vse all count %d, wait %d",
+							vpp_camera->pipline_id, ret, used_count_tmp, VPP_VSE_OUTBUFFER_COUNT, wait_count);
 					}else{
 						SC_LOGE("vp_vse_get_frame chn 0 failed(%d), vse used count %d, vse all count %d.",
-							ret, vpp_camera->vse_buffer_used_count, VPP_VSE_OUTBUFFER_COUNT);
-						vp_print_debug_infos_when_error();
+							ret, used_count_tmp, VPP_VSE_OUTBUFFER_COUNT);
 					}
+					vp_print_debug_infos_for_multithread(vpp_camera);
+					vp_print_debug_infos_when_error();
 					continue;
 				}
 			}else{
+				__sync_fetch_and_add(&vpp_camera->flow_frame_counter, 1);
+				int used_count_tmp = __sync_fetch_and_add(&vpp_camera->vse_buffer_used_count, 1);
+				if(used_count_tmp > VPP_VSE_OUTBUFFER_COUNT){
+					SC_LOGE("pipline %d vse used count %d > %d, should not run here.", vpp_camera->pipline_id,
+						vpp_camera->vse_buffer_used_count, VPP_VSE_OUTBUFFER_COUNT);
+				}
 				break;
 			}
 		}
-
-		vpp_camera->vse_buffer_used_count++;
 
 		while(privThread->eState == E_THREAD_RUNNING){
 			status = mQueueEnqueueEx(&vpp_camera->m_vse_to_enc_queue, hbn_vnode_image);
@@ -292,7 +395,7 @@ static void* vse_get_stream_proc(void *ptr)
 				SC_LOGW("vp_display_set_frame chn failed(%d).", ret);
 			}
 		}
-
+		__sync_fetch_and_add(&vpp_camera->flow_thread_run_counter, 1);
 		time_statistics_at_ending_of_loop(&time_statistics);
 		time_statistics_info_show(&time_statistics, "read_camera", false);
 	}
@@ -326,31 +429,38 @@ static void *send_yuv_to_bpu(void *ptr) {
 
 	int32_t vse_channel = vpp_camera->m_vse_for_bpu_channel;
 	while(privThread->eState == E_THREAD_RUNNING) {
-		ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, vse_channel, &vse_frame);
-		if (ret != 0) {
-			// 当线程接收到退出信号时，getframe 接口会立即报超时退出
-			// 所以只有当线程是正常运行状态下的异常才属于真异常
-			if (privThread->eState == E_THREAD_RUNNING) {
-				SC_LOGE("vp_vse_get_frame chn %d failed(%d).", vse_channel, ret);
-				vp_print_debug_infos_when_error();
-			}
-			break;
-		}
 
+		__sync_lock_test_and_set(&vpp_camera->bpu_thread_step, BPUWaitFrameFromFlowQueue);
+		while(privThread->eState == E_THREAD_RUNNING) {
+			ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, vse_channel, &vse_frame);
+			if (ret != 0) {
+				// 当线程接收到退出信号时，getframe 接口会立即报超时退出
+				// 所以只有当线程是正常运行状态下的异常才属于真异常
+				if (privThread->eState == E_THREAD_RUNNING) {
+					SC_LOGE("vp_vse_get_frame chn %d failed(%d).", vse_channel, ret);
+					vp_print_debug_infos_when_error();
+				}
+			}else{
+				break;
+			}
+		}
 		hbn_vnode_image = (hbn_vnode_image_t *)vse_frame.hbn_vnode_image;
 		// vp_vin_print_hbn_vnode_image_t(hbn_vnode_image);
 
+		__sync_lock_test_and_set(&vpp_camera->bpu_thread_step, SendFrameToBPUQueue);
 		// 把yuv数据送进bpu进行算法运算
 		memset(&bpu_input_buffer, 0, sizeof(bpu_buffer_info_t));
 		vpp_graphic_buf_to_bpu_buffer_info(hbn_vnode_image, &bpu_input_buffer);
 		// print_bpu_buffer_info(&bpu_input_buffer);
 
 		bpu_wrap_send_frame(&vpp_camera->m_bpu_handle, &bpu_input_buffer);
+		__sync_lock_test_and_set(&vpp_camera->bpu_thread_step, BPUGiveBackFrameToFlow);
 		ret = vp_vse_release_frame(&vpp_camera->vp_vflow_contex, vse_channel, &vse_frame);
 		if (ret != 0) {
 			SC_LOGE("vp_vse_release_frame failed");
 			break;
 		}
+		__sync_fetch_and_add(&vpp_camera->bpu_thread_run_counter, 1);
 	}
 
 	vp_free_image_frame(&vse_frame);
@@ -393,6 +503,13 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			SC_LOGI("Ignore camera sensor [%s] [%d/%d].", sensor_name, i, pipeline_count);
 			continue;
 		}
+		g_vpp_camera[i].bpu_thread_run_counter = 0;
+		g_vpp_camera[i].flow_thread_run_counter = 0;
+		g_vpp_camera[i].codec_thread_run_counter = 0;
+
+		g_vpp_camera[i].flow_frame_counter = 0;
+		g_vpp_camera[i].bpu_thread_step = BPUThreadStepSentry;
+		g_vpp_camera[i].encode_thread_step = EncodeThreadStepSentry;
 		g_vpp_camera[i].vpp_impl_index = vpp_camera_index;
 		g_vpp_camera[i].vp_vflow_contex.mipi_csi_rx_index =solution_cfg->cam_solution.cam_vpp[i].csi_index;
 		g_vpp_camera[i].vp_vflow_contex.sensor_config = vp_get_sensor_config_by_name(sensor_name);

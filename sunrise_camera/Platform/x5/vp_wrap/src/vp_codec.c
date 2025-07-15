@@ -854,7 +854,7 @@ int32_t vp_codec_get_output(media_codec_context_t *context, ImageFrame *frame, i
 	{
 		SC_LOGE("%s idx: %d, hb_mm_mc_dequeue_output_buffer failed ret = %d",
 			context->encoder ? "Encode" : "Decode", context->instance_index, ret);
-		return -1;
+		return -2;
 	}
 	// 如果是解码器，拿到的 buffer 类型不是视频帧，说明解码器还没有完全工作起来，则返回错误
 	if ((!context->encoder) && (buffer->type != MC_VIDEO_FRAME_BUFFER))

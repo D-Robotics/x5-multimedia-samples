@@ -33,7 +33,7 @@ static int region_init(vp_vflow_contex_t *vp_vflow_contex){
 		region.overlay_attr.size.height = height;
 		region.overlay_attr.pixel_fmt = PIXEL_FORMAT_VGA_8;
 
-		SC_LOGI("osd region init %d :%d*%d.", width, height);
+		SC_LOGI("osd region init %d :%d*%d.", i, width, height);
 		//VSE硬件上最多支持4块OSD，其他多余的OSD通过软件操作图像数据完成。
 		int ret = hbn_rgn_create(rgn_handle, &region);
         if(ret != 0){

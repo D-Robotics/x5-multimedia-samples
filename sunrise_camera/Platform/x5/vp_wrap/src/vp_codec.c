@@ -710,7 +710,7 @@ int32_t vp_codec_encoder_set_input(media_codec_context_t *context, ImageFrame *v
 	ret = hb_mm_mc_dequeue_input_buffer(context, &buffer, 2000);
 	if (ret != 0){
 		SC_LOGE("hb_mm_mc_dequeue_input_buffer failed ret = %d", ret);
-		return -1;
+		return -2;
 	}
 
 	int data_size = hbn_vnode_image->buffer.size[0];

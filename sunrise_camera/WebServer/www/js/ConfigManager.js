@@ -121,7 +121,7 @@ class ConfigManager {
 				codec_types.push(codec_type_string);
 			}
 		}else{
-			console.warn("not support soulution name [${solution_name}]");
+			console.warn(`not support soulution name [${solution_name}]`);
 			return [];
 		}
 		return codec_types;
@@ -197,8 +197,25 @@ class ConfigManager {
 				continue;
 			}
 			const cameraChannelName = 'CSI_' + cam_vpp.csi_index;
-			html += '<br>';
-			html += `<span style="white-space: pre-wrap;"><strong>	${cameraChannelName}的码流链接 : </strong>rtsp://${window.location.host}/ch${valid_index}/main</span>`;
+
+			// 通道标题（加粗）
+			html += `<div class="channel-header"><strong>${cameraChannelName}的码流链接 : </strong></div>`;
+
+			// 主码流（缩进）
+			html += `<div class="stream-url">`;
+			html += `<span class="stream-type">主码流：</span>`;
+			html += `<span class="stream-uri">rtsp://${window.location.host}/ch${valid_index}/main</span>`;
+			html += `</div>`;
+
+			// 子码流（缩进）
+			html += `<div class="stream-url">`;
+			html += `<span class="stream-type">子码流：</span>`;
+			html += `<span class="stream-uri">rtsp://${window.location.host}/ch${valid_index}/sub1</span>`;
+			html += `</div>`;
+
+			// 通道间间隔
+			html += `<div style="height: 8px;"></div>`;
+
 			valid_index++;
 		}
 

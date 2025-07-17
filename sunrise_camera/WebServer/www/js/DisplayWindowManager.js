@@ -289,15 +289,18 @@ When destroying a Display Window, if a player is in the startup state, stop it."
 		console.log("==============> startPlayer: ", this.displayWindowCountInUsed);
 
 		for (let i = 1; i <= this.displayWindowCountInUsed; i++) {
-			console.log("start player, codec type is " + codec_types[i - 1]);
+
 			const display_window = this.displayWindows[i - 1];
 
 			if (display_window.player) {
 				display_window.player.stop();
 			}
+			let codec_type = codec_types[i - 1];
+			//H265：拉子码流， H264拉主码流
+			const stream_type = ( codec_type === 'h265') ? 'sub1' : 'main';
 
-			let wsUrl = `ws://${this.mediaServerIPAddr}:8080/ch${i - 1}/main.live.mp4`;
-			display_window.player.init(wsUrl, codec_types[i - 1],
+			let wsUrl = `ws://${this.mediaServerIPAddr}:8080/ch${i - 1}/${stream_type}.live.mp4`;
+			display_window.player.init(wsUrl, codec_type,
 					this.getPlayerDisplayElementId.bind(this));
 			display_window.player.start();
 			display_window.playerIsStarted = true;
@@ -306,6 +309,7 @@ When destroying a Display Window, if a player is in the startup state, stop it."
 			this.alogResultQueue = [];
 			this.videoFps = 0;
 			this.algoFps = 0;
+			console.log(`	[${i}/${this.displayWindowCountInUsed}] [codec type:${codec_type}] [url:${wsUrl}`);
 		}
 		this.switchRenderStatus(true);
 	}

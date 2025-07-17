@@ -42,6 +42,7 @@
  * Align by 16
  */
 #define ALIGN_16(v) ((v + (16 - 1)) / 16 * 16)
+#define ALIGN_8(v) ((v + (8 - 1)) / 8 * 8)
 
 #define VP_GET_MD_CODEC_TYPE(v) \
 	({ \

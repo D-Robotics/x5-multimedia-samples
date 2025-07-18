@@ -102,6 +102,7 @@ typedef struct osd_position_s{
 }osd_position_t;
 typedef struct osd_info_s{
 	int valid_osd_region_count;
+	uint8_t vse_chn[VP_MAX_OSD_REGION];
 	osd_position_t position[VP_MAX_OSD_REGION];
 	hbn_rgn_handle_t handle [VP_MAX_OSD_REGION];
 	hbn_rgn_bitmap_t bitmap [VP_MAX_OSD_REGION];

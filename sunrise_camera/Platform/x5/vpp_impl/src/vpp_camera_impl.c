@@ -109,6 +109,7 @@ typedef struct
 	tsQueue			m_enc_to_vflow_queue;
 	void*   p_vpp_camera;
 	int vflow_chn;
+	int8_t osd_chn;
 	//for debug
 	int vflow_thread_run_counter;
 	int codec_thread_run_counter;
@@ -220,13 +221,15 @@ static void vpp_camera_push_stream(int pipeline_id, int video_id, vpp_codec_ctx_
 	__sync_lock_test_and_set(&vpp_codec_ctx->encode_thread_step, PushStreamToMediaServer);
 	SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_PUSH_DATA, &push_param);
 }
-static void update_osd_info(vp_vflow_contex_t* vp_vflow_contex, uint64_t *next_update_time_ms, int vflow_chn){
+static void update_osd_info(vp_vflow_contex_t* vp_vflow_contex, uint64_t *next_update_time_ms, int osd_chn){
 	uint64_t current_time_ms = get_timestamp_ms();
-
+	if(osd_chn < 0){
+		return;
+	}
 	if(current_time_ms > *next_update_time_ms){
 		char world_time_string[100];
 		get_world_time_string(world_time_string, sizeof(world_time_string));
-		vp_osd_draw_world(vp_vflow_contex, vflow_chn, world_time_string);
+		vp_osd_draw_world(vp_vflow_contex, osd_chn, world_time_string);
 		*next_update_time_ms = (current_time_ms / 1000) * 1000 + 1000;
 	}
 }
@@ -441,7 +444,7 @@ static void* vlfow_get_stream_proc(void *ptr)
 			break;
 		}
 
-		update_osd_info(&p_vpp_camera->vp_vflow_contex, &next_update_time_ms, vflow_chn);
+		update_osd_info(&p_vpp_camera->vp_vflow_contex, &next_update_time_ms, p_vpp_codec_ctx->osd_chn);
 		if((p_vpp_camera->drm_context != NULL) && (p_vpp_camera->drm_init_succesed != 0) && (is_got_vlflow_frame != 0)){
 			ret = vp_display_set_frame(p_vpp_camera->drm_context, vse_frame.hbn_vnode_image);
 			if(ret != 0){
@@ -656,6 +659,9 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			if(j != 0){
 				vpp_get_sub_stream_resolution(input_width, input_height, &target_w, &target_h);
 			}
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &p_vpp_camera->vpp_codec_ctxs[j];
+			p_vpp_codec_ctx->vflow_chn = j;
+
 			vse_config->vse_ochn_attr[j].chn_en = CAM_TRUE; //缩小通道: 4K
 			vse_config->vse_ochn_attr[j].roi.x = 0;
 			vse_config->vse_ochn_attr[j].roi.y = 0;
@@ -704,14 +710,34 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 
 		//配置OSD
 		osd_user_info_t *osd_info = &p_vpp_camera->vp_vflow_contex.osd_info;
-		osd_info->valid_osd_region_count = VPP_STEAM_COUNT;
-		for (int j = 0; j < osd_info->valid_osd_region_count; j++){
-			osd_info->handle[j] = i * VP_MAX_OSD_REGION + j;
-			osd_info->position[j].x = 50;
-			osd_info->position[j].y = 50;
-			osd_info->position[j].width = 320;
-			osd_info->position[j].height = 200;
+		int valid_osd_region_count = 0;
+		for (int j = 0; j < VPP_STEAM_COUNT; j++){
+			int target_w = input_width;
+			int target_h = input_height;
+			if(j != 0){
+				vpp_get_sub_stream_resolution(input_width, input_height, &target_w, &target_h);
+			}
+			vpp_codec_ctx_t *p_vpp_codec_ctx = &p_vpp_camera->vpp_codec_ctxs[j];
+			int osd_boundary_w = 320 + 50;
+			int osd_boundary_h = 200 + 50;
+			p_vpp_codec_ctx->osd_chn = -1;
+			if(( osd_boundary_w >= target_w) || (osd_boundary_h >= target_h)){
+				SC_LOGW("pipeline %d stream_index %d resolution is too small ( %d =< %d or %d =< %d), so disable osd.",
+					p_vpp_camera->pipline_id, j, target_w, osd_boundary_w, target_h, osd_boundary_h);
+				continue;
+			}
+			osd_info->handle[valid_osd_region_count] = i * VP_MAX_OSD_REGION + j;
+			osd_info->vse_chn[valid_osd_region_count] = p_vpp_codec_ctx->vflow_chn;
+			osd_info->position[valid_osd_region_count].x = 50;
+			osd_info->position[valid_osd_region_count].y = 50;
+			osd_info->position[valid_osd_region_count].width = 320;
+			osd_info->position[valid_osd_region_count].height = 200;
+			
+			p_vpp_codec_ctx->osd_chn = valid_osd_region_count;
+			valid_osd_region_count++;
 		}
+		osd_info->valid_osd_region_count = valid_osd_region_count;
+		
 		//gdc
 		p_vpp_camera->vp_vflow_contex.gdc_info.input_width = input_width;
 		p_vpp_camera->vp_vflow_contex.gdc_info.input_height = input_height;
@@ -762,7 +788,7 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 
 			//for thread param
 			p_vpp_codec_ctx->p_vpp_camera = p_vpp_camera;
-			p_vpp_codec_ctx->vflow_chn = j;
+			
 		}
 		vpp_camera_index++;
 	}

@@ -77,13 +77,14 @@ static int channel_attr_init(vp_vflow_contex_t *vp_vflow_contex){
 		chn_attr.point.x = vp_vflow_contex->osd_info.position[i].x;
 		chn_attr.point.y = vp_vflow_contex->osd_info.position[i].y;
 
+		int vse_chn = vp_vflow_contex->osd_info.vse_chn[i];
 		/*
 			1. region 和 VSE 绑定
 			2. rgn_handle: 函数region_init中初始化中 rgn_handle从0开始
 		*/
-		int ret = hbn_rgn_attach_to_chn(rgn_handle, vse_vnode_fd, i, &chn_attr);
+		int ret = hbn_rgn_attach_to_chn(rgn_handle, vse_vnode_fd, vse_chn, &chn_attr);
         if(ret != 0){
-            SC_LOGE("osd init attr for channel %d vse %d failed, ret: %d:%s", i, vse_vnode_fd, ret, hbn_err_info(ret));
+            SC_LOGE("osd init attr for channel %d vse %d vse_chn %d failed, ret: %d:%s", i, vse_vnode_fd, ret, vse_chn, hbn_err_info(ret));
             return -1;
         }
 	}

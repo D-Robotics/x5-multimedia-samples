@@ -109,7 +109,7 @@ void create_n2d_buffer_performance_test(struct PerformanceTestParam *param)
 	performance_test_save_to_file_width_name(param, &dst, performance_test_file_name);
 #else
 	memset(performance_test_file_name, 0, sizeof(performance_test_file_name));
-	sprintf(performance_test_file_name, "./performance_test_%d_%d_create_n2d_buffer_to_%d_%d.nv12",
+	sprintf(performance_test_file_name, "./performance_test_%d_%d_create_n2d_buffer_to_%d_%d.yuv",
 		src.width, src.height, dst.width, dst.height);
 
 	ret = hb_mem_invalidate_buf_with_vaddr((uint64_t)hbn_mem_dst.virt_addr[0], hbn_mem_dst.size[0]);

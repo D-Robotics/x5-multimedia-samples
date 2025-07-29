@@ -292,7 +292,7 @@ int dump_awb_attr(hbn_vnode_handle_t isp_node_handle)
 		, awb_attr.manual_attr.gain.gbgain
 		, awb_attr.manual_attr.gain.bgain
 		);
-	awb_attr.mode = HBN_ISP_MODE_BUTT;
+	awb_attr.mode = HBN_ISP_MODE_MANUAL;
 	ret = hbn_isp_set_awb_attr(isp_node_handle, &awb_attr);
 	if (ret != 0) {
 		printf("%s(%d) failed\n", "hbn_isp_set_awb_attr", ret);

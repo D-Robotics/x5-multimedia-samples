@@ -47,6 +47,11 @@ void calculateBezierPoints(float* points, int segments, float* controlPoints) {
 int main() {
 
 	// Set env for vdk
+	if (setenv("VDK_PLATFORM", "gbm", 1) != 0) {
+		perror("setenv failed");
+		return 1;
+	}
+
 	if (setenv("GBM_CRTC_ID", "31", 1) != 0) {
         perror("setenv failed");
         return 1;

@@ -13,6 +13,7 @@
 #include "vse_cfg.h"
 #include "codec_cfg.h"
 #include "hb_media_codec.h"
+#include "n2d_cfg.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,6 +54,7 @@ typedef struct pipe_contex_s {
 	hbn_vnode_handle_t gdc_node_handle;
 	hbn_vnode_handle_t vpu_node_handle;
 	hbn_vnode_handle_t codec_node_handle;
+	hbn_vnode_handle_t gpu2d_node_handle;
 	camera_handle_t cam_fd;
 	deserial_handle_t des_fd;
 	vp_sensor_config_t *sensor_config;

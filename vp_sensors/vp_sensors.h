@@ -5,6 +5,7 @@
 
 #include "vin_cfg.h"
 #include "isp_cfg.h"
+#include "n2d_cfg.h"
 #include "hb_camera_data_config.h"
 #include "cam_def.h"
 
@@ -23,6 +24,13 @@
 #define SENSOR_DATA_TYPE_RAW12 0x2C
 #define SENSOR_DATA_TYPE_RAW10 0x2B
 #define SENSOR_DATA_TYPE_YUV422 0x1E
+
+#define N2D_SCALE 		0
+#define N2D_OVERLAY 	1
+#define N2D_STITCH	 	2
+#define N2D_CSC 		3
+#define N2D_ROTATE 		4
+#define N2D_CROP 		5
 
 typedef struct {
 	int index;
@@ -80,6 +88,8 @@ typedef struct vp_sensor_config_s {
 	isp_ochn_attr_t *isp_ochn_attr;
 	deserial_config_t *deserial_node_attr;
 	mipi_config_t *mipi_cfg_attr;
+	n2d_config_t *gpu2d_scale_attr;
+	n2d_config_t *gpu2d_crop_attr;
 	uint16_t sensor_type;
 } vp_sensor_config_t;
 

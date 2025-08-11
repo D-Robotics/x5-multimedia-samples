@@ -227,8 +227,22 @@ class ConfigManager {
 		let html = '';
 
 		for (let i = 0; i < pipeline_count; i++) {
-			html += '<br>';
-			html += `<span style="white-space: pre-wrap;"><strong>	通道${i}的码流链接 : </strong>rtsp://${window.location.host}/ch${i}/main</span>`;
+			html += `<div class="channel-header"><strong> 第${i}路的码流链接 : </strong></div>`;
+			
+			// 主码流（缩进）
+			html += `<div class="stream-url">`;
+			html += `<span class="stream-type">主码流：</span>`;
+			html += `<span class="stream-uri">rtsp://${window.location.host}/ch${i}/main</span>`;
+			html += `</div>`;
+
+			// 子码流（缩进）
+			html += `<div class="stream-url">`;
+			html += `<span class="stream-type">子码流：</span>`;
+			html += `<span class="stream-uri">rtsp://${window.location.host}/ch${i}/sub1</span>`;
+			html += `</div>`;
+
+			// 通道间间隔
+			html += `<div style="height: 8px;"></div>`;
 		}
 
 		return html;

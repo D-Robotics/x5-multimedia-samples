@@ -539,29 +539,6 @@ static void *send_yuv_to_bpu(void *ptr) {
 	mThreadFinish(privThread);
 	return NULL;
 }
-void vpp_get_sub_stream_resolution(const int width, const int height, int *sub_width, int *sub_height) {
-	int w = width;
-	int h = height;
-
-	// // 情况1：任一边小于目标分辨率，则减半
-	if (width < 1280 || height < 720) {
-		w = width / 2;
-		h = height / 2;
-	}else if((width == 4000) && (height == 3000)){
-		// 情况2：4000 * 3000为特殊分辨率，按照 1280 缩放回导致VSE获取不到流
-		w = 960;
-		h = 720;  // 四舍五入
-	} else {
-		// 情况3：宽缩放到1280，高等比缩放
-		float scale = 1280.0f / width;
-		w = 1280;
-		h = (int)(height * scale + 0.5f);  // 四舍五入
-	}
-
-	// 情况3：对齐到16字节
-	*sub_width = ALIGN_16(w);
-	*sub_height = ALIGN_8(h); //编码器要求8字节对齐， VSE要求2字节对齐
-}
 
 int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 	int32_t i = 0;

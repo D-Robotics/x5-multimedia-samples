@@ -141,8 +141,8 @@ static isp_ochn_attr_t isp_ochn_attr = {
 };
 
 vp_sensor_config_t ox05b1s_linear_2592x1944_raw10_10fps_2lane = {
-	.chip_id_reg = 0x0108,
-	.chip_id = 0x005A,  //0x0132,
+	.chip_id_reg = 0x300a,
+	.chip_id = 0x0058,
 	.sensor_i2c_addr_list = {0x36},
 	.sensor_type = SENSOR_TYPE_NORMAL,
 	.sensor_name = "ox05b1s_2lane",

@@ -1351,7 +1351,8 @@ static int32_t get_pipeline_id_by_video_id(int32_t video_id)
 {
 	for (int i = 0; i < VPP_CAM_MAX_CHANNELS; i++) {
 		if (g_vpp_camera[i].vpp_impl_index != -1) {
-			if (g_vpp_camera[i].vpp_impl_index == video_id) {
+			// video_id 是web端传下来的，从 1开始
+			if ((g_vpp_camera[i].vpp_impl_index + 1) == video_id) {
 				return g_vpp_camera[i].pipline_id;
 			}
 		}

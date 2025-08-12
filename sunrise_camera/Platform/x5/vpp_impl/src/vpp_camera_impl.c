@@ -98,6 +98,8 @@ typedef struct
 	const char *media_type; //主码流和子码流 共同使用
 	void *media_handler; // media handler for MediaServer
 
+	//for display
+	int stream_index;
 	//for codec
 	media_codec_context_t m_encode_context;
 	media_codec_user_config_t m_encode_user_config;
@@ -445,7 +447,8 @@ static void* vlfow_get_stream_proc(void *ptr)
 		}
 
 		update_osd_info(&p_vpp_camera->vp_vflow_contex, &next_update_time_ms, p_vpp_codec_ctx->osd_chn);
-		if((p_vpp_camera->drm_context != NULL) && (p_vpp_camera->drm_init_succesed != 0) && (is_got_vlflow_frame != 0)){
+		if((p_vpp_camera->drm_context != NULL) && (p_vpp_camera->drm_init_succesed != 0)
+			&& (is_got_vlflow_frame != 0) && (p_vpp_codec_ctx->stream_index == 0)){
 			ret = vp_display_set_frame(p_vpp_camera->drm_context, vse_frame.hbn_vnode_image);
 			if(ret != 0){
 				SC_LOGW("vp_display_set_frame chn failed(%d).", ret);
@@ -737,6 +740,7 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			if(j != 0){
 				vpp_get_sub_stream_resolution(input_width, input_height, &target_w, &target_h);
 			}
+			p_vpp_codec_ctx->stream_index = j;
 
 			media_codec_user_config_t *codec_user_config = &p_vpp_codec_ctx->m_encode_user_config;
 			codec_user_config->bit_rate = solution_cfg->cam_solution.cam_vpp[i].encode_bitrate;

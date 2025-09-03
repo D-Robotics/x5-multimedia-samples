@@ -763,41 +763,23 @@ static void on_encode_input_buffer_consumed(hb_ptr userdata, media_codec_buffer_
 
 	if (inputBuffer->user_ptr) {
 		buffer = (hb_mem_graphic_buf_t *)inputBuffer->user_ptr;
+		printf("buffer %016lx\n", buffer->phys_addr[0]);
 
-		hb_mem_free_buf(buffer->fd[0]);
-		free(buffer);
 	}
 }
 
 /* fill input buffer with external buffer */
-static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd)
+static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd, hb_mem_graphic_buf_t* buffer)
 {
-	hb_mem_graphic_buf_t *buffer;
-	int64_t flags;
-	int32_t width, height;
 	uint8_t *y_data;
 	uint8_t *uv_data;
 	uint64_t y_size, uv_size;
 	int32_t ret;
 
-	if (fd == NULL || input_buffer == NULL) {
+	if (fd == NULL || input_buffer == NULL || buffer == NULL) {
 		printf("ERR(%s):null param.\n", __func__);
 		return -1;
 	}
-
-	width = input_buffer->vframe_buf.width;
-	height = input_buffer->vframe_buf.height;
-
-	buffer = malloc(sizeof(hb_mem_graphic_buf_t));
-	memset(buffer, 0, sizeof(hb_mem_graphic_buf_t));
-
-	flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
-	ret = hb_mem_alloc_graph_buf(width, height, MEM_PIX_FMT_NV12, flags, 0, 0, buffer);
-	if (ret < 0) {
-		printf("hb_mem_alloc_graph_buf ret %d failed \n", ret);
-		return ret;
-	}
-
 	y_data = buffer->virt_addr[0];
 	uv_data = buffer->virt_addr[1];
 	y_size = buffer->size[0];
@@ -809,14 +791,10 @@ static int32_t read_input_frame(media_codec_buffer_t *input_buffer, FILE *fd)
 #endif
 
 	if (fread(y_data, 1, y_size, fd) != y_size) {
-		hb_mem_free_buf(buffer->fd[0]);
-		free(buffer);
 		return -1;
 	}
 
 	if (fread(uv_data, 1, uv_size, fd) != uv_size) {
-		hb_mem_free_buf(buffer->fd[0]);
-		free(buffer);
 		return -1;
 	}
 
@@ -1405,7 +1383,20 @@ int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParam
 		printf("Failed to open output file: %s\n", params->output);
 		return -1;
 	}
-
+	mc_video_codec_enc_params_t *context_params = &context->video_enc_params;
+	int buffer_count = context_params->frame_buf_count;
+	hb_mem_graphic_buf_t *buffer = (hb_mem_graphic_buf_t*)malloc(sizeof(hb_mem_graphic_buf_t) * buffer_count);
+	for (int i = 0; i < buffer_count; i++){
+		int width = context->video_enc_params.width;
+		int height = context->video_enc_params.height;
+		int64_t flags = HB_MEM_USAGE_MAP_INITIALIZED | HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		ret = hb_mem_alloc_graph_buf(width, height, MEM_PIX_FMT_NV12, flags, 0, 0, &buffer[i]);
+		if (ret < 0) {
+			printf("hb_mem_alloc_graph_buf ret %d failed \n", ret);
+			return ret;
+		}
+	}
+	
 	while (frame_count < params->frame_num) {
 		usleep(30*1000);
 		memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
@@ -1414,6 +1405,10 @@ int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParam
 		if (ret != 0)
 		{
 			printf("hb_mm_mc_dequeue_input_buffer failed ret = %d\n", ret);
+			goto venc_exit;
+		}
+		if(input_buffer.vframe_buf.src_idx >= buffer_count){
+			printf("dequeue input buffer src_idx(%d) >= buffer_count(%d)\n", input_buffer.vframe_buf.src_idx, buffer_count);
 			goto venc_exit;
 		}
 
@@ -1426,12 +1421,12 @@ int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParam
 		printf("dequeue input buffer. src_idx(%d), user_ptr(%p)\n", input_buffer.vframe_buf.src_idx, input_buffer.user_ptr);
 
 		// 如果从 emmc 上读取数据，会在一定程度上影响性能
-		ret = read_input_frame(&input_buffer, fp_input);
+		ret = read_input_frame(&input_buffer, fp_input, &buffer[input_buffer.vframe_buf.src_idx]);
 		if (ret != 0 || feof(fp_input)) {
 			clearerr(fp_input);
 			rewind(fp_input);
 
-			ret = read_input_frame(&input_buffer, fp_input);
+			ret = read_input_frame(&input_buffer, fp_input, &buffer[input_buffer.vframe_buf.src_idx]);
 		}
 		frame_count++;
 
@@ -1478,6 +1473,14 @@ int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParam
 	}
 
 venc_exit:
+	if(buffer != NULL){
+		for (int  i = 0; i < buffer_count; i++){
+			hb_mem_free_buf(buffer[i].fd[0]);
+		}
+		free(buffer);
+	}
+
+
 	if (fp_output) {
 		fclose(fp_output);
 	}

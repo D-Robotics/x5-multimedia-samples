@@ -78,6 +78,43 @@ on_error:
 		n2d_free(&dst);
 	}
 }
+const char* n2d_filter_type_to_string(n2d_filter_type_t type)
+{
+    switch (type) {
+        case N2D_FILTER_SYNC:
+            return "sync";
+        case N2D_FILTER_BLUR:
+            return "blur";
+        case N2D_FILTER_USER:
+            return "user";
+        case N2D_FILTER_BILINEAR:
+            return "bilinear";
+        case N2D_FILTER_BICUBIC:
+            return "bicubic";
+        default:
+            return "UNKNOWN_FILTER";
+    }
+}
+n2d_filter_type_t filter_type[] = {
+	N2D_FILTER_SYNC,
+	N2D_FILTER_BLUR,
+#if DEFINE_N2D_FILTER_USER
+	N2D_FILTER_USER,
+#endif
+	N2D_FILTER_BILINEAR,
+	N2D_FILTER_BICUBIC
+};
+
+#if DEFINE_N2D_FILTER_USER
+// 用户指定 filter的 kernel: 5x5 高斯滤波权重 (Q0.16 定点)
+static n2d_uint16_t gaussian5x5_kernel[25] = {
+   48, 218, 359, 218, 48,
+  218, 977, 1610, 977, 218,
+  359, 610, 2655, 1610, 359,
+  218, 977, 1610, 977, 218,
+   48, 218, 359, 218, 48,
+};
+#endif
 
 n2d_error_t resize_sample()
 {
@@ -86,7 +123,7 @@ n2d_error_t resize_sample()
 	n2d_buffer_t dst = {0};
 
 	// 读取文件
-	char *input_file_name = "../resource/RGBA8888_640x480.bmp";
+	char *input_file_name = "../resource/bit_filter_1920_1080.bmp";
 	error = n2d_util_load_buffer_from_file(input_file_name, &src);
 	if (N2D_IS_ERROR(error))
 	{
@@ -120,24 +157,55 @@ n2d_error_t resize_sample()
     dstrect.width  = dst.width;
     dstrect.height = dst.height;
 
-	//注意: dstrect 和 srcrect 必须指定
-	N2D_ON_ERROR(n2d_filterblit(&dst, &dstrect, N2D_NULL, &src, &srcrect, N2D_BLEND_NONE));
-	N2D_ON_ERROR(n2d_commit());
+	for (size_t i = 0; i < sizeof(filter_type)/sizeof(filter_type[0]); i++){
+		
+		const char* filter_name = n2d_filter_type_to_string(filter_type[i]);
+		n2d_state_config_t filter_type_state = {
+			.state = N2D_SET_FILTER_TYPE,   			
+			.config.filterType = filter_type[i] 
+		};
+		n2d_state_config_t filter_kernel_size = {
+				.state = N2D_SET_KERNEL_SIZE, 
+				.config.kernelSize = {5, 5}
+		};
+		#if DEFINE_N2D_FILTER_USER
+		if(filter_type[i] == N2D_FILTER_USER) { // 设置用户自定义的 filter kernel
+			n2d_state_config_t filter_user_defined = {
+				.state = N2D_SET_FILTER_USER_DEFINED,
+				.config.filterUserDefined = {
+						.horPass = 1,                     		// 开启水平滤波
+						.verPass = 1,                     		// 开启垂直滤波
+						.passTpye = N2D_FILTER_HOR_PASS,     	// 当前设置的方向
+						.kernelArray = gaussian5x5_kernel    	// 滤波核数组指针
+				}
+			};
+			N2D_ON_ERROR(n2d_set(&filter_user_defined));
+		}
+		#endif
 
-	// 保存图片
-	char output_file_name[128];
-	memset(output_file_name, 0, sizeof(output_file_name));
-	sprintf(output_file_name, "./resize_sample_%d_%d.bmp", dst.width, dst.height);
-	error = n2d_util_save_buffer_to_file(&dst, output_file_name);
-	if (N2D_IS_ERROR(error))
-	{
-		printf("alphablend failed! error=%d.\n", error);
-		goto on_error;
+		N2D_ON_ERROR(n2d_set(&filter_type_state));
+		N2D_ON_ERROR(n2d_set(&filter_kernel_size));
+		
+		//注意: dstrect 和 srcrect 必须指定
+		N2D_ON_ERROR(n2d_filterblit(&dst, &dstrect, N2D_NULL, &src, &srcrect, N2D_BLEND_NONE));
+		N2D_ON_ERROR(n2d_commit());
+
+		// 保存图片
+		char output_file_name[128];
+		memset(output_file_name, 0, sizeof(output_file_name));
+		sprintf(output_file_name, "./resize_sample_%d_%d_%s.bmp", dst.width, dst.height, filter_name);
+		error = n2d_util_save_buffer_to_file(&dst, output_file_name);
+		if (N2D_IS_ERROR(error))
+		{
+			printf("alphablend failed! error=%d.\n", error);
+			goto on_error;
+		}
+
+		printf("Resize input file %s [%d*%d] ==> output file %s [%d*%d]\n",
+			input_file_name, src.width, src.height,
+			output_file_name, dst.width, dst.height);
 	}
-
-	printf("Resize input file %s [%d*%d] ==> output file %s [%d*%d]\n",
-		input_file_name, src.width, src.height,
-		output_file_name, dst.width, dst.height);
+	
 on_error:
 	n2d_free(&dst);
 on_free_src:

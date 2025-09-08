@@ -32,5 +32,3 @@ install: ${TARGET}
 	$(Q)install -d ${PLATFORM_SAMPLES_DEPLOY_DIR}/${RELATIVE_PATH}
 	$(Q)install -m 0775 ${TARGET} \
 		${PLATFORM_SAMPLES_DEPLOY_DIR}/${RELATIVE_PATH}/
-	$(Q)install -m 0664 *.yuv codec_config.ini *.h264 \
-		${PLATFORM_SAMPLES_DEPLOY_DIR}/${RELATIVE_PATH}/

@@ -1769,18 +1769,24 @@ int32_t decode_output_video(media_codec_context_t *context, DecodeParams *params
 					}
 				}
 			} else {
-				fwrite(
-					ouput_buffer.vframe_buf.vir_ptr[0],
-					ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height,
-					1,
-					fp_output
-				);
-				fwrite(
-					ouput_buffer.vframe_buf.vir_ptr[1],
-					ouput_buffer.vframe_buf.width * ouput_buffer.vframe_buf.height / 2,
-					1,
-					fp_output
-				);
+				// 处理Y分量
+				for (int y = 0; y < params->height; y++) {
+						fwrite(
+							ouput_buffer.vframe_buf.vir_ptr[0] + y * ouput_buffer.vframe_buf.stride,
+							params->width,
+							1,
+							fp_output
+						);
+					}
+				// 处理UV分量
+				for (int y = 0; y < params->height / 2; y++) {
+					fwrite(
+						ouput_buffer.vframe_buf.vir_ptr[1] + y * ouput_buffer.vframe_buf.stride, 
+						params->width,
+						1,
+						fp_output
+					);
+				}
 			}
 		}
 		vp_codec_release_output(context, &ouput_buffer);

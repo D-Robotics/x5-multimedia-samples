@@ -22,6 +22,10 @@ static mipi_config_t mipi_config = {
 		.channel_num = 1,
 		.channel_sel = {0},
 	},
+	.rx_ex_mask = 0x20,
+	.rx_attr_ex = {
+		.need_stop_check = 1,
+	},
 };
 
 static camera_config_t camera_config = {

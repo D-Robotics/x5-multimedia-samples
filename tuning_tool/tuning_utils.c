@@ -111,9 +111,6 @@ int32_t tuning_send_yuv_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t
 int32_t tuning_dump_file(char *filename, hbn_vnode_image_t *out_img)
 {
 	FILE *Fd = NULL;
-	char *buffer = NULL;
-	int32_t size;
-
 	Fd = fopen(filename, "a");
 
 	if (Fd == NULL) {
@@ -123,23 +120,15 @@ int32_t tuning_dump_file(char *filename, hbn_vnode_image_t *out_img)
 
 	fflush(stdout);
 	if (is_buf_format_raw(out_img)) {
-		size = out_img->buffer.size[0];
-		buffer = (char *)malloc(size);
-		memcpy(buffer, (char *)out_img->buffer.virt_addr[0], size);
+		fwrite((char *)out_img->buffer.virt_addr[0], 1, out_img->buffer.size[0], Fd);
 	} else {
-		size = out_img->buffer.size[0] + out_img->buffer.size[1];
-		buffer = (char *)malloc(size);
-		memcpy(buffer, (char *)out_img->buffer.virt_addr[0], out_img->buffer.size[0]);
-		memcpy(buffer + out_img->buffer.size[0], (char *)out_img->buffer.virt_addr[1], out_img->buffer.size[1]);
+		fwrite((char *)out_img->buffer.virt_addr[0], 1, out_img->buffer.size[0], Fd);
+		fwrite((char *)out_img->buffer.virt_addr[1], 1, out_img->buffer.size[1], Fd);
 	}
-	fwrite(buffer, 1, size, Fd);
 	fflush(Fd);
 
 	if (Fd)
 		fclose(Fd);
-	if (buffer)
-		free(buffer);
-
 	pr_tuning("filedump %s done\n", filename);
 
 	return 0;
@@ -243,4 +232,130 @@ void tuning_time_delay(const char *func_name)
 	gettimeofday(&end, NULL);
 	printf("Call %s delay %lds, %ldus\n", func_name, end.tv_sec - start.tv_sec, end.tv_usec - start.tv_usec);
 #endif
+}
+
+int tuning_resize_tmpfs()
+{
+	FILE *fp = fopen("/proc/meminfo", "r");
+	if (!fp) {
+		perror("fopen");
+		return -1;
+	}
+
+	char line[256];
+	long memFreeKB = 0;
+	while (fgets(line, sizeof(line), fp)) {
+		if (sscanf(line, "MemFree: %ld kB", &memFreeKB) == 1) {
+			break;
+		}
+	}
+	fclose(fp);
+
+	if (memFreeKB <= 0) {
+		fprintf(stderr, "Error: could not read MemFree\n");
+		return -1;
+	}
+
+	long memFreeMB = memFreeKB / 1024;
+
+	// 预留 100 M 给系统用
+	long targetMB = memFreeMB - 100;
+	if (targetMB <= 0) {
+		fprintf(stderr, "Error: free memory too low\n");
+		return -1;
+	}
+
+	// 构造 mount 命令
+	char cmd[128];
+	snprintf(cmd, sizeof(cmd), "mount -o remount,size=%ldM /tmp", targetMB);
+
+	printf("Executing: %s\n", cmd);
+	int ret = system(cmd);
+	if (ret != 0) {
+		fprintf(stderr, "mount command failed, ret=%d\n", ret);
+		return -1;
+	}
+	printf("resize tmpfs /tmp size:%ldM\n",targetMB);
+	return targetMB;
+}
+
+int tuning_calc_image_size(uint32_t width, uint32_t height,
+					enum RAW_BIT rawbit,
+					enum YUV_TYEP yuvtype,
+					uint64_t *rawsize,
+					uint64_t *yuvsize)
+{
+	if (width == 0 || height == 0 || !rawsize || !yuvsize)
+	{
+		return -1;
+	}
+
+	uint64_t pixels = (uint64_t)width * height;
+
+	// --- RAW ---
+	switch (rawbit)
+	{
+	case RAW_8:
+		*rawsize = pixels * 1;
+		break;
+	case RAW_10:
+		*rawsize = pixels * 2;
+		break;
+	case RAW_12:
+		*rawsize = pixels * 2;
+		break;
+	default:
+		return -1;
+	}
+
+	// --- YUV ---
+	switch (yuvtype)
+	{
+	case YUVNV12:
+	case YUV420:
+	case YUVI420:
+		*yuvsize = pixels * 3 / 2; // 4:2:0
+		break;
+	case YUV422:
+		*yuvsize = pixels * 2; // 4:2:2
+		break;
+	case YUV444:
+		*yuvsize = pixels * 3; // 4:4:4
+		break;
+	case RGB888:
+		*yuvsize = pixels * 3; // RGB888 = 24bit
+		break;
+	default:
+		return -1;
+	}
+
+	return 0;
+}
+
+int tuning_remove_tmp_files(void)
+{
+	char cmd[128];
+	snprintf(cmd, sizeof(cmd),
+			 "rm -f /tmp/*.yuv /tmp/*.raw /tmp/AE_INFO.txt");
+
+	printf("Executing: %s\n", cmd);
+	int ret = system(cmd);
+	if (ret != 0)
+	{
+		fprintf(stderr, "rm command failed, ret=%d\n", ret);
+		return -1;
+	}
+	return 0;
+}
+
+void tuning_time_cost_start(time_cost_t *tc, const char *tag)
+{
+	gettimeofday(&tc->start_time, NULL);
+}
+
+void tuning_time_cost_end(time_cost_t *tc)
+{
+	gettimeofday(&tc->end_time, NULL);
+	tc->elapsed_time = (tc->end_time.tv_sec - tc->start_time.tv_sec) * 1000.0 +
+					  (tc->end_time.tv_usec - tc->start_time.tv_usec) / 1000.0;
 }

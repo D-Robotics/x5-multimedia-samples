@@ -303,6 +303,7 @@ static void *tuning_main_worker_thread(void *arg)
 	enum RAW_BIT raw_type;
 	char file_name[32] = {0};
 	tuning_context_t *ctx = (tuning_context_t *)arg;;
+	int32_t dump_index = 0;
 
 #ifdef TUNING_DEBUG
 	pr_tuning("%s run sensor count: %d\n", __func__, ctx->sensor_count);
@@ -328,7 +329,7 @@ static void *tuning_main_worker_thread(void *arg)
 		isp_node_handle = ctx->pipe_contex_info[i].pipe_contex.isp_node_handle;
 
 		if (ctx->send_raw) {
-			ret = hbn_vnode_getframe(vin_node_handle, 0, 1000, &raw_img);
+			ret = hbn_vnode_getframe(vin_node_handle, 0, 1500, &raw_img);
 			if (ret) {
 				pr_tuning("Sensor-%d get buffer from sif fail\n", i);
 				goto out;
@@ -355,14 +356,13 @@ static void *tuning_main_worker_thread(void *arg)
 			}
 		}
 
-		ret = hbn_vnode_getframe(isp_node_handle, 0, 1000, &yuv_img);
+		ret = hbn_vnode_getframe(isp_node_handle, 0, 1500, &yuv_img);
 		if (ret) {
 			pr_tuning("Sensor-%d get buffer from isp fail\n", i);
 			goto out;
 		}
-
 		if (ctx->pipe_contex_info[i].yuv_dump_cnt) {
-			snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/ISP_S%d_STREAM%d.yuv", DEF_DUMP_PATH, i, yuv_stream_cnt);
+			snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/ISP_S%d_STREAM%d.yuv", DEF_DUMP_PATH, i, dump_index++);
 			tuning_dump_file(file_name, &yuv_img);
 			ctx->pipe_contex_info[i].yuv_dump_cnt--;
 			if (!ctx->pipe_contex_info[i].yuv_dump_cnt) {

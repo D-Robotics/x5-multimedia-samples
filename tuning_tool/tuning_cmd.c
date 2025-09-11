@@ -7,6 +7,7 @@
 #include "tuning_cmd.h"
 #include <time.h>
 #include <math.h>
+#include <pthread.h>
 
 void tuning_dump_sif_raw(tuning_context_t *ctx)
 {
@@ -35,118 +36,365 @@ void tuning_dump_sif_raw(tuning_context_t *ctx)
 			break;
 		}
 
-		snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/SIF_S%d_STREAM%d.raw", DEF_DUMP_PATH, ctx->handle_id, raw_stream_cnt);
+		snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/SIF_S%d_STREAM%d.raw", DEF_DUMP_PATH, ctx->handle_id, i);
 		tuning_dump_file(file_name, &raw_img);
 		hbn_vnode_releaseframe(pipe_info->pipe_contex.vin_node_handle, 0, &raw_img);
 	}
 	raw_stream_cnt++;
 }
 
+void *raw_thread_func(void *arg)
+{
+	raw_thread_param_t *param = (raw_thread_param_t *)arg;
+	time_cost_t tc;
+	int processed_frames = 0;
+
+	if (param->dump_mode != DUMP_RAW_AE && param->dump_mode != DUMP_RAW_YUV_AE)
+	{
+		return NULL;
+	}
+
+	while (processed_frames < param->control->frames_to_process)
+	{
+		hbn_vnode_image_t raw_img = {0};
+		char filename[128];
+		int ret;
+		hbn_isp_exposure_attr_t exp_attr = {0};
+
+
+		tuning_time_cost_start(&tc, "Get raw_file");
+		ret = hbn_vnode_getframe(param->pipe_info->pipe_contex.vin_node_handle, 0, 2000, &raw_img);
+		if (ret)
+		{
+			pr_tuning("get buffer from sif fail\n");
+			continue;
+		}
+		tuning_time_cost_end(&tc);
+
+		pthread_mutex_lock(&param->control->mutex);
+		param->stats->get_raw_time += tc.elapsed_time;
+		pthread_mutex_unlock(&param->control->mutex);
+
+		snprintf(filename, sizeof(filename),
+				 "%s/SIF_S%d_frameid_%d_ts_%ld.raw", DEF_TMPFS_DUMP_PATH, param->handle_id,
+				 raw_img.info.frame_id, raw_img.info.timestamps);
+		if (param->dump_mode != DUMP_RAW_YUV_AE){
+			TUNING_API_EQ(hbn_isp_get_exposure_attr, &exp_attr, continue);
+			fprintf(param->exp_fp,
+					"[AE_INFO Info] Frame %d:"
+					"  exp_time: %.2f"
+					"  again: %.2f"
+					"  dgain: %.2f"
+					"  ispgain: %.2f"
+					"  ae_exp: %.2f"
+					"  cur_lux: %u"
+					"  frame_id: %u"
+					"  timestamps: %lu\n",
+					processed_frames,
+					exp_attr.manual_attr.exp_time,
+					exp_attr.manual_attr.again,
+					exp_attr.manual_attr.dgain,
+					exp_attr.manual_attr.ispgain,
+					exp_attr.manual_attr.ae_exp,
+					exp_attr.manual_attr.cur_lux,
+					exp_attr.manual_attr.frame_id,
+					exp_attr.manual_attr.timestamps);
+		}
+
+		tuning_time_cost_start(&tc, "Dump raw_file");
+		tuning_dump_file(filename, &raw_img);
+		tuning_time_cost_end(&tc);
+		pr_tuning("Dump raw_file took %.3f ms\n", tc.elapsed_time);
+
+		pthread_mutex_lock(&param->control->mutex);
+		param->stats->dump_raw_time += tc.elapsed_time;
+		pthread_mutex_unlock(&param->control->mutex);
+
+		tuning_time_cost_start(&tc, "release raw_file");
+		hbn_vnode_releaseframe(param->pipe_info->pipe_contex.vin_node_handle, 0, &raw_img);
+		tuning_time_cost_end(&tc);
+
+		pthread_mutex_lock(&param->control->mutex);
+		param->stats->release_raw_time += tc.elapsed_time;
+		param->stats->raw_count++;
+		pthread_mutex_unlock(&param->control->mutex);
+
+		processed_frames++;
+		pr_tuning("RAW thread processed frame %d/%d\n", processed_frames, param->control->frames_to_process);
+	}
+
+	pr_tuning("RAW thread finished, processed %d frames\n", processed_frames);
+	return NULL;
+}
+
+
+void *yuv_thread_func(void *arg)
+{
+	yuv_thread_param_t *param = (yuv_thread_param_t *)arg;
+	time_cost_t tc;
+	int processed_frames = 0;
+
+	if (param->dump_mode != DUMP_RAW_YUV_AE && param->dump_mode != DUMP_YUV_AE)
+	{
+		return NULL;
+	}
+
+	while (processed_frames < param->control->frames_to_process)
+	{
+		hbn_vnode_image_t yuv_img = {0};
+		hbn_isp_exposure_attr_t exp_attr = {0};
+		char filename[128];
+		int ret;
+
+		tuning_time_cost_start(&tc, "Get yuv_file");
+		ret = hbn_vnode_getframe(param->pipe_info->pipe_contex.isp_node_handle, 0, 2000, &yuv_img);
+		if (ret)
+		{
+			pr_tuning("get buffer from isp fail\n");
+			continue;
+		}
+		tuning_time_cost_end(&tc);
+
+		pthread_mutex_lock(&param->control->mutex);
+		param->stats->get_yuv_time += tc.elapsed_time;
+		pthread_mutex_unlock(&param->control->mutex);
+
+		snprintf(filename, sizeof(filename),
+				 "%s/ISP_S%d_frameid_%d_ts_%ld.yuv", DEF_TMPFS_DUMP_PATH, param->handle_id,
+				 yuv_img.info.frame_id, yuv_img.info.timestamps);
+		TUNING_API_EQ(hbn_isp_get_exposure_attr, &exp_attr, continue);
+		fprintf(param->exp_fp,
+				"[AE_INFO Info] Frame %d:"
+				"  exp_time: %.2f"
+				"  again: %.2f"
+				"  dgain: %.2f"
+				"  ispgain: %.2f"
+				"  ae_exp: %.2f"
+				"  cur_lux: %u"
+				"  frame_id: %u"
+				"  timestamps: %lu\n",
+				processed_frames,
+				exp_attr.manual_attr.exp_time,
+				exp_attr.manual_attr.again,
+				exp_attr.manual_attr.dgain,
+				exp_attr.manual_attr.ispgain,
+				exp_attr.manual_attr.ae_exp,
+				exp_attr.manual_attr.cur_lux,
+				exp_attr.manual_attr.frame_id,
+				exp_attr.manual_attr.timestamps);
+
+		tuning_time_cost_start(&tc, "Dump yuv_file");
+		tuning_dump_file(filename, &yuv_img);
+		tuning_time_cost_end(&tc);
+		pr_tuning("Dump yuv_file took %.3f ms\n", tc.elapsed_time);
+
+		pthread_mutex_lock(&param->control->mutex);
+		param->stats->dump_yuv_time += tc.elapsed_time;
+		pthread_mutex_unlock(&param->control->mutex);
+
+		tuning_time_cost_start(&tc, "release yuv_file");
+		hbn_vnode_releaseframe(param->pipe_info->pipe_contex.isp_node_handle, 0, &yuv_img);
+		tuning_time_cost_end(&tc);
+
+		pthread_mutex_lock(&param->control->mutex);
+		param->stats->release_yuv_time += tc.elapsed_time;
+		param->stats->yuv_count++;
+		pthread_mutex_unlock(&param->control->mutex);
+
+		processed_frames++;
+		pr_tuning("YUV thread processed frame %d/%d\n", processed_frames, param->control->frames_to_process);
+	}
+
+	pr_tuning("YUV thread finished, processed %d frames\n", processed_frames);
+	return NULL;
+}
+
 void tuning_dump_raw_and_yuv(tuning_context_t *ctx)
 {
-	int32_t i, ret;
 	uint32_t dump_cnt = 0;
-	hbn_vnode_image_t raw_img = {0};
-	hbn_vnode_image_t yuv_img = {0};
+	int dump_mode = 0;
 	static int32_t raw_stream_cnt = 0;
 	pipe_contex_info_t *pipe_info;
+	static time_stats_t stats = {0};
+	thread_control_t control = {0};
+	pthread_t raw_thread, yuv_thread;
+	raw_thread_param_t raw_param = {0};
+	yuv_thread_param_t yuv_param = {0};
+	uint64_t rawsize, yuvsize;
 
-	// Structure to Store we want to dump
-	typedef struct {
-		char raw_filename[128];
-		char yuv_filename[128];
-		hbn_vnode_image_t raw_image;
-		hbn_vnode_image_t yuv_image;
-		hbn_isp_exposure_attr_t exp_attr;
-	} dump_buffer_t;
-
-	dump_buffer_t *buffers = NULL;
+	uint32_t img_height = ctx->pipe_contex_info[ctx->handle_id].img_height;
+	uint32_t img_width = ctx->pipe_contex_info[ctx->handle_id].img_width;
+	enum RAW_BIT raw_type = (ctx->pipe_contex_info[ctx->handle_id].vin_format == 0x2A) ? RAW_8 :
+		(ctx->pipe_contex_info[ctx->handle_id].vin_format == 0x2B) ? RAW_10 :
+		(ctx->pipe_contex_info[ctx->handle_id].vin_format == 0x2C) ? RAW_12 : RAW_10;
 
 	pipe_info = &ctx->pipe_contex_info[ctx->handle_id];
-	if (!pipe_info->is_offline) {
+	if (!pipe_info->is_offline)
+	{
 		pr_tuning("Cannot dump raw when sif otf isp\n");
-		return ;
+		return;
 	}
-	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
+
+	if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK))
+	{
 		pr_tuning("Can not dump raw in feedback mode\n");
-		return ;
-	}
-
-	read_p("Typing the number to dump: ", "%d", &dump_cnt);
-	if (dump_cnt == 0) {
 		return;
 	}
-
-	// Allocate buffers
-	buffers = malloc(dump_cnt * sizeof(dump_buffer_t));
-	if (!buffers) {
-		pr_tuning("Failed to allocate memory for dump buffers\n");
-		return;
-	}
-
-	for (i = 0; i < dump_cnt; i++) {
-		ret = hbn_vnode_getframe_cond(pipe_info->pipe_contex.vin_node_handle, 0, 1000, 0, &raw_img);
-		if (ret) {
-			pr_tuning("get buffer from sif fail\n");
-			break;
-		}
-		ret = hbn_vnode_getframe_cond(pipe_info->pipe_contex.isp_node_handle, 0, 1000, 0, &yuv_img);
-		if (ret) {
-			pr_tuning("get buffer from sif fail\n");
-			hbn_vnode_releaseframe(pipe_info->pipe_contex.vin_node_handle, 0, &raw_img);
-			break;
-		}
-
-		// Get exposure attributes
-		TUNING_API_EQ(hbn_isp_get_exposure_attr, &buffers[i].exp_attr, return);
-		snprintf(buffers[i].raw_filename, sizeof(buffers[i].raw_filename),
-				"%s/SIF_S%d_frameid_%d_ts_%ld.raw", DEF_DUMP_PATH, ctx->handle_id,
-				raw_img.info.frame_id, raw_img.info.timestamps);
-		snprintf(buffers[i].yuv_filename, sizeof(buffers[i].yuv_filename),
-				"%s/ISP_S%d_frameid_%d_ts_%ld.yuv", DEF_DUMP_PATH, ctx->handle_id,
-				yuv_img.info.frame_id, yuv_img.info.timestamps);
-
-		memcpy(&buffers[i].raw_image, &raw_img, sizeof(hbn_vnode_image_t));
-		memcpy(&buffers[i].yuv_image, &yuv_img, sizeof(hbn_vnode_image_t));
-
-		hbn_vnode_releaseframe(pipe_info->pipe_contex.isp_node_handle, 0, &yuv_img);
-		hbn_vnode_releaseframe(pipe_info->pipe_contex.vin_node_handle, 0, &raw_img);
-	}
-	raw_stream_cnt++;
-	FILE *exp_fp = fopen("/userdata/AE_INFO.txt", "w");
-	if (!exp_fp) {
+	tuning_remove_tmp_files();
+	FILE *exp_fp = fopen("/tmp/AE_INFO.txt", "w");
+	if (!exp_fp)
+	{
 		pr_tuning("Failed to open AE_INFO.txt for writing\n");
-		free(buffers);
 		return;
 	}
-	// dump all buffered data
-	for (int j = 0; j < i; j++) {
-		fprintf(exp_fp,
-			"[AE_INFO Info] Frame %d:"
-			"  exp_time: %.2f"
-			"  again: %.2f"
-			"  dgain: %.2f"
-			"  ispgain: %.2f"
-			"  ae_exp: %.2f"
-			"  cur_lux: %u"
-			"  frame_id: %u"
-			"  timestamps: %lu\n",
-			j,
-			buffers[j].exp_attr.manual_attr.exp_time,
-			buffers[j].exp_attr.manual_attr.again,
-			buffers[j].exp_attr.manual_attr.dgain,
-			buffers[j].exp_attr.manual_attr.ispgain,
-			buffers[j].exp_attr.manual_attr.ae_exp,
-			buffers[j].exp_attr.manual_attr.cur_lux,
-			buffers[j].exp_attr.manual_attr.frame_id,
-			buffers[j].exp_attr.manual_attr.timestamps);
-		// Dump files
-		tuning_dump_file(buffers[j].raw_filename, &buffers[j].raw_image);
-		tuning_dump_file(buffers[j].yuv_filename, &buffers[j].yuv_image);
+
+	// 调整tmpfs大小并获取可用空间
+	int tmpfs_size_mb = tuning_resize_tmpfs();
+	uint64_t tmpfs_available_bytes = (uint64_t)tmpfs_size_mb * 1024 * 1024;
+	tuning_calc_image_size(img_width, img_height, raw_type, YUVNV12, &rawsize, &yuvsize);
+	pr_tuning("Available tmpfs space: %d MB (%lu bytes)\n", tmpfs_size_mb, tmpfs_available_bytes);
+	pr_tuning("RAW image size: %lu bytes\n", rawsize);
+	pr_tuning("YUV image size: %lu bytes\n", yuvsize);
+
+	// 二级菜单：选择dump模式
+	pr_tuning("=== Dump Mode Selection ===\n");
+	pr_tuning("1. RAW + AE Info\n");
+	pr_tuning("2. RAW + YUV + AE Info\n");
+	pr_tuning("3. YUV + AE Info\n");
+	read_p("Please choose dump mode: ", "%d", &dump_mode);
+
+	// 验证输入dump_mode
+	if (dump_mode < DUMP_RAW_AE || dump_mode > DUMP_YUV_AE)
+	{
+		pr_tuning("Invalid dump mode selected\n");
+		fclose(exp_fp);
+		return;
+	}
+	// 计算最大可dump帧数
+	uint32_t max_frames = 0;
+	uint64_t bytes_per_frame = 0;
+
+	switch (dump_mode)
+	{
+	case DUMP_RAW_AE:
+		bytes_per_frame = rawsize;
+		max_frames = tmpfs_available_bytes / bytes_per_frame;
+		pr_tuning("Mode 1: RAW + AE Info, %lu bytes per frame\n", bytes_per_frame);
+		break;
+	case DUMP_RAW_YUV_AE:
+		bytes_per_frame = rawsize + yuvsize;
+		max_frames = tmpfs_available_bytes / bytes_per_frame;
+		pr_tuning("Mode 2: RAW + YUV + AE Info, %lu bytes per frame\n", bytes_per_frame);
+		break;
+	case DUMP_YUV_AE:
+		bytes_per_frame = yuvsize;
+		max_frames = tmpfs_available_bytes / bytes_per_frame;
+		pr_tuning("Mode 3: YUV + AE Info, %lu bytes per frame\n", bytes_per_frame);
+		break;
+	}
+	// 预留一些空间给AE_INFO.txt和其他系统文件（10MB）
+	uint64_t reserved_space = 10 * 1024 * 1024;
+	if (tmpfs_available_bytes > reserved_space)
+	{
+		tmpfs_available_bytes -= reserved_space;
+		max_frames = tmpfs_available_bytes / bytes_per_frame;
+	}
+	pr_tuning("Maximum frames that can be dumped: %d frames\n", max_frames);
+	read_p("Typing the number to dump: ", "%d", &dump_cnt);
+
+	// 检查是否超出最大帧数
+	if (dump_cnt > max_frames)
+	{
+		pr_tuning("Warning: Requested %d frames exceeds maximum %d frames\n", dump_cnt, max_frames);
+		pr_tuning("Will dump maximum %d frames instead\n", max_frames);
+		dump_cnt = max_frames;
+	}
+	// 初始化线程控制
+	pthread_mutex_init(&control.mutex, NULL);
+	control.frames_to_process = dump_cnt;
+
+	// 重置统计信息
+	memset(&stats, 0, sizeof(stats));
+
+	// 初始化线程参数
+	raw_param.pipe_info = pipe_info;
+	raw_param.handle_id = ctx->handle_id;
+	raw_param.stats = &stats;
+	raw_param.control = &control;
+	raw_param.exp_fp = exp_fp;
+	raw_param.thread_id = 0;
+	raw_param.dump_mode = dump_mode;
+
+	yuv_param.pipe_info = pipe_info;
+	yuv_param.handle_id = ctx->handle_id;
+	yuv_param.stats = &stats;
+	yuv_param.control = &control;
+	yuv_param.exp_fp = exp_fp;
+	yuv_param.thread_id = 1;
+	yuv_param.dump_mode = dump_mode;
+
+	pr_tuning("Starting to process %d frames with mode %d...\n", dump_cnt, dump_mode);
+
+	// 根据选择 mode 创建线程
+	int threads_created = 0;
+
+	if (dump_mode == DUMP_RAW_AE || dump_mode == DUMP_RAW_YUV_AE)
+	{
+		if (pthread_create(&raw_thread, NULL, raw_thread_func, &raw_param) != 0)
+		{
+			pr_tuning("Failed to create raw thread\n");
+		}
+		else
+		{
+			threads_created |= 0x1;
+		}
 	}
 
-	free(buffers);
+	if (dump_mode == DUMP_RAW_YUV_AE || dump_mode == DUMP_YUV_AE)
+	{
+		if (pthread_create(&yuv_thread, NULL, yuv_thread_func, &yuv_param) != 0)
+		{
+			pr_tuning("Failed to create yuv thread\n");
+		}
+		else
+		{
+			threads_created |= 0x2;
+		}
+	}
+
+	// 等待线程结束
+	if (threads_created & 0x1)
+	{
+		pthread_join(raw_thread, NULL);
+	}
+	if (threads_created & 0x2)
+	{
+		pthread_join(yuv_thread, NULL);
+	}
+
+	raw_stream_cnt++;
 	fclose(exp_fp);
+
+	// 打印平均耗时统计
+	pr_tuning("=== Average Time Statistics ===\n");
+	if (stats.raw_count > 0)
+	{
+		pr_tuning("Get RAW: %.3f ms (%d frames)\n", stats.get_raw_time / stats.raw_count, stats.raw_count);
+		pr_tuning("Dump RAW: %.3f ms (%d frames)\n", stats.dump_raw_time / stats.raw_count, stats.raw_count);
+		pr_tuning("Release RAW: %.3f ms (%d frames)\n", stats.release_raw_time / stats.raw_count, stats.raw_count);
+	}
+
+	if (stats.yuv_count > 0)
+	{
+		pr_tuning("Get YUV: %.3f ms (%d frames)\n", stats.get_yuv_time / stats.yuv_count, stats.yuv_count);
+		pr_tuning("Dump YUV: %.3f ms (%d frames)\n", stats.dump_yuv_time / stats.yuv_count, stats.yuv_count);
+		pr_tuning("Release YUV: %.3f ms (%d frames)\n", stats.release_yuv_time / stats.yuv_count, stats.yuv_count);
+	}
+
+	pr_tuning("Total RAW frames processed: %d\n", stats.raw_count);
+	pr_tuning("Total YUV frames processed: %d\n", stats.yuv_count);
+
+	pthread_mutex_destroy(&control.mutex);
 }
 
 void tuning_handle_set_expsoure(tuning_context_t *ctx)

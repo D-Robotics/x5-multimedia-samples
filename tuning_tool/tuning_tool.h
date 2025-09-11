@@ -22,6 +22,7 @@
 #define LUT_KNEE 150
 
 #define DEF_DUMP_PATH	"/userdata"
+#define DEF_TMPFS_DUMP_PATH	"/tmp"
 #define MAX_SENSORS	4
 #define HBPLAYER_EN	1
 #define FEEDBACK_MASK	0
@@ -78,6 +79,28 @@ typedef struct tuning_context {
 	char img_name[TUNING_FEEDBACK_FILE_MAX][128];
 	hbn_vnode_image_t src_img;
 } tuning_context_t;
+
+typedef struct
+{
+	pipe_contex_info_t *pipe_info;
+	int handle_id;
+	time_stats_t *stats;
+	thread_control_t *control;
+	FILE *exp_fp;
+	int thread_id;
+	dump_mode_t dump_mode;
+} raw_thread_param_t;
+
+typedef struct
+{
+	pipe_contex_info_t *pipe_info;
+	int handle_id;
+	time_stats_t *stats;
+	thread_control_t *control;
+	FILE *exp_fp;
+	int thread_id;
+	dump_mode_t dump_mode;
+} yuv_thread_param_t;
 
 #define select_id(ctx, pparam) do { \
 	if (ctx->sensor_count > 1) { \

@@ -2,7 +2,7 @@
 
 set -e
 
-. /etc/profile.d/environment.sh
+#. /etc/profile.d/environment.sh
 
 local_path=$(dirname "$(readlink -f "$0")")
 

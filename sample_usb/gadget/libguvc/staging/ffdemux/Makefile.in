@@ -28,9 +28,11 @@ LDFLAGS =
 # Get the absolute path of the directory where Makefile.in is located
 CUR_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
-HR_TOP_DIR = $(shell realpath ${CUR_DIR}/../../../../../../../..)
+ifeq ($(BOARD_BUILD),0)
+HR_TOP_DIR = $(shell realpath ${CUR_DIR}/../../../../../..)
 ifeq ($(HR_BUILD_OUTPUT_DIR),)
 HR_BUILD_OUTPUT_DIR = ${HR_TOP_DIR}/out
+endif
 endif
 
 ifeq ($(APP_DEPLOY_DIR),)

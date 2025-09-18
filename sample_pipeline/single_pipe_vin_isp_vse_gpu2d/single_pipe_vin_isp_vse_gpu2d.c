@@ -25,7 +25,8 @@ typedef struct {
 	uint32_t sensor_mode;
 	pipe_contex_t pipe_contexts;
 	int active_mipi_host; // 根据实际的硬件连接情况确定使用对应的 mipi host
-	int vse_bind_codec_chn;
+	int bind_chn;
+	pthread_mutex_t config_mutex;  // 添加互斥锁字段
 
 	struct {
 		uint64_t frame_count;
@@ -38,13 +39,31 @@ typedef struct {
 	pipeline_info_t *pipeline_info[MAX_SENSORS]; // 使用数组存储指针
 } thread_args_t;
 
+#define FRAME_QUEUE_SIZE 10
+
+typedef struct {
+	hbn_vnode_image_t frame;
+	int valid;
+} frame_node_t;
+
+typedef struct {
+	frame_node_t frames[FRAME_QUEUE_SIZE];
+	int head;
+	int tail;
+	int count;
+	pthread_mutex_t mutex;
+	pthread_cond_t not_empty;
+	pthread_cond_t not_full;
+} frame_queue_t;
+
+static frame_queue_t frame_queue;
 static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static int32_t total_pipeline_num = 0;
 static int32_t verbose_flag = 0;
 static int32_t used_mipi_host = 0;
 static uint32_t link_port[MAX_SENSORS] = {};
 static int32_t running = 0;
-static uint16_t date_type;
+static uint16_t sensor_type;
 
 
 static struct option const long_options[] = {
@@ -57,6 +76,46 @@ int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *de
 int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
 void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeline_idx);
 
+static void frame_queue_init(frame_queue_t *q) {
+	memset(q, 0, sizeof(frame_queue_t));
+	pthread_mutex_init(&q->mutex, NULL);
+	pthread_cond_init(&q->not_empty, NULL);
+	pthread_cond_init(&q->not_full, NULL);
+}
+
+static int frame_queue_pop(frame_queue_t *q, hbn_vnode_image_t *out) {
+	pthread_mutex_lock(&q->mutex);
+	while (q->count == 0 && running)
+		pthread_cond_wait(&q->not_empty, &q->mutex);
+
+	if (!running) {
+		pthread_mutex_unlock(&q->mutex);
+		return -1;
+	}
+
+	*out = q->frames[q->head].frame;
+	q->frames[q->head].valid = 0;
+	q->head = (q->head + 1) % FRAME_QUEUE_SIZE;
+	q->count--;
+
+	pthread_cond_signal(&q->not_full);
+	pthread_mutex_unlock(&q->mutex);
+	return 0;
+}
+
+static void frame_queue_push(frame_queue_t *q, hbn_vnode_image_t *frame) {
+	pthread_mutex_lock(&q->mutex);
+	while (q->count == FRAME_QUEUE_SIZE)
+		pthread_cond_wait(&q->not_full, &q->mutex);
+
+	q->frames[q->tail].frame = *frame;
+	q->frames[q->tail].valid = 1;
+	q->tail = (q->tail + 1) % FRAME_QUEUE_SIZE;
+	q->count++;
+
+	pthread_cond_signal(&q->not_empty);
+	pthread_mutex_unlock(&q->mutex);
+}
 
 static void show_help() {
 	printf("Usage: get_vin_data [OPTIONS]\n");
@@ -98,7 +157,7 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 	int count = split_string(config, " ", parts, 4);
 
 	// 默认值
-	pipeline_info->vse_bind_codec_chn = 0;
+	pipeline_info->bind_chn = 0;
 
 	for (int i = 0; i < count; i++) {
 		char *key_value[2];
@@ -121,17 +180,15 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 						sensor_idx,
 						vp_sensor_config_list[sensor_idx]->sensor_name,
 						vp_sensor_config_list[sensor_idx]->config_file);
-				date_type = pipeline_info->pipe_contexts.sensor_config->camera_config->format;
-
+						sensor_type = pipeline_info->pipe_contexts.sensor_config->sensor_type;
 			} else {
 				printf("Unsupport sensor index:%d\n", sensor_idx);
 				show_help();
 				exit(0);
 			}
-			//gmsl 模组需要初始化后才能检测到 addr
-			if(date_type == SENSOR_TYPE_NORMAL) {
+			if(sensor_type == SENSOR_TYPE_NORMAL) {
 				ret = vp_sensor_multi_fixed_mipi_host(pipeline_info->pipe_contexts.sensor_config, used_mipi_host,
-													&pipeline_info->pipe_contexts.csi_config);
+					&pipeline_info->pipe_contexts.csi_config);
 				if (ret < 0) {
 					printf("vp sensor fixed mipi host fail, sensor id %d."
 						"Maybe No Camera Sensor found. Please check if the specified "
@@ -139,6 +196,7 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 					exit(0);
 				}
 				pipeline_info->select_sensor_id = sensor_idx;
+				// active_mipi_host 的配置在 create_vin_node 函数中需要再配置一下
 				pipeline_info->active_mipi_host = pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx;
 				used_mipi_host |= (1 << pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx);
 			}
@@ -221,8 +279,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int index) {
 	ret = hbn_vnode_set_ichn_attr(*vin_node_handle, ichn_id, vin_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 	// 设置输出通道的属性
-	// 使能 DDR 输出
-	vin_ochn_attr->ddr_en = 1;
+
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
 	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
@@ -254,32 +311,44 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ichn_attr_t *isp_ichn_attr = NULL;
 	isp_ochn_attr_t *isp_ochn_attr = NULL;
 	hbn_vnode_handle_t *isp_node_handle = NULL;
+	vin_node_attr_t *vin_node_attr = NULL;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
-	uint32_t ichn_id = 0;
-	uint32_t ochn_id = 0;
+	uint32_t chn_id = 0;
 	int ret = 0;
 
 	sensor_config = pipe_contex->sensor_config;
+	vin_node_attr = sensor_config->vin_node_attr;
 	isp_attr = sensor_config->isp_attr;
 	isp_ichn_attr = sensor_config->isp_ichn_attr;
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &pipe_contex->isp_node_handle;
 
+    /*—— 根据 isp_attr->input_mode 决定是否打开 VIN 的 fly-by ——*/
+    switch (isp_attr->input_mode) {
+        case SIF_ONLINE_ISP:
+            vin_node_attr->cim_attr.cim_isp_flyby = 1;
+            break;
+        default:
+            vin_node_attr->cim_attr.cim_isp_flyby = 0;
+            break;
+    }
+
 	ret = hbn_vnode_open(HB_ISP, 0, AUTO_ALLOC_ID, isp_node_handle);
 	ERR_CON_EQ(ret, 0);
+
 	ret = hbn_vnode_set_attr(*isp_node_handle, isp_attr);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ochn_attr(*isp_node_handle, ochn_id, isp_ochn_attr);
+	ret = hbn_vnode_set_ochn_attr(*isp_node_handle, chn_id, isp_ochn_attr);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, ichn_id, isp_ichn_attr);
+	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, chn_id, isp_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
 	alloc_attr.buffers_num = 3;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
-						| HB_MEM_USAGE_CPU_WRITE_OFTEN
-						| HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, ochn_id, &alloc_attr);
+		| HB_MEM_USAGE_CPU_WRITE_OFTEN
+		| HB_MEM_USAGE_CACHED;
+	ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, chn_id, &alloc_attr);
 	ERR_CON_EQ(ret, 0);
 
 	return 0;
@@ -347,94 +416,87 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	return 0;
 }
 
-static hbn_vnode_handle_t create_gpu2d_crop_node(pipe_contex_t *pipe_contex) {
+static int create_gpu2d_node(pipe_contex_t *pipe_contex) {
 	int ret = 0;
-	hbn_vnode_handle_t gpu2d_crop_node_handle;
-	n2d_config_t *n2d_setting = pipe_contex->sensor_config->gpu2d_crop_attr;
+	hbn_vnode_handle_t *gpu2d_node_handle = &pipe_contex->gpu2d_node_handle;
+	n2d_config_t *n2d_setting = pipe_contex->sensor_config->gpu2d_scale_crop_attr;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
 	uint32_t ichn_id = 0;
 	uint32_t hw_id = 0;
 
-	printf("GPU2D CROP input: %ux%u (aligned), stride: %u\n",
-		n2d_setting->input_width[0],
-		n2d_setting->input_height[0],
-		n2d_setting->input_stride[0]);
-	printf("GPU2D CROP output: %ux%u (aligned), stride: %u\n",
-		n2d_setting->output_width,
-		n2d_setting->output_height,
-		n2d_setting->output_stride);
-	printf("GPU2D CROP command: %u\n", n2d_setting->command);
+	if (n2d_setting == NULL) {
+		printf("No GPU2D settings found for the sensor.\n");
+		return -1;
+	}
+	printf("GPU2D command: %u\n", n2d_setting->command);
 
-	ret = hbn_vnode_open(HB_N2D, hw_id, AUTO_ALLOC_ID, &gpu2d_crop_node_handle);
+	ret = hbn_vnode_open(HB_N2D, hw_id, AUTO_ALLOC_ID, gpu2d_node_handle);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_attr(gpu2d_crop_node_handle, n2d_setting);
+	ret = hbn_vnode_set_attr(*gpu2d_node_handle, n2d_setting);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ichn_attr(gpu2d_crop_node_handle, ichn_id, n2d_setting);
+	ret = hbn_vnode_set_ichn_attr(*gpu2d_node_handle, ichn_id, n2d_setting);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ochn_attr(gpu2d_crop_node_handle, 0, n2d_setting);
+	ret = hbn_vnode_set_ochn_attr(*gpu2d_node_handle, 0, n2d_setting);
 	ERR_CON_EQ(ret, 0);
 
 	alloc_attr.buffers_num = 3;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN |
-	                   HB_MEM_USAGE_CPU_WRITE_OFTEN |
-	                   HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(gpu2d_crop_node_handle, 0, &alloc_attr);
+					   HB_MEM_USAGE_CPU_WRITE_OFTEN |
+					   HB_MEM_USAGE_CACHED;
+	ret = hbn_vnode_set_ochn_buf_attr(*gpu2d_node_handle, 0, &alloc_attr);
 	if (ret < 0) {
 		printf("hbn_vnode_set_ochn_buf_attr failed, ret = %d\n", ret);
 		return -1;
 	}
 
-	return gpu2d_crop_node_handle;
+	return 0;
 }
 
-static hbn_vnode_handle_t create_gpu2d_scale_node(pipe_contex_t *pipe_contex) {
+static int set_n2d_crop_region(pipe_contex_t *pipe_contex, int crop_x, int crop_y, int crop_w, int crop_h) {
 	int ret = 0;
-	hbn_vnode_handle_t gpu2d_scale_node_handle;
-	n2d_config_t *n2d_setting = pipe_contex->sensor_config->gpu2d_scale_attr;
-	hbn_buf_alloc_attr_t alloc_attr = {0};
-	uint32_t ichn_id = 0;
-	uint32_t hw_id = 0;
+	n2d_config_t *n2d_setting = pipe_contex->sensor_config->gpu2d_scale_crop_attr;
 
-	printf("GPU2D SCALE input: %ux%u (aligned), stride: %u\n",
-		n2d_setting->input_width[0],
-		n2d_setting->input_height[0],
-		n2d_setting->input_stride[0]);
-	printf("GPU2D SCALE output: %ux%u (aligned), stride: %u\n",
-		n2d_setting->output_width,
-		n2d_setting->output_height,
-		n2d_setting->output_stride);
-	printf("GPU2D SCALE command: %u\n", n2d_setting->command);
-
-	ret = hbn_vnode_open(HB_N2D, hw_id, AUTO_ALLOC_ID, &gpu2d_scale_node_handle);
-	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_attr(gpu2d_scale_node_handle, n2d_setting);
-	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ichn_attr(gpu2d_scale_node_handle, ichn_id, n2d_setting);
-	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ochn_attr(gpu2d_scale_node_handle, 0, n2d_setting);
-	ERR_CON_EQ(ret, 0);
-
-	alloc_attr.buffers_num = 3;
-	alloc_attr.is_contig = 1;
-	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN |
-	                   HB_MEM_USAGE_CPU_WRITE_OFTEN |
-	                   HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(gpu2d_scale_node_handle, 0, &alloc_attr);
-	if (ret < 0) {
-		printf("hbn_vnode_set_ochn_buf_attr failed, ret = %d\n", ret);
+	if (crop_x < 0 || crop_y < 0 || crop_w <= 0 || crop_h <= 0) {
+		fprintf(stderr, "Invalid crop parameters: x=%d, y=%d, w=%d, h=%d\n",
+				crop_x, crop_y, crop_w, crop_h);
 		return -1;
 	}
 
-	return gpu2d_scale_node_handle;
+	if (crop_x + crop_w > n2d_setting->input_width[0] ||
+		crop_y + crop_h > n2d_setting->input_height[0]) {
+		fprintf(stderr, "Crop region exceeds input image boundaries\n");
+		return -1;
+	}
+
+	n2d_setting->crop_x = crop_x;
+	n2d_setting->crop_y = crop_y;
+	n2d_setting->crop_width = crop_w;
+	n2d_setting->crop_height = crop_h;
+
+	ret = hbn_vnode_set_ochn_attr_ex(pipe_contex->gpu2d_node_handle, 0, n2d_setting);
+	if (ret != 0) {
+		fprintf(stderr, "Failed to set GPU2D attributes: %d\n", ret);
+		return ret;
+	}
+
+	printf("GPU2D crop region updated: x=%d, y=%d, w=%d, h=%d\n",
+		   crop_x, crop_y, crop_w, crop_h);
+	return 0;
 }
 
+int set_n2d_crop_region_safe(pipeline_info_t *pipeline, int crop_x, int crop_y, int crop_w, int crop_h) {
+	pthread_mutex_lock(&pipeline->config_mutex);
+	int ret = set_n2d_crop_region(&pipeline->pipe_contexts, crop_x, crop_y, crop_w, crop_h);
+	pthread_mutex_unlock(&pipeline->config_mutex);
+	return ret;
+}
 
 static int create_and_run_vflow(pipe_contex_t *pipe_contex, int index)
 {
+	vp_sensor_config_t *sensor_config = pipe_contex->sensor_config;
+    int isp_mode = sensor_config->isp_attr->input_mode;
 	int32_t ret = 0;
-	hbn_vnode_handle_t gpu2d_crop_node_handle;
-	hbn_vnode_handle_t gpu2d_scale_node_handle;
 	// 创建 pipeline 中的每个 node
 	ret = create_camera_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
@@ -444,21 +506,8 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex, int index)
 	ERR_CON_EQ(ret, 0);
 	ret = create_vse_node(pipe_contex, 0);
 	ERR_CON_EQ(ret, 0);
-
-	// 创建 GPU2D crop 节点
-	gpu2d_crop_node_handle = create_gpu2d_crop_node(pipe_contex);
-	if (gpu2d_crop_node_handle == 0) {
-		printf("Failed to create GPU2D crop node\n");
-		return -1;
-	}
-	// 创建 GPU2D scale 节点
-	gpu2d_scale_node_handle = create_gpu2d_scale_node(pipe_contex);
-	if (gpu2d_scale_node_handle == 0) {
-		printf("Failed to create GPU2D scale node\n");
-		return -1;
-	}
-	// 最终使用 scale 节点 handle 存入 pipe_contex
-	pipe_contex->gpu2d_node_handle = gpu2d_scale_node_handle;
+	ret = create_gpu2d_node(pipe_contex);
+	ERR_CON_EQ(ret, 0);
 	// 创建 HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
@@ -472,34 +521,35 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex, int index)
 							pipe_contex->vse_node_handle);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
-							gpu2d_crop_node_handle);
-	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
-							gpu2d_scale_node_handle);
+							pipe_contex->gpu2d_node_handle);
 	ERR_CON_EQ(ret, 0);
 
+    if (isp_mode == SIF_OFFLINE_ISP) {
+        ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+                                   pipe_contex->vin_node_handle,
+                                   0,
+                                   pipe_contex->isp_node_handle,
+                                   0);
+    } else if (isp_mode == SIF_ONLINE_ISP) {
+        ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+                                   pipe_contex->vin_node_handle,
+                                   1,
+                                   pipe_contex->isp_node_handle,
+                                   0);
+    } else {
+        printf("Unsupported ISP mode: %d\n", isp_mode);
+        return -1;
+    }
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							pipe_contex->vin_node_handle,
+							pipe_contex->isp_node_handle,
 							1,
-							pipe_contex->isp_node_handle,
-							0);
-	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							pipe_contex->isp_node_handle,
-							0,
 							pipe_contex->vse_node_handle,
 							0);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vse_node_handle,
 							0,
-							gpu2d_crop_node_handle,
-							0);
-	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							gpu2d_crop_node_handle,
-							0,
-							gpu2d_scale_node_handle,
+							pipe_contex->gpu2d_node_handle,
 							0);
 	ERR_CON_EQ(ret, 0);
 
@@ -512,51 +562,80 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex, int index)
 	return 0;
 }
 
+void *producer_thread(void *context) {
+    thread_args_t *args = (thread_args_t *)context;
 
-void *encode_vse_chn_data(void *context)
-{
-	thread_args_t *args = (thread_args_t *)context;
+    uint64_t frame_counters[MAX_SENSORS] = {0};
+    const uint64_t adjust_interval = 3;
+
+    while (running) {
+        for (int i = 0; i < total_pipeline_num; i++) {
+            pipeline_info_t *p = args->pipeline_info[i];
+            hbn_vnode_image_t out_img = {0};
+
+            if (hbn_vnode_getframe(p->pipe_contexts.gpu2d_node_handle, p->bind_chn, 2000, &out_img) == 0) {
+                frame_queue_push(&frame_queue, &out_img);
+                frame_counters[i]++;
+
+                if (frame_counters[i] % adjust_interval == 0) {
+                    static int crop_x = 0;
+                    static int crop_y = 0;
+                    static int crop_w = 0;
+                    static int crop_h = 0;
+
+                    int input_w = p->pipe_contexts.sensor_config->gpu2d_scale_crop_attr->input_width[0];
+                    int input_h = p->pipe_contexts.sensor_config->gpu2d_scale_crop_attr->input_height[0];
+
+                    if (crop_w == 0 || crop_h == 0) {
+                        crop_w = input_w;
+                        crop_h = input_h;
+                    }
+
+                    crop_w -= 200;
+                    crop_h -= 100;
+
+                    if (crop_w < input_w / 2 || crop_h < input_h / 2) {
+                        crop_w = input_w;
+                        crop_h = input_h;
+                    }
+                    set_n2d_crop_region_safe(p, crop_x, crop_y, crop_w, crop_h);
+
+                    printf("Adjusted crop region for pipeline %d: x=%d, y=%d, w=%d, h=%d\n",
+                           i, crop_x, crop_y, crop_w, crop_h);
+                }
+            } else {
+                p->stats.drop_count++;
+                printf("hbn_vnode_getframe failed\n");
+            }
+
+            hbn_vnode_releaseframe(p->pipe_contexts.gpu2d_node_handle, p->bind_chn, &out_img);
+        }
+    }
+    return NULL;
+}
+
+
+void *consumer_thread(void *context) {
 	uint32_t count = 0;
 	char dst_file[128];
+	hbn_vnode_image_t out_img;
 
 	while (running) {
-		// 对每个 sensor 分别处理
-		for (int i = 0; i < total_pipeline_num; i++) {
-			pipeline_info_t *p = args->pipeline_info[i];
-			hbn_vnode_image_t out_img = {0};
+		if (frame_queue_pop(&frame_queue, &out_img) != 0)
+			break;
 
-			  // 获取VIN帧
-			if (hbn_vnode_getframe(p->pipe_contexts.gpu2d_node_handle, p->vse_bind_codec_chn, 2000, &out_img) != 0) {
-				p->stats.drop_count++;
-				printf("hbn_vnode_getframe n2d channel %d failed\n", 0);
-				continue;
-			}
-
-			// 将帧数据写入文件
-			if(count % 10 == 0) {
-				snprintf(dst_file, sizeof(dst_file),
-				"gdc_handle_%d_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
-				(int)p->pipe_contexts.gpu2d_node_handle, p->vse_bind_codec_chn,
-				out_img.buffer.width, out_img.buffer.height, out_img.buffer.stride,
+		if (count % 3 == 0) {
+			snprintf(dst_file, sizeof(dst_file),
+				"frame_%dx%d_id%d_ts_%ld.yuv",
+				out_img.buffer.width, out_img.buffer.height,
 				out_img.info.frame_id, out_img.info.timestamps);
-				printf("gdc(%d) dump yuv %dx%d(stride:%d), buffer size: %ld + %ld frame id: %d,"
-						" timestamp: %ld\n", (int)p->pipe_contexts.gpu2d_node_handle,
-						out_img.buffer.width, out_img.buffer.height,
-						out_img.buffer.stride,
-						out_img.buffer.size[0], out_img.buffer.size[1],
-						out_img.info.frame_id,
-						out_img.info.timestamps);
-				dump_2plane_yuv_to_file(dst_file,
-						out_img.buffer.virt_addr[0],
-						out_img.buffer.virt_addr[1],
-						out_img.buffer.size[0],
-						out_img.buffer.size[1]);
-			}
-
-			printf("Pipeline %d: Received frame %d from n2d channel %d, frame_id: %d\n",
-				i, count, p->vse_bind_codec_chn, out_img.info.frame_id);
-			hbn_vnode_releaseframe(p->pipe_contexts.gpu2d_node_handle, p->vse_bind_codec_chn, &out_img);
+			dump_2plane_yuv_to_file(dst_file,
+				out_img.buffer.virt_addr[0], out_img.buffer.virt_addr[1],
+				out_img.buffer.size[0], out_img.buffer.size[1]);
+			printf("Saved frame to %s ok\n", dst_file);
 		}
+
+		printf("Received frame %d, frame_id: %d\n", count, out_img.info.frame_id);
 		count++;
 	}
 	return NULL;
@@ -569,7 +648,6 @@ int main(int argc, char** argv) {
 
 	thread_args_t *args = malloc(sizeof(thread_args_t));
 	pipeline_info_t pipeline_info[MAX_SENSORS] = {0};
-	pthread_t  capture_thread;
 
 	if (argc <= 1) {
 		show_help();
@@ -603,7 +681,7 @@ int main(int argc, char** argv) {
 		printf("\tSensor index: %d\n", pipeline_info[i].select_sensor_id);
 		printf("\tSensor name: %s\n", pipeline_info[i].pipe_contexts.sensor_config->sensor_name);
 		printf("\tActive mipi host: %d\n", pipeline_info[i].active_mipi_host);
-		printf("\tVse Channel: %d\n", pipeline_info[i].vse_bind_codec_chn);
+		printf("\tVse Channel: %d\n", pipeline_info[i].bind_chn);
 	}
 
 	printf("MIPI host: 0x%x\n", used_mipi_host);
@@ -633,11 +711,12 @@ int main(int argc, char** argv) {
 
 	printf("pthread_create\n");
 
+	frame_queue_init(&frame_queue);
 	running = 1;
-	if (pthread_create(&capture_thread, NULL, encode_vse_chn_data, (void *)args) != 0) {
-		fprintf(stderr, "[FATAL] Encoder thread create failed\n");
-		goto cleanup_main;
-	}
+	pthread_t producer_tid, consumer_tid;
+
+	pthread_create(&producer_tid, NULL, producer_thread, args);
+	pthread_create(&consumer_tid, NULL, consumer_thread, NULL);
 
 	// 主线程等待退出信号
 	printf("Running... Press Ctrl+C to exit\n");
@@ -645,10 +724,13 @@ int main(int argc, char** argv) {
 		sleep(1); // 保持主线程存活
 	}
 
-cleanup_main:
 	running = 0;
 	// 等待线程退出
-	if (capture_thread) pthread_join(capture_thread, NULL);
+	pthread_cond_broadcast(&frame_queue.not_empty);
+	pthread_cond_broadcast(&frame_queue.not_full);
+
+	pthread_join(producer_tid, NULL);
+	pthread_join(consumer_tid, NULL);
 	printf("pthread_join success\n");
 	for (int i = 0; i < total_pipeline_num; i++) {
 		ret = hbn_vflow_stop(pipeline_info[i].pipe_contexts.vflow_fd);

@@ -30,7 +30,10 @@
 #define N2D_STITCH	 	2
 #define N2D_CSC 		3
 #define N2D_ROTATE 		4
-#define N2D_CROP 		5
+#define N2D_SCALE_CROP  5
+
+#define SIF_ONLINE_ISP      0
+#define SIF_OFFLINE_ISP     2
 
 typedef struct {
 	int index;
@@ -88,8 +91,7 @@ typedef struct vp_sensor_config_s {
 	isp_ochn_attr_t *isp_ochn_attr;
 	deserial_config_t *deserial_node_attr;
 	mipi_config_t *mipi_cfg_attr;
-	n2d_config_t *gpu2d_scale_attr;
-	n2d_config_t *gpu2d_crop_attr;
+	n2d_config_t *gpu2d_scale_crop_attr;
 	uint16_t sensor_type;
 } vp_sensor_config_t;
 

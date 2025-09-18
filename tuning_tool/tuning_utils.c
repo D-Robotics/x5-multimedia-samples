@@ -46,6 +46,8 @@ int32_t tuning_send_raw_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t
 {
 	void *raw_addr = NULL;
 	pic_info_t hbplayer_info;
+	uint32_t ret = 0;
+	uint32_t plane_cnt;
 	uint32_t size;
 
 	if (normal_buf == NULL) {
@@ -59,8 +61,8 @@ int32_t tuning_send_raw_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t
 	hbplayer_info.width = normal_buf->buffer.width;
 	hbplayer_info.height = normal_buf->buffer.height;
 	hbplayer_info.stride = normal_buf->buffer.stride;
-	hbplayer_info.chn_id = 0;
 	hbplayer_info.pipe_id = pipe_id;
+	plane_cnt = normal_buf->buffer.plane_cnt;
 
 	raw_addr = normal_buf->buffer.virt_addr[0];
 	size = normal_buf->buffer.size[0];
@@ -71,8 +73,30 @@ int32_t tuning_send_raw_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t
 				hbplayer_info.height, hbplayer_info.stride);
 		return -1;
 	}
+	if (plane_cnt == 1)
+	{
+		hbplayer_info.chn_id = 0;
+		ret = hb_tool_send_raw_pic(event, &hbplayer_info, raw_addr, size, 0, 0);
+	}else if (plane_cnt == 2)
+	{
+		hbplayer_info.chn_id = 0;
+		ret = hb_tool_send_raw_pic(event, &hbplayer_info, raw_addr, size, 0, 0);
 
-	return hb_tool_send_raw_pic(event, &hbplayer_info, raw_addr, size, 0, 0);
+		void *short_raw_addr = normal_buf->buffer.virt_addr[1];
+		uint32_t short_size = normal_buf->buffer.size[1];
+
+		if (short_size == 0 || short_raw_addr == NULL)
+		{
+			pr_tuning("invalid short frame %d, skip send short dol2\n", hbplayer_info.frame_id);
+		}
+		else
+		{
+			pic_info_t short_info = hbplayer_info;
+			short_info.chn_id = 2;
+			ret |= hb_tool_send_raw_pic(event, &short_info, short_raw_addr, short_size, 0, 0);
+		}
+	}
+	return ret;
 }
 
 int32_t tuning_send_yuv_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf, int32_t pipe_id)

@@ -7,6 +7,7 @@
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="stylesheet" href="CSS/bootstrap.min.css">
+	<link rel="stylesheet" href="CSS/image-quality-control.css">
 	<script src="js/plugin-in/jquery.min.js"></script>
 	<script src="js/plugin-in/bootstrap.min.js"></script>
 	<script src="js/plugin-in/imagenet_id_to_classname.js"></script>
@@ -254,6 +255,62 @@
 			font-size: 12px;
 		}
 		.capture-button:hover .tooltip {
+			visibility: visible;
+			opacity: 1;
+		}
+		/* 优化后的图像质量按钮样式 */
+		.image-quality-button {
+			/* 1. 增加按钮宽度（从100px调整为140px，根据实际文字长度适配） */
+			width: 140px;
+			height: 40px;
+			background: rgba(76, 175, 80, 0.5);
+			border: none;
+			border-radius: 5px;
+			cursor: pointer;
+			/* 2. 强制文字不换行，且溢出时隐藏（避免两行显示） */
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis; /* 极端情况文字过长时显示省略号，而非换行 */
+			/* 3. 保持居中布局，确保文字/图标整体居中 */
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 8px; /* 图标与文字间保留适当间距，避免拥挤 */
+			/* 4. 文字样式优化（可选：微调字体大小，进一步减少换行概率） */
+			color: white;
+			font-size: 15px; /* 从16px微调为15px，平衡显示效果与文字长度 */
+			font-weight: bold;
+			position: relative;
+			box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+			transition: background 0.3s, transform 0.3s;
+		}
+
+		/* 悬停效果保持不变 */
+		.image-quality-button:hover {
+			background: rgba(76, 175, 80, 1);
+			transform: scale(1.05); /* 微调缩放比例为1.05，避免过宽按钮缩放后超出画面 */
+		}
+
+		/* 提示文本样式保持不变（确保不影响按钮本身排版） */
+		.image-quality-button .tooltip {
+			visibility: hidden;
+			width: auto;
+			white-space: nowrap;
+			background-color: black;
+			color: #fff;
+			text-align: center;
+			border-radius: 5px;
+			padding: 5px;
+			position: absolute;
+			bottom: 50px;
+			left: 50%;
+			transform: translateX(-50%);
+			opacity: 0;
+			transition: opacity 0.3s;
+			font-size: 12px;
+		}
+
+		.image-quality-button:hover .tooltip {
 			visibility: visible;
 			opacity: 1;
 		}

@@ -154,6 +154,8 @@ typedef struct
 static vp_drm_context_t g_drm_context;
 static vpp_camera_t g_vpp_camera[VPP_CAM_MAX_CHANNELS];
 
+static int vp_set_isp_param(char *param, uint32_t length);
+static int vp_get_isp_param(char* result, uint32_t length);
 
 static void vp_print_debug_infos_for_multithread(vpp_codec_ctx_t *p_vpp_codec_ctx){
 
@@ -712,12 +714,10 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			osd_info->position[valid_osd_region_count].y = 50;
 			osd_info->position[valid_osd_region_count].width = 320;
 			osd_info->position[valid_osd_region_count].height = 200;
-			
 			p_vpp_codec_ctx->osd_chn = valid_osd_region_count;
 			valid_osd_region_count++;
 		}
 		osd_info->valid_osd_region_count = valid_osd_region_count;
-		
 		//gdc
 		p_vpp_camera->vp_vflow_contex.gdc_info.input_width = input_width;
 		p_vpp_camera->vp_vflow_contex.gdc_info.input_height = input_height;
@@ -769,7 +769,6 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 
 			//for thread param
 			p_vpp_codec_ctx->p_vpp_camera = p_vpp_camera;
-			
 		}
 		vpp_camera_index++;
 	}
@@ -1365,10 +1364,22 @@ static int32_t get_pipeline_id_by_video_id(int32_t video_id)
 	exit(-1);
 	return -1;
 }
-
+//
 int32_t vpp_camera_param_set(SOLUTION_PARAM_E type, char* val, uint32_t length)
 {
 	int32_t ret = 0;
+	switch(type){
+		case SOLUTION_SET_ISP_PARAM:
+			{
+				ret = vp_set_isp_param(val, length);
+				break;
+			}
+		default:
+			{
+				ret= -1;
+				break;
+			}
+	}
 	return ret;
 }
 
@@ -1379,7 +1390,6 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 	ImageFrame image_frame = {0};
 	char file_name[256] = {0};
 	hbn_vnode_image_t *hbn_vnode_image = NULL;
-
 	switch(type)
 	{
 	case SOLUTION_VENC_CHN_PARAM_GET: // 获取某个编码通道的配置
@@ -1596,11 +1606,179 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_UPLOAD_FILE, (void*)file_name);
 			break;
 		}
+	case SOLUTION_GET_ISP_PARAM:
+		{
+			ret = vp_get_isp_param(val, *length);
+			break;
+		}
 	default:
 		{
 			ret= -1;
 			break;
 		}
 	}
+	return ret;
+}
+
+#include "vpp_isp_param_json.h"
+/*
+	*result：字符数组的起始地址
+	length: 字符串数组的长度
+*/
+static int vp_get_isp_param(char* result, uint32_t length){
+	int ret = 0;
+	vp_isp_all_param_t isp_all_param = {0};
+	cJSON *root_json = NULL;
+
+	// 检查输入参数有效性
+	if (result == NULL || length == 0) {
+		SC_LOGE("Invalid input parameters: result is NULL or length is 0");
+		return -1;
+	}
+	// 解析输入JSON获取video_id
+	root_json = cJSON_Parse(result);
+	if (root_json == NULL) {
+		SC_LOGE("Failed to parse input JSON");
+		return -1;
+	}
+
+	cJSON *video_id_item = cJSON_GetObjectItem(root_json, "video_id");
+	if (video_id_item == NULL || !cJSON_IsNumber(video_id_item)) {
+		SC_LOGE("Invalid or missing video_id in input JSON");
+		cJSON_Delete(root_json);
+		return -1;
+	}
+	int video_id = video_id_item->valueint;
+	SC_LOGI("recv [get isp param] cmd's video_id : %d", video_id);
+	cJSON_Delete(root_json);  // 释放JSON对象
+
+	// 获取pipeline和handle
+	int32_t pipeline_id = get_pipeline_id_by_video_id(video_id);
+	hbn_vnode_handle_t handle = g_vpp_camera[pipeline_id].vp_vflow_contex.isp_node_handle;
+
+	// 调用ISP API获取参数
+	ret = vp_isp_get_all_param(handle, &isp_all_param);
+	if (ret != 0) {
+		SC_LOGE("[%d] Failed to get isp parameters, ret=%d", video_id, ret);
+		return ret;
+	}
+
+	// 将参数转换为JSON字符串
+	char *json_result_str = vp_isp_all_param_to_json(video_id, &isp_all_param);
+	if (json_result_str == NULL) {
+		SC_LOGE("[%d] isp param to json failed.", video_id);
+		return -1;
+	}
+
+	// 检查JSON字符串长度是否适合存储到result缓冲区
+	size_t json_len = strlen(json_result_str);
+	if (json_len >= length) {  // 预留1字节给终止符'\0'
+		SC_LOGE("[%d] JSON result too long (%zu bytes), buffer size is %u bytes",
+				video_id, json_len, length);
+		free(json_result_str);
+		return -1;
+	}
+
+	// 复制JSON字符串到结果缓冲区
+	strncpy(result, json_result_str, length - 1);
+	result[length - 1] = '\0';  // 确保字符串终止
+
+	// 清理资源
+	free(json_result_str);
+	return ret;
+}
+
+static int vp_set_isp_param(char *param, uint32_t length){
+ 	int ret = 0;
+	cJSON *root_json = NULL;
+	if (param == NULL || length == 0) {
+		SC_LOGE("Invalid input parameters: result is NULL or length is 0");
+		return -1;
+	}
+	root_json = cJSON_Parse(param);
+	if (root_json == NULL) {
+		SC_LOGE("Failed to parse input JSON");
+		return -1;
+	}
+	//video_id
+	cJSON *video_id_item = cJSON_GetObjectItem(root_json, "video_id");
+	if (video_id_item == NULL || !cJSON_IsNumber(video_id_item)) {
+		SC_LOGE("Invalid or missing [video_id] in input JSON");
+		cJSON_Delete(root_json);
+		return -1;
+	}
+	int video_id = video_id_item->valueint;
+	SC_LOGI("recv [set isp param] cmd's [video_id] : %d", video_id);
+
+	int32_t pipeline_id = get_pipeline_id_by_video_id(video_id);
+	hbn_vnode_handle_t handle = g_vpp_camera[pipeline_id].vp_vflow_contex.isp_node_handle;
+	//params
+	cJSON *params = cJSON_GetObjectItem(root_json, "params");
+	if (params == NULL || !cJSON_IsObject(params)) {
+		SC_LOGE("Invalid or missing [params] in input JSON");
+		cJSON_Delete(root_json);
+		return -1;
+	}
+
+	//group key
+	cJSON *group_key = cJSON_GetObjectItem(params, "groupKey");
+	if (group_key == NULL || !cJSON_IsString(group_key)) {
+		SC_LOGE("Invalid or missing [groupKey] in input JSON");
+		cJSON_Delete(root_json);
+		return -1;
+	}
+
+	//configs
+	cJSON *configs = cJSON_GetObjectItem(params, "configs");
+	if (configs == NULL || !cJSON_IsObject(configs)) {
+		SC_LOGE("Invalid or missing [configs] in input JSON");
+		cJSON_Delete(root_json);
+		return -1;
+	}
+
+	hbn_isp_mode_e mode;
+	char *group_key_str = group_key->valuestring;
+	if(strcmp(group_key_str, "image") == 0){
+		vp_isp_image_param_t image_param;
+		ret = vp_isp_json_to_image_param(configs, &mode, &image_param);
+		if(ret == 0){
+			ret = vp_isp_set_image_param(handle, mode, &image_param);
+		}else{
+			SC_LOGE("Invalid or missing [image params] in input JSON");
+		}
+	}else if(strcmp(group_key_str, "exposure") == 0){
+		vp_isp_exposure_param_t exposure_param;
+		ret = vp_isp_json_to_exposure_param(configs, &mode, &exposure_param);
+		if(ret == 0){
+			ret = vp_isp_set_exposure_param(handle, mode, &exposure_param);
+		}else{
+			SC_LOGE("Invalid or missing [exposure params] in input JSON");
+		}
+	}else if(strcmp(group_key_str, "whiteBalance") == 0){
+		vp_isp_awb_param_t awb_param;
+		ret = vp_isp_json_to_awb_param(configs, &mode, &awb_param);
+		if(ret == 0){
+			ret = vp_isp_set_awb_param(handle, mode, &awb_param);
+		}else{
+			SC_LOGE("Invalid or missing [awb params] in input JSON");
+		}
+	}else if(strcmp(group_key_str, "nr2d") == 0){
+		vp_isp_image_enhancement_param_t nr2d_param;
+		ret = vp_isp_json_to_2dnr_or_3dnr_param(configs, &mode, &nr2d_param);
+		if(ret == 0){
+			ret = vp_isp_set_image_enhancement_2dnr_param(handle, mode, &nr2d_param);
+		}else{
+			SC_LOGE("Invalid or missing [nr2d params] in input JSON");
+		}
+	}else if(strcmp(group_key_str, "nr3d") == 0){
+		vp_isp_image_enhancement_param_t nr3d_param;
+		ret = vp_isp_json_to_2dnr_or_3dnr_param(configs, &mode, &nr3d_param);
+		if(ret == 0){
+			ret = vp_isp_set_image_enhancement_3dnr_param(handle, mode, &nr3d_param);
+		}else{
+			SC_LOGE("Invalid or missing [nr3d params] in input JSON");
+		}
+	}
+	cJSON_Delete(root_json);  // 释放JSON对象
 	return ret;
 }

@@ -248,5 +248,3 @@ class BrowserCapabilityDetector {
 	}
 }
 export default BrowserCapabilityDetector;
-
-

@@ -1,0 +1,300 @@
+/* 1. 对话框遮罩层（保持不变，确保全屏覆盖） */
+.image-quality-dialog {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100vw;
+	height: 100vh;
+	background: rgba(0, 0, 0, 0.7);
+	z-index: 1000;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	padding: 20px;
+	box-sizing: border-box;
+}
+
+/* 2. 对话框内容区（关键修改：增大宽高比例，从 66.67% 改为 80%） */
+.dialog-content {
+	width: 80vw; /* 原 66.67vw，增大宽度 */
+	height: 80vh; /* 原 66.67vh，增大高度 */
+	background: white;
+	border-radius: 10px;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+/* 3. 标题栏（保持不变，自动适配宽度） */
+.dialog-header {
+	padding: 12px 24px;
+	background: #4CAF50;
+	color: white;
+	font-size: 16px;
+	font-weight: 600;
+	border-bottom: 1px solid #eee;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+}
+
+.dialog-header .mode-tip {
+	font-size: 12px;
+	font-weight: normal;
+	opacity: 0.8;
+}
+
+/* 4. 主体内容区（保持不变，弹性布局自动填充增大后的空间） */
+.dialog-body {
+	flex: 1;
+	display: flex;
+	padding: 16px;
+	gap: 16px;
+	box-sizing: border-box;
+	overflow: hidden;
+}
+
+/* 5. 视频播放器容器（保持不变，随主体宽度按比例放大） */
+.video-player-container {
+	flex: 2;
+	height: 100%;
+	background: #000;
+	border-radius: 8px;
+	overflow: hidden;
+	position: relative;
+}
+
+/* 视频元素（保持不变，自动填充容器） */
+.video-player {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	pointer-events: none; /* 禁止点击交互 */
+}
+
+/* 视频覆盖层（保持不变） */
+.video-overlay {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+}
+
+/* 视频占位图（保持不变，自动居中） */
+.video-placeholder {
+	width: 100px;
+	height: 100px;
+	margin: auto;
+	opacity: 0.7;
+}
+/* H265 软件播放器的显示窗口*/
+.video_render_canvas {
+	width: 100% !important;
+	height: 100% !important;
+	object-fit: contain; /* 关键属性 */
+	background: transparent !important; /* 禁用默认黑背景 */
+}
+
+/* 6. 配置面板（保持不变，随主体宽度按比例放大，内容自动适配） */
+.config-panel {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	padding: 12px;
+	background: #f9f9f9;
+	border-radius: 8px;
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+/* 7. 调节组容器（保持不变，内容自动适配面板宽度） */
+.adjust-group {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding-bottom: 12px;
+	border-bottom: 1px solid #eee;
+}
+
+/* 调节组标题（保持不变） */
+.group-title {
+	font-size: 15px;
+	font-weight: 600;
+	color: #333;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.group-title .title-dot {
+	color: #4CAF50;
+}
+
+/* 8. 模式切换按钮容器（保持不变） */
+.mode-switch {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+/* 模式按钮（保持不变，自动适配面板宽度） */
+.mode-btn {
+	flex: 1;
+	padding: 6px 0;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	background: #fff;
+	color: #333;
+	font-size: 13px;
+	cursor: pointer;
+	transition: all 0.2s;
+}
+
+.mode-btn.active {
+	background: #4CAF50;
+	color: white;
+}
+
+.mode-btn:not(.active):hover {
+	background: #f5f5f5;
+}
+
+/* 9. 滑动条控制项（保持不变，自动适配面板宽度） */
+.slider-item {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+/* 滑动条标题（保持不变） */
+.slider-header {
+	display: flex;
+	justify-content: space-between;
+	font-size: 13px;
+	color: #555;
+}
+
+/* 滑动条样式（保持不变，自动适配面板宽度） */
+.param-slider {
+	width: 100%;
+	height: 6px;
+	appearance: none;
+	border-radius: 3px;
+	outline: none;
+}
+
+/* 滑动条（启用状态：Manual模式） */
+.param-slider.enabled {
+	background: #eee;
+	cursor: pointer;
+}
+
+.param-slider.enabled::-webkit-slider-thumb {
+	appearance: none;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #4CAF50;
+	cursor: pointer;
+	transition: all 0.2s;
+}
+
+/* 滑动条（禁用状态：Auto模式） */
+.param-slider.disabled {
+	background: #ddd;
+	cursor: not-allowed;
+}
+
+.param-slider.disabled::-webkit-slider-thumb {
+	appearance: none;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #aaa;
+	cursor: not-allowed;
+}
+
+/* 10. 开关控制项（保持不变） */
+.toggle-item {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-size: 13px;
+	color: #555;
+}
+
+/* 自定义开关样式（保持不变） */
+.toggle-switch {
+	position: relative;
+	display: inline-block;
+	width: 40px;
+	height: 20px;
+}
+
+.toggle-switch input {
+	opacity: 0;
+	width: 0;
+	height: 0;
+}
+
+/* 开关背景（保持不变） */
+.toggle-slider {
+	position: absolute;
+	cursor: pointer;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background-color: #ccc;
+	transition: 0.3s;
+	border-radius: 20px;
+}
+
+.toggle-slider:before {
+	position: absolute;
+	content: "";
+	height: 14px;
+	width: 14px;
+	left: 3px;
+	bottom: 3px;
+	background-color: white;
+	transition: 0.3s;
+	border-radius: 50%;
+}
+
+/* 开关激活状态（保持不变） */
+input:checked + .toggle-slider {
+	background-color: #4CAF50;
+}
+
+input:checked + .toggle-slider:before {
+	transform: translateX(20px);
+}
+
+/* 11. 底部返回按钮区（保持不变，自动适配宽度） */
+.dialog-footer {
+	padding: 16px 24px;
+	border-top: 1px solid #eee;
+	display: flex;
+	justify-content: flex-end;
+}
+
+/* 返回按钮（保持不变） */
+.back-btn {
+	padding: 10px 24px;
+	background: #4CAF50;
+	color: white;
+	border: none;
+	border-radius: 6px;
+	font-size: 16px;
+	cursor: pointer;
+	transition: background 0.3s;
+}
+
+.back-btn:hover {
+	background: #45a049;
+}

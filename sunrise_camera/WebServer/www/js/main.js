@@ -1,27 +1,46 @@
 import ConfigManager from "./ConfigManager.js";
 import DisplayWindowManager from "./DisplayWindowManager.js";
 import WebSocketProtocolHandler from "./WebSocketProtocolHandler.js";
+import ImageQualityControler from "./ImageQualityControler.js";
+import BrowserCapabilityDetector from './BrowserCapabilityDetector.js'
 
 let app = null;
 class App {
+	static playerWindowState = {
+		NORMAL_VIDEO_PLAYER: 'NormalVideoPlayer',
+		ISP_IMAGE_CONTROLER_VIDEO_PLAYER: 'ISPImageControlerVideoPlayer',
+	};
 	constructor() {
 		this.configManager = null;
 		this.displayWindowManager = null;
 		this.wsProtocolHandler = null;
 		this.serverIp = null;
+		this.browserCapabilities = null;
+		this.playerWindowState = null;
+	}
+	onChangePlayerWindowState(newState) {
+		console.log(`playerWindowState change, from ${this.playerWindowState} to ${newState}.`);
+		this.playerWindowState = newState;
 	}
 
 	// 初始化应用
 	init() {
-		const host = window.location.host;     // 例如 "192.168.1.10:8080" 或 "example.com:8080"
+		const host = window.location.host;	 // 例如 "192.168.1.10:8080" 或 "example.com:8080"
 		this.serverIp = host.split(':')[0];  // 提取 IP 地址或主机名
+
+		//浏览器能力检测
+		const detector = new BrowserCapabilityDetector();
+		this.browserCapabilities = detector.detectAll();
+		detector.showAll(this.browserCapabilities);
 
 		this.configManager = new ConfigManager();
 		this.displayWindowManager = new DisplayWindowManager();
+		this.imageQualityControler = new ImageQualityControler();
 
 		this.initWebSocketProtocolHandler();
 		this.initDisplayWindowManager();
 		this.initConfigManagerCallbacks();
+		this.initImageQualityControler();
 	}
 
 	// 初始化 WebSocket 连接
@@ -36,6 +55,9 @@ class App {
 			onAlogResult: this.handleAlogResult.bind(this),
 			onGetConfig: this.handleGetConfig.bind(this),
 			onVideoFrameInfo: this.handleVideoFrameInfo.bind(this),
+			onGetISPParam: this.handleGetIspParam.bind(this),
+			onSetISPParam: this.handleSetIspParam.bind(this),
+			onSyncISPParam: this.handleSyncIspParam.bind(this),
 		});
 	}
 
@@ -62,6 +84,7 @@ class App {
 		console.log("收到 APP_SWITCH 命令:", message);
 		if(message.Status == 200){
 			this.configManager.buildHTMLFromConfig(true);
+			this.onChangePlayerWindowState(App.playerWindowState.NORMAL_VIDEO_PLAYER);
 			this.startStream();
 		}else{
 			console.log("app switch is error:", message.app_status);
@@ -103,6 +126,7 @@ class App {
 		try {
 			this.configManager.updateConfig(solution_configs);
 			this.configManager.buildHTMLFromConfig(true);
+			this.onChangePlayerWindowState(App.playerWindowState.NORMAL_VIDEO_PLAYER);
 			this.startStream();
 
 		} catch (error) {
@@ -113,20 +137,95 @@ class App {
 	handleVideoFrameInfo(message){
 		this.displayWindowManager.updateVideoFrameInfo(message);
 	}
+	__handleISPWebSocketResponse(message) {
+		// 提取 ispParams 数据
+		const { ispParams } = message;
+		if (!ispParams) {
+			console.error("ISP参数设置结果缺少ispParams数据");
+			return null;
+		}
+
+		// 1. 处理正确情况：Status为200
+		if (message.Status === '200') {
+			const { video_id, params } = ispParams;
+
+			// 验证必要参数是否存在
+			if (!video_id || !params) {
+				console.error("正确响应但缺少必要参数", { video_id, params });
+				return null;
+			}
+
+			return { video_id, params };
+		// 2. 处理错误情况：无Status且包含ISP参数配置失败信息
+		} else if (message.Status === undefined && message.app_status) {
+			console.error("ISP参数配置失败:", message.app_status);
+
+			// TODO：可在此处添加错误提示UI展示逻辑
+			// 例如: this.showErrorToast(solution_configs.app_status);
+			return null;
+		}
+		// 3. 处理其他未知情况
+		else {
+			console.warn("未知的ISP参数设置结果状态", message);
+			return null;
+		}
+	}
+
+	handleGetIspParam(message) {
+		console.log("Recv [Get ISPParamResult]:", message);
+		const result = this.__handleISPWebSocketResponse(message);
+		if (result) {
+			const { video_id, params } = result;
+			this.imageQualityControler.handleISPGetAllParam(video_id, params);
+		}
+	}
+
+	handleSetIspParam(message) {
+		console.log("Recv [Set ISPParamResult]:", message);
+		const result = this.__handleISPWebSocketResponse(message);
+		if (result) {
+			const { video_id, params } = result;
+			this.imageQualityControler.handleISPSetParamResult(video_id, params);
+		}
+	}
+
+	handleSyncIspParam(message) {
+		console.log("Recv [Sync ISPParamResult]:", message);
+		const result = this.__handleISPWebSocketResponse(message);
+		if (result) {
+			const { video_id, params } = result;
+			this.imageQualityControler.handleISPUpdateAutoParam(video_id, params);
+		}
+	}
 	// 初始化显示窗口的回调函数
 	initDisplayWindowManager() {
 		const callbacks = {
 			onCaptureVIN: (video_index) => this.handleCapture('vin', 'raw', video_index),
 			onCaptureISP: (video_index) => this.handleCapture('isp', 'yuv', video_index),
 			onCaptureVSE: (video_index) => this.handleCapture('vse', 'yuv', video_index),
+			onImageQualityControl: (video_index) => this.handleImageQualityControl(video_index),
 		};
-		this.displayWindowManager.init(this.serverIp, callbacks);
+		this.displayWindowManager.init(this.serverIp, this.browserCapabilities, callbacks);
 	}
 
 	// 处理捕获命令
 	handleCapture(type, format, video_index) {
 		const cmdData = { type, format, videoNum: video_index };
 		this.wsProtocolHandler.snapshot(cmdData);
+	}
+
+	handleImageQualityControl(video_index) {
+		this.stopNormalVideoPlayer(); //与imageQualityControler的 onReturn 回调对称
+
+		let codec_types = this.configManager.getStreamCodecType();
+
+		let codec_type = codec_types[video_index - 1]; //video_index 从1开始
+		this.imageQualityControler.handleImageQualityControl(video_index, codec_type);
+
+		const cmdData = { video_id: Number(video_index) };
+		this.wsProtocolHandler.getISPParam(JSON.stringify(cmdData)); //JSON转换成字符串，所以param 不是object是个string
+		//当前是 播放器在 图像质量调整的页面
+		this.onChangePlayerWindowState(App.playerWindowState.ISP_IMAGE_CONTROLER_VIDEO_PLAYER);
 	}
 
 	// 初始化配置管理器的回调函数
@@ -138,27 +237,50 @@ class App {
 		};
 		this.configManager.init(callbacks);
 	}
+	initImageQualityControler() {
+		const callbacks = {
+			onReturn: () => { // 图像配置界面关闭回调： 切换回正常的视频播放页面
+				this.startNormalVideoPlayer();
+				this.onChangePlayerWindowState(App.playerWindowState.NORMAL_VIDEO_PLAYER);
+			},
+			onSetISPParam:(data) =>{
+				this.wsProtocolHandler.setISPParam(JSON.stringify(data))
+			},
+			onSyncISPAutoModeParam:(data) =>{
+				this.wsProtocolHandler.syncISPParam(JSON.stringify(data))
+			},
+		};
+		this.imageQualityControler.init(this.serverIp, this.browserCapabilities, callbacks);
+	}
 
 	startStream() {
-		console.log("start stream .");
-		let codec_types = this.configManager.getStreamCodecType();
-		this.displayWindowManager.startPlayer(codec_types);
-		let display_window_count = this.displayWindowManager.getDisplayWindowCount();
-		this.wsProtocolHandler.startStream(Number(display_window_count));
+		console.log(`start stream.`);
+		if(App.playerWindowState.NORMAL_VIDEO_PLAYER === this.playerWindowState){
+			let codec_types = this.configManager.getStreamCodecType();
+			this.displayWindowManager.startPlayer(codec_types);
+			let display_window_count = this.displayWindowManager.getDisplayWindowCount();
+			this.wsProtocolHandler.startStream(Number(display_window_count));
+		}else{
+			console.log(`start stream, current player state is ${App.playerWindowState.ISP_IMAGE_CONTROLER_VIDEO_PLAYER}, so ignore it.`);
+		}
 	}
 
 	stopStream() {
-		console.log("stop stream .");
-		this.displayWindowManager.stopPlayer();
-		let display_window_count = this.displayWindowManager.getDisplayWindowCount();
-		this.wsProtocolHandler.stopStream(Number(display_window_count));
+		console.log(`stop stream.`);
+		if(App.playerWindowState.NORMAL_VIDEO_PLAYER === this.playerWindowState){
+			this.displayWindowManager.stopPlayer();
+			let display_window_count = this.displayWindowManager.getDisplayWindowCount();
+			this.wsProtocolHandler.stopStream(Number(display_window_count));
+		}else{
+			console.log(`stop stream, current player state is ${App.playerWindowState.ISP_IMAGE_CONTROLER_VIDEO_PLAYER}, so ignore it.`);
+		}
 	}
-	stopPlayer(){
-		console.log("stop player .");
+	stopNormalVideoPlayer(){
+		console.log("stop normal video player .");
 		this.displayWindowManager.stopPlayer();
 	}
-	startPlayer() {
-		console.log("start player .");
+	startNormalVideoPlayer() {
+		console.log("start normal video player .");
 		let codec_types = this.configManager.getStreamCodecType();
 		this.displayWindowManager.startPlayer(codec_types);
 	}

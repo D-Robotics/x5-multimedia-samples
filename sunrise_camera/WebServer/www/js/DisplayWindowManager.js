@@ -1,4 +1,4 @@
-import BrowserCapabilityDetector from './BrowserCapabilityDetector.js'
+
 import PlayerWrapper from './PlayerWrapper.js';
 class DisplayWindow {
 	constructor() {
@@ -29,21 +29,19 @@ class DisplayWindowManager {
 		this.userCallbacks = {
 			onCaptureVIN: null,
 			onCaptureISP: null,
-			onCaptureVSE: null
+			onCaptureVSE: null,
+			onImageQualityControl: null,
 		};
 		this.mediaServerIPAddr = null;
 		this.browserCapabilities = null;
 
 	}
-	init(mediaServerIPAddr, callbacks = {}) {
-		//浏览器能力检测
-		const detector = new BrowserCapabilityDetector();
-		this.browserCapabilities = detector.detectAll();
-		console.log('浏览器能力检测结果:', this.browserCapabilities);
-		detector.showAll(this.browserCapabilities);
+	init(mediaServerIPAddr, browserCapabilities ,callbacks = {}) {
 
 		//服务器IP地址
 		this.mediaServerIPAddr = mediaServerIPAddr;
+		//浏览器的能力
+		this.browserCapabilities = browserCapabilities;
 		//回调函数
 		this.userCallbacks = callbacks;
 
@@ -100,11 +98,13 @@ class DisplayWindowManager {
 				var captureRawButton = this.createCaptureButton("RAW", "Sensor 原始 RAW 图", i + 1, j + 1);
 				var captureIspButton = this.createCaptureButton("ISP", "ISP 调校的 YUV 图", i + 1, j + 1);
 				var captureVseButton = this.createCaptureButton("VSE", "VSE 处理的 YUV 图", i + 1, j + 1);
+				var imageQualityBtn = this.createImageQualityButton(i + 1, j + 1);
 
 				// 将按钮添加到按钮容器中
 				captureButtonContainer.appendChild(captureRawButton);
 				captureButtonContainer.appendChild(captureIspButton);
 				captureButtonContainer.appendChild(captureVseButton);
+				captureButtonContainer.appendChild(imageQualityBtn);
 
 				// 将 video、canvas、overlay、overlayAlog 添加到 videoContainer 中
 				videoContainer.appendChild(video);
@@ -204,6 +204,11 @@ When destroying a Display Window, if a player is in the startup state, stop it."
 				if (captureIspButton) captureIspButton.style.display = 'none';
 				if (captureVseButton) captureVseButton.style.display = 'none'; //盒子模式有VSE, 由于回灌模式获取图片需要考虑线程同步，暂时关闭
 			}
+
+			const imageQualityBtn = document.getElementById(`image_quality_btn_${displayWindowCount}_${i}`);
+			if (imageQualityBtn) {
+				imageQualityBtn.style.display = radioButton.checked ? 'flex' : 'none';
+			}
 		}
 	}
 
@@ -249,6 +254,21 @@ When destroying a Display Window, if a player is in the startup state, stop it."
 					break;
 				default:
 					break;
+			}
+		}else if (target.classList.contains("image-quality-button")) {
+			var buttonId = target.id;
+			if (buttonId.startsWith("image_quality_btn_")) {
+				var layoutNum = buttonId.split("_")[3];
+				var videoNum = buttonId.split("_")[4];
+
+				// 弹出图像质量控制对话框
+				if (this.userCallbacks && typeof this.userCallbacks.onImageQualityControl === 'function') {
+					this.userCallbacks.onImageQualityControl(videoNum);
+				} else {
+					console.error("onImageQualityControl is not defined!", this.userCallbacks);
+				}
+
+				console.log("Clicked Image Quality button for layout " + layoutNum + ", video " + videoNum);
 			}
 		}
 	}
@@ -468,7 +488,7 @@ When destroying a Display Window, if a player is in the startup state, stop it."
 		const {clientWidth:videoElementClientWidth, clientHeight:videoElementClientHeight} = display_window.player.displayWindowSize();
 		const {videoWidth,videoHeight} = display_window.player.VideoResolutionSize();
 
-		// console.log(`display: ${videoElementClientWidth}*${videoElementClientHeight}    video:${videoWidth}*${videoHeight}`);
+		// console.log(`display: ${videoElementClientWidth}*${videoElementClientHeight}	video:${videoWidth}*${videoHeight}`);
 		var canvas = document.getElementById(`canvas${this.displayWindowCountInUsed}_${index}`);
 		var context2D = canvas.getContext("2d");
 
@@ -621,6 +641,15 @@ When destroying a Display Window, if a player is in the startup state, stop it."
 		captureButton.innerHTML = "📸 " + mode + " <span class='tooltip'>" + tooltip + "</span>";
 		captureButton.display = "none"
 		return captureButton;
+	}
+	// 修改创建图像质量控制按钮的方法，使用独立样式类
+	createImageQualityButton(layoutNum, videoNum) {
+		var btn = document.createElement("button");
+		btn.className = "image-quality-button";
+		btn.id = `image_quality_btn_${layoutNum}_${videoNum}`;
+		btn.innerHTML = "⚙️ 图像质量控制 <span class='tooltip'>调整图像质量参数</span>";
+		btn.style.display = "none"; // 默认隐藏
+		return btn;
 	}
 }
 export default DisplayWindowManager;

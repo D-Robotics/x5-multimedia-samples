@@ -25,12 +25,25 @@ LIB += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/lib
 LIB += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/lib/aarch64-linux-gnu
 endif
 
+ifeq ($(BOARD_BUILD),1)
+INC += -I/usr/include/drm/
+LIB += -L/usr/hobot/lib/
+endif
+
 CC := $(COMPILE_PREFIX)gcc
+ifeq ($(BOARD_BUILD),0)
 CFLAGS := $(INC) -Werror -O0 -DBSD=1 -fPIC $(CFLAGS_EX) -Wno-error=unused-function -DVERSION=\"$(VERSION)\"
 CXX := $(COMPILE_PREFIX)c++
 CXXFLAGS := $(CFLAGS)
 LINK := $(COMPILE_PREFIX)c++ -o
 LIBRARY_LINK := $(COMPILE_PREFIX)c++ -shared -o
+else
+CFLAGS := $(INC) -O0 -DBSD=1 -fPIC $(CFLAGS_EX) -Wno-error=unused-function -DVERSION=\"$(VERSION)\"
+CXX := $(COMPILE_PREFIX)g++
+CXXFLAGS := $(CFLAGS)
+LINK := $(COMPILE_PREFIX)g++ -o
+LIBRARY_LINK := $(COMPILE_PREFIX)g++ -shared -o
+endif
 LIBRARY_LINK_STATIC := $(COMPILE_PREFIX)ar cr
 LIBRARY_LINK_OPTS =
 STRIP := $(COMPILE_PREFIX)strip

@@ -2,7 +2,7 @@
 
 #define SENSOR_WIDTH  4096
 #define SENSOR_HEIGHT  3072
-#define SENSOE_FPS 30
+#define SENSOE_FPS 1
 #define RAW10 0x2B
 
 static mipi_config_t ov50h40_mipi_config = {

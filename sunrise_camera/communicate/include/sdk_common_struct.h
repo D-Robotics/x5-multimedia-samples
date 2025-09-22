@@ -749,6 +749,11 @@ typedef struct
 	T_SDK_DECODE_PARAM_CHECK_INFO decode_param_check_info;
 }T_SDK_CHECK_INFO;
 
+#define SDK_JSON_PARAM_MAX_LEN 1024
+typedef struct
+{
+	char cmd_and_result[SDK_JSON_PARAM_MAX_LEN];
+}T_SDK_JOSN_GET_CMD_PARAM;
 #if defined (__cplusplus)
 }
 #endif

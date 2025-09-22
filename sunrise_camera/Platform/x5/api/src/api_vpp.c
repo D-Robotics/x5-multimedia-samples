@@ -43,6 +43,8 @@ static sdk_cmd_reg_t cmd_reg[] =
 	{SDK_CMD_VPP_GPIO_STATE_GET, 				vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_ADC_VALUE_GET, 				vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_ISP_MODE_SET, 					vpp_cmd_impl,				1},
+	{SDK_CMD_VPP_ISP_PARAM_GET, 				vpp_cmd_impl,				1},
+	{SDK_CMD_VPP_ISP_PARAM_SET, 				vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_ADEC_DATA_PUSH, 				vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_GET_RAW_FRAME, 				vpp_cmd_impl,				1},
 	{SDK_CMD_VPP_GET_ISP_FRAME, 				vpp_cmd_impl,				1},
@@ -366,6 +368,16 @@ int32_t vpp_cmd_impl(SDK_CMD_E cmd, void* param)
 			break;
 		case SDK_CMD_VPP_VENC_BITRATE_SET:
 			ret = solution_handle_param_set(SOLUTION_VENC_BITRATE_SET, (char*)param, sizeof(int));
+			break;
+		case SDK_CMD_VPP_ISP_PARAM_GET:
+			{
+				T_SDK_JOSN_GET_CMD_PARAM *json_param_p = (T_SDK_JOSN_GET_CMD_PARAM*)param;
+				unsigned int length = SDK_JSON_PARAM_MAX_LEN;
+				ret = solution_handle_param_get(SOLUTION_GET_ISP_PARAM, (char*)json_param_p->cmd_and_result, &length);
+				break;
+			}
+		case SDK_CMD_VPP_ISP_PARAM_SET:
+			ret = solution_handle_param_set(SOLUTION_SET_ISP_PARAM, (char*)param, sizeof(int));
 			break;
 		default:
 			ret = -1;

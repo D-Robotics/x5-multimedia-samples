@@ -21,6 +21,7 @@ static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
 	{"settle", optional_argument, NULL, 't'},
 	{"mode", optional_argument, NULL, 'm'},
+	{"channel-type", optional_argument, NULL, 'c'},
 	{NULL, 0, NULL, 0}
 };
 
@@ -36,6 +37,7 @@ static void print_help() {
 	printf("  -s <sensor_index>      Specify sensor index\n");
 	printf("  -t <settle_value>      Specify settle time for debug\n");
 	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t\n");
+	printf("  -c <channel_type>      Specify channel type:io (isp online), if (isp offline)\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
 }
@@ -53,6 +55,7 @@ static int settle = -1;
 static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static uint32_t link_port = 0;
 static uint32_t sensor_type = 0;
+static uint32_t online_mode_en = 0;
 
 int main(int argc, char** argv) {
 	int ret = 0;
@@ -63,7 +66,7 @@ int main(int argc, char** argv) {
 	int sensor_indexes[MAX_SENSORS] = {-1};
 	int sensor_count = 0;
 
-	while((c = getopt_long(argc, argv, "s:t:m:h",
+	while((c = getopt_long(argc, argv, "s:t:m:c:h",
 							long_options, &opt_index)) != -1) {
 		switch (c)
 		{
@@ -80,6 +83,15 @@ int main(int argc, char** argv) {
 			break;
 		case 'm':
 			sensor_mode = atoi(optarg);
+			break;
+		case 'c':
+			if (strcmp(optarg, "io") == 0) {
+				online_mode_en = 1;  // 启用 online 模式
+			} else if (strcmp(optarg, "if") == 0) {
+				online_mode_en = 0;  // 启用 offline 模式
+			}else {
+				online_mode_en = 0;  // 启用 offline 模式
+			}
 			break;
 		case 'h':
 		default:
@@ -225,6 +237,25 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 
+	if(online_mode_en) /* use online mode*/
+	{
+		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 1;
+		sensor_config->vin_ochn_attr->ddr_en = 1;
+		printf("use online mode \n%s() cim_isp_flyby = %d , vin_ochn_ddr_en = %d\n",
+			__func__ ,
+			sensor_config->vin_node_attr->cim_attr.cim_isp_flyby ,
+			sensor_config->vin_ochn_attr->ddr_en);
+	}
+	else /* default offline mode*/
+	{
+		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 0;
+		sensor_config->vin_ochn_attr->ddr_en = 1;
+		printf("use offline mode \n%s() cim_isp_flyby = %d , vin_ochn_ddr_en = %d\n",
+			__func__ ,
+			sensor_config->vin_node_attr->cim_attr.cim_isp_flyby ,
+			sensor_config->vin_ochn_attr->ddr_en);
+	}
+
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
 	ERR_CON_EQ(ret, 0);
 	// 设置基本属性
@@ -282,6 +313,21 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &pipe_contex->isp_node_handle;
 
+	if(online_mode_en) /* use online mode*/
+	{
+		sensor_config->isp_attr->input_mode = 0;
+		printf("%s() isp_attr input_mode : %d\n",
+			__func__ ,
+			sensor_config->isp_attr->input_mode);
+	}
+	else /* default offline mode*/
+	{
+		sensor_config->isp_attr->input_mode = 2;
+		printf("%s() isp_attr input_mode : %d\n",
+			__func__ ,
+			sensor_config->isp_attr->input_mode);
+	}
+
 	ret = hbn_vnode_open(HB_ISP, 0, AUTO_ALLOC_ID, isp_node_handle);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vnode_set_attr(*isp_node_handle, isp_attr);
@@ -305,6 +351,25 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 
 int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	int32_t ret = 0;
+	uint32_t src_out_channel = 0;
+	uint32_t dst_input_channel = 0;
+
+	if(online_mode_en) /* use online mode*/
+	{
+		src_out_channel = 1;
+		dst_input_channel = 0;
+		printf("%s() src_out_channel : %d , dst_input_channel : %d\n",
+			__func__ ,
+			src_out_channel , dst_input_channel);
+	}
+	else /* default offline mode*/
+	{
+		src_out_channel = 0;
+		dst_input_channel = 0;
+		printf("%s() src_out_channel : %d , dst_input_channel : %d\n",
+			__func__ ,
+			src_out_channel , dst_input_channel);
+	}
 
 	// 创建 pipeline 中的每个 node
 	ret = create_camera_node(pipe_contex);
@@ -325,9 +390,9 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vin_node_handle,
-							1,
+							src_out_channel,
 							pipe_contex->isp_node_handle,
-							0);
+							dst_input_channel);
 	ERR_CON_EQ(ret, 0);
 
 	if(sensor_type != SENSOR_TYPE_NORMAL) {

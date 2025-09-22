@@ -28,16 +28,21 @@
 
 typedef enum {
 	WS_CMD_UNDEFINE = -1,
-	WS_CMD_HEARTBEAT,
-	WS_CMD_SWITCH_SOLUTION,
-	WS_CMD_SNAP,
-	WS_CMD_START_STREAM,
-	WS_CMD_STOP_STREAM,
-	WS_CMD_SYNC_TIME,
-	WS_CMD_SET_BITRATE,
-	WS_CMD_GET_CONFIG,
-	WS_CMD_SAVE_CONFIG,
-	WS_CMD_RECOVERY_CONFIG,
+	WS_CMD_HEARTBEAT = 0,
+	WS_CMD_SWITCH_SOLUTION = 1,
+	WS_CMD_SNAP = 2,
+	WS_CMD_START_STREAM = 3,
+	WS_CMD_STOP_STREAM = 4,
+	WS_CMD_SYNC_TIME = 5,
+	WS_CMD_SET_BITRATE = 6,
+	WS_CMD_GET_CONFIG = 7,
+	WS_CMD_SAVE_CONFIG = 8,
+	WS_CMD_RECOVERY_CONFIG = 9,
+	WS_CMD_ALOG_RESULT = 10,
+	WS_CMD_VIDEO_FRAME_INFO = 11,
+	WS_CMD_GET_ISP_PARAM = 12,
+	WS_CMD_SET_ISP_PARAM = 13,
+	WS_CMD_SYNC_ISP_PARAM = 14,
 } WS_CMD_KIND;
 
 void ws_send_respose(ws_list *ws_lst, ws_client *ws_clt, char *msg)
@@ -55,6 +60,41 @@ void ws_send_respose(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 	list_multicast_one(ws_lst, ws_clt, m);
 	message_free(m);
 	free(m);
+}
+void ws_handle_isp_get_param(ws_list *ws_lst, ws_client *ws_clt, char *ws_msg, cJSON *root, int cmd_kind){
+	int ret = 0;
+	T_SDK_JOSN_GET_CMD_PARAM json_result;
+
+	memset(json_result.cmd_and_result, 0, SDK_JSON_PARAM_MAX_LEN);
+	cJSON *param_item = cJSON_GetObjectItem(root, "param");
+	if (param_item == NULL || !cJSON_IsString(param_item) || param_item->valuestring == NULL) {
+		SC_LOGE("Invalid or missing 'param' field in request");
+		return;
+	}
+
+	size_t param_len = strlen(param_item->valuestring);
+	if (param_len >= SDK_JSON_PARAM_MAX_LEN) {
+		SC_LOGE("Param length exceeds max limit (%zu > %d)",
+				param_len, SDK_JSON_PARAM_MAX_LEN - 1);
+		return;
+	}
+	strncpy(json_result.cmd_and_result, param_item->valuestring, SDK_JSON_PARAM_MAX_LEN - 1);
+	json_result.cmd_and_result[SDK_JSON_PARAM_MAX_LEN - 1] = '\0'; // 确保字符串终止
+	ret = SDK_Cmd_Impl(SDK_CMD_VPP_ISP_PARAM_GET, (void *)&json_result);
+	if(ret == 0){
+		sprintf(ws_msg, "{\"kind\":%d,\"Status\":\"200\" ,\"ispParams\": %s}", cmd_kind,
+			json_result.cmd_and_result);
+	}else{
+		sprintf(ws_msg, "{\"kind\":%d,\"app_status\": \"ISP 参数配置失败\", \"ispParams\": %s}", cmd_kind,
+			json_result.cmd_and_result);
+	}
+
+	// char *cmd_name = "WS_CMD_GET_ISP_PARAM";
+	// if(cmd_kind == WS_CMD_SYNC_ISP_PARAM){
+	// 	cmd_name = "WS_CMD_SYNC_ISP_PARAM";
+	// }
+	// SC_LOGI("[%s] ws_msg: %s", cmd_name, ws_msg);
+	ws_send_respose(ws_lst, ws_clt, ws_msg);
 }
 
 void save_video_data2file_for_debug(char* name, int nal_unit_type, unsigned char*data, int length){
@@ -317,6 +357,38 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			sprintf(ws_msg, "{\"kind\":%d,\"solution_configs\": %s}", WS_CMD_GET_CONFIG, config_str);
 			SC_LOGD("ws_msg: %s", ws_msg);
 			ws_send_respose(ws_lst, ws_clt, ws_msg);
+			break;
+		}
+		case WS_CMD_GET_ISP_PARAM:
+		{
+			SC_LOGI("================= GetISPParam ====================");
+			ws_handle_isp_get_param(ws_lst, ws_clt, ws_msg, root, cmd_kind);
+			break;
+		}
+		case WS_CMD_SET_ISP_PARAM:
+		{
+			SC_LOGI("================= SetISPParam ====================");
+			memset(ws_msg, 0, sizeof(ws_msg));
+			strcpy(cmd_context, cJSON_GetObjectItem(root, "param")->valuestring);
+			//for debug
+			print_json = cJSON_Parse(cmd_context);
+			SC_LOGI("Recv Set ISP Param: %s", cJSON_Print(print_json));
+			free(print_json);
+			ret = SDK_Cmd_Impl(SDK_CMD_VPP_ISP_PARAM_SET, (void*)cmd_context);
+			if(ret != 0){
+				sprintf(ws_msg, "{\"kind\":%d,\"app_status\": \"ISP 参数配置失败\",\"ispParams\": %s}",
+						WS_CMD_SET_ISP_PARAM, cmd_context);
+			}else{
+				sprintf(ws_msg, "{\"kind\":%d,\"Status\":\"200\", \"ispParams\": %s}",
+						WS_CMD_SET_ISP_PARAM, cmd_context);
+			}
+			ws_send_respose(ws_lst, ws_clt, ws_msg);
+			break;
+		}
+		case WS_CMD_SYNC_ISP_PARAM:
+		{
+			SC_LOGI("================= SyncISPParam ====================");
+			ws_handle_isp_get_param(ws_lst, ws_clt, ws_msg, root, cmd_kind);
 			break;
 		}
 		case WS_CMD_UNDEFINE:

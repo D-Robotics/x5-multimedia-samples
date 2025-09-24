@@ -604,8 +604,52 @@ static int32_t get_rc_params(media_codec_context_t *context,
 	return ret;
 }
 
+int32_t vp_encode_h265_lossless_mode_config(media_codec_context_t *context, EncodeParams *params) {
+	// only h265 support lossless mode
+	// disable sao and deblocking filter
+	if(params->lossless_mode){
+		if(params->codec_type != MEDIA_CODEC_ID_H265){
+			printf("Warning: only H265 support lossless mode, current type is %d.\n", params->codec_type);
+			return 0;
+		}
+		printf("enable h265 lossless mode.\n");
+	}else{
+		if(params->codec_type == MEDIA_CODEC_ID_H265){
+			printf("disable h265 lossless mode.\n");
+		}
+		return 0;
+	}
+	mc_h265_sao_params_t sao;
+	int ret = hb_mm_mc_get_sao_config(context, &sao);
+	if( ret != 0) {
+		printf("Failed to get sao params ret=0x%x\n", ret);
+		return -1;
+	}
+	sao.sample_adaptive_offset_enabled_flag = 0;
+	ret = hb_mm_mc_set_sao_config(context, &sao);
+	if( ret != 0) {
+		printf("Failed to get sao params ret=0x%x\n", ret);
+		return -1;
+	}
+
+	mc_video_deblk_filter_params_t deblk_filter;
+	ret = hb_mm_mc_get_deblk_filter_config(context, &deblk_filter);
+	if( ret != 0) {
+		printf("Failed to get deblk_filter ret=0x%x\n", ret);
+		return -1;
+	}
+	deblk_filter.h265_deblk.slice_deblocking_filter_disabled_flag = 1;
+	ret = hb_mm_mc_set_deblk_filter_config(context, &deblk_filter);
+	if( ret != 0) {
+		printf("Failed to set deblk_filter ret=0x%x\n", ret);
+		return -1;
+	}
+
+	return 0;
+}
 int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
-	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, const char *str_profile, bool external_buffer)
+	int32_t width, int32_t height, int32_t frame_rate, uint32_t bit_rate, const char *str_profile, 
+	bool external_buffer, uint32_t lossless_mode)
 {
 	mc_video_codec_enc_params_t *params;
 	H264Profile h264_profile = { 0, };
@@ -628,6 +672,12 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 	 * Therefore, GOP presets are restricted to 1 and 9.
 	 */
 	params->gop_params.gop_preset_idx = 1;
+	params->gop_params.decoding_refresh_type = 2;
+	if(lossless_mode){
+		params->h265_enc_config.transform_skip_enabled_flag = 1;
+		params->h265_enc_config.lossless_mode = 1;
+		params->h265_enc_config.tmvp_enable =1;
+	}
 	params->rot_degree = MC_CCW_0;
 	params->mir_direction = MC_DIRECTION_NONE;
 	params->frame_cropping_flag = false;
@@ -649,10 +699,23 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_id_t 
 		break;
 	case MEDIA_CODEC_ID_H265:
 		context->codec_id = MEDIA_CODEC_ID_H265;
-		params->rc_params.mode = MC_AV_RC_MODE_H265CBR;
-		get_rc_params(context, &params->rc_params);
-		params->rc_params.h265_cbr_params.frame_rate = frame_rate;
-		params->rc_params.h265_cbr_params.bit_rate = bit_rate;
+		if(lossless_mode){
+			params->rc_params.mode = MC_AV_RC_MODE_H265VBR;
+			r = hb_mm_mc_get_rate_control_config(context, &params->rc_params);
+			if (r != 0) {
+				printf("Failed to get rc params ret=0x%x\n", r);
+				return r;
+			}
+			params->rc_params.h265_vbr_params.intra_period = 20;
+			params->rc_params.h265_vbr_params.frame_rate = frame_rate;
+			params->rc_params.h265_vbr_params.intra_qp = 20;
+			params->rc_params.h265_vbr_params.qp_map_enable = 0;
+		}else{
+			params->rc_params.mode = MC_AV_RC_MODE_H265CBR;
+			get_rc_params(context, &params->rc_params);
+			params->rc_params.h265_cbr_params.frame_rate = frame_rate;
+			params->rc_params.h265_cbr_params.bit_rate = bit_rate;
+		}
 
 		r = h265_parse_profile(str_profile, &h265_profile);
 		if (r == 0) {
@@ -894,6 +957,8 @@ int parse_config(const char *filename,
 				params->performance_test = atoi(trimmed_value);
 			else if (strcmp(trimmed_key, "profile") == 0)
 				strcpy(params->profile, trimmed_value);
+			else if (strcmp(trimmed_key, "lossless_mode") == 0)
+				params->lossless_mode = atoi(trimmed_value);
 		}
 		if (strcmp(section, "decode") == 0) {
 			if (strstr(line, "decode_streams") != NULL) {
@@ -1195,6 +1260,12 @@ int32_t encode_video(media_codec_context_t *context, EncodeParams *params) {
 		printf("hb_mm_mc_initialize failed.\n");
 		return -1;
 	}
+	ret = vp_encode_h265_lossless_mode_config(context, params);
+	if (0 != ret)
+	{
+		printf("vp_encode_h265_lossless_mode_config failed.\n");
+		return -1;
+	}
 
 	ret = hb_mm_mc_configure(context);
 	if (0 != ret)
@@ -1342,6 +1413,12 @@ int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParam
 	if (0 != ret)
 	{
 		printf("hb_mm_mc_initialize failed.\n");
+		return -1;
+	}
+	ret = vp_encode_h265_lossless_mode_config(context, params);
+	if (0 != ret)
+	{
+		printf("vp_encode_h265_lossless_mode_config failed.\n");
 		return -1;
 	}
 
@@ -1564,6 +1641,12 @@ int32_t encode_video_performance_test(media_codec_context_t *context, EncodePara
 		return -1;
 	}
 
+	ret = vp_encode_h265_lossless_mode_config(context, params);
+	if (0 != ret)
+	{
+		printf("vp_encode_h265_lossless_mode_config failed.\n");
+		return -1;
+	}
 	ret = hb_mm_mc_configure(context);
 	if (0 != ret)
 	{
@@ -1987,7 +2070,8 @@ void *encode_thread(void *arg) {
 		params->frame_rate,
 		params->bit_rate,
 		params->profile,
-		is_enable_external_buffer);
+		is_enable_external_buffer,
+		params->lossless_mode);
 	if (ret != 0) {
 		printf("Encode config param error, type:%d width:%d height:%d"
 			" frame_rate: %d bit_rate:%d\n",

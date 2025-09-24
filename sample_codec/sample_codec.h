@@ -30,6 +30,7 @@ typedef struct {
 	int32_t frame_num;
 	int32_t external_buffer;
 	int32_t performance_test;
+	int32_t lossless_mode;		//只有H265支持
 	char profile[32];
 } EncodeParams;
 

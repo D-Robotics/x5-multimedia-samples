@@ -10,6 +10,7 @@ function print_usage() {
 	echo "run_tuning.sh --list: list all case"
 	echo "run_tuning.sh --run [sensor_index]: run this sensor"
 	echo "run_tuning.sh --online/offline/mcm/: Open the data stream in online/offline/mcm/ mode"
+	echo "run_tuning.sh --enable_vse: Open VSE , Send the width = 640 YUV image to hbPlayer"
 	echo "run_tuning.sh --tune 0/1: close/open tuning_server"
 	echo "run_tuning.sh --log 0/1: increase/decrease log level in logcat"
 	echo "run with [-w 2]: dump 20 yuv from the start"

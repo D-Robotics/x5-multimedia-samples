@@ -21,6 +21,10 @@
 #include "hb_media_codec.h"
 #include "hb_media_error.h"
 
+// 由于不需要预览多路，一次只需要初始化一个 channel， 默认使用 vse channel 0 ，如果需要使用 channel 1 ，那就更改 VSE_CHANNELS_USED 为 1 。
+#define VSE_CHANNELS_USED 0
+#define VSE_WIDTH_TARGET 640
+
 static void print_help() {
 	printf("Usage: isp_tuning [OPTIONS]\n");
 	printf("Options:\n");
@@ -38,6 +42,7 @@ tuning_context_t *global_ctx;
 static int settle = -1;
 static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static uint32_t pipelinemode = 2; // 0: Online ; 1: MCM; 2: Offline
+static uint32_t enable_vse = 0; // 0: disable_vse ; 1: enable_vse
 static uint32_t feedback_raw_hight;
 static uint32_t feedback_raw_width;
 static char feedback_raw_format[32] = {0};
@@ -184,6 +189,10 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 				printf("MCM mode enabled!!!\n");
 				pipelinemode = 1;
 			}
+			if (strcmp(long_options[option_index].name, "enable_vse") == 0) {
+				printf("VSE enabled!!!\n");
+				enable_vse = 1;
+			}
 			break;
 		case 'f':
 			ctx->feedback_times = atoi(optarg);
@@ -297,7 +306,9 @@ static void *tuning_main_worker_thread(void *arg)
 	int ret;
 	hbn_vnode_image_t raw_img = {0};
 	hbn_vnode_image_t yuv_img = {0};
+	hbn_vnode_image_t vse_img[VSE_CHANNELS_USED + 1] = {0};
 	static int32_t yuv_stream_cnt = 0;
+	hbn_vnode_handle_t vse_node_handle;
 	hbn_vnode_handle_t isp_node_handle;
 	hbn_vnode_handle_t vin_node_handle;
 	enum RAW_BIT raw_type;
@@ -327,6 +338,7 @@ static void *tuning_main_worker_thread(void *arg)
 	for (i = 0; i < ctx->sensor_count; i++) {
 		vin_node_handle = ctx->pipe_contex_info[i].pipe_contex.vin_node_handle;
 		isp_node_handle = ctx->pipe_contex_info[i].pipe_contex.isp_node_handle;
+		vse_node_handle = ctx->pipe_contex_info[i].pipe_contex.vse_node_handle;
 
 		if (ctx->send_raw) {
 			ret = hbn_vnode_getframe(vin_node_handle, 0, 1500, &raw_img);
@@ -356,6 +368,14 @@ static void *tuning_main_worker_thread(void *arg)
 			}
 		}
 
+		if(enable_vse)
+		{
+			ret = hbn_vnode_getframe(vse_node_handle, i, 2000, &vse_img[VSE_CHANNELS_USED]);
+			if (ret != 0) {
+				printf("hbn_vnode_getframe VSE channel %d failed\n", i);
+				continue;
+			}
+		}
 		ret = hbn_vnode_getframe(isp_node_handle, 0, 1500, &yuv_img);
 		if (ret) {
 			pr_tuning("Sensor-%d get buffer from isp fail\n", i);
@@ -372,7 +392,14 @@ static void *tuning_main_worker_thread(void *arg)
 		}
 
 		if (HBPLAYER_EN) {
-			ret = tuning_send_yuv_to_hbplayer(ctx->hbplayer_event, &yuv_img, i);
+			if(enable_vse)
+			{
+				ret = tuning_send_yuv_to_hbplayer(ctx->hbplayer_event, &vse_img[VSE_CHANNELS_USED], i);
+			}
+			else
+			{
+				ret = tuning_send_yuv_to_hbplayer(ctx->hbplayer_event, &yuv_img, i);
+			}
 			if (ret)
 				pr_tuning("send to hbplayer failed, skip it\n");
 		}
@@ -380,6 +407,10 @@ static void *tuning_main_worker_thread(void *arg)
 		// pr_tuning("get buffer size %ld-%ld\n", yuv_img.buffer.size[0], yuv_img.buffer.size[1]);
 #endif
 		hbn_vnode_releaseframe(isp_node_handle, 0, &yuv_img);
+		if(enable_vse)
+		{
+			hbn_vnode_releaseframe(vse_node_handle, i, &vse_img[VSE_CHANNELS_USED]);
+		}
 		if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
 			usleep(20*1000);
 		}
@@ -770,6 +801,64 @@ static int32_t create_isp_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	return RET_SUCCESS;
 }
 
+static int32_t create_vse_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode)
+{
+	int ret = 0;
+	hbn_vnode_handle_t *vse_node_handle = &pipe_contex->vse_node_handle;
+	isp_ichn_attr_t isp_ichn_attr = {0};
+	vse_attr_t vse_attr = {0};
+	vse_ichn_attr_t vse_ichn_attr = {0};
+	vse_ochn_attr_t vse_ochn_attr[VSE_CHANNELS_USED + 1] = {0};
+	uint32_t ichn_id = 0;
+	uint32_t hw_id = 0;
+	uint32_t input_width = 0;
+	uint32_t input_height = 0;
+	uint32_t ratio = 0;
+	hbn_buf_alloc_attr_t alloc_attr = {0};
+
+	// 获取 ISP 输入属性来确定 VSE 输入尺寸
+	ret = hbn_vnode_get_ichn_attr(pipe_contex->isp_node_handle, ichn_id, &isp_ichn_attr);
+	ERR_CON_EQ(ret, 0);
+	input_width = isp_ichn_attr.width;
+	input_height = isp_ichn_attr.height;
+
+	// 配置 VSE 输入通道属性
+	vse_ichn_attr.width = input_width;
+	vse_ichn_attr.height = input_height;
+	vse_ichn_attr.fmt = FRM_FMT_NV12;
+	vse_ichn_attr.bit_width = 8;
+
+	// 配置 VSE 输出通道属性
+	vse_ochn_attr[VSE_CHANNELS_USED].chn_en = CAM_TRUE;
+	vse_ochn_attr[VSE_CHANNELS_USED].roi.x = 0;
+	vse_ochn_attr[VSE_CHANNELS_USED].roi.y = 0;
+	vse_ochn_attr[VSE_CHANNELS_USED].roi.w = input_width;
+	vse_ochn_attr[VSE_CHANNELS_USED].roi.h = input_height;
+	vse_ochn_attr[VSE_CHANNELS_USED].fmt = FRM_FMT_NV12;
+	vse_ochn_attr[VSE_CHANNELS_USED].bit_width = 8;
+	// 全部设置到宽为 640 的像素，保证流畅，但是要注意，每个通道的功能和限制不同，如果修改 VSE_CHANNELS_USED 的数值，可能导致功能异常，需要参考 VSE 文档，了解每个通道的功能再进行修改。
+	ratio = input_width / VSE_WIDTH_TARGET;
+	vse_ochn_attr[VSE_CHANNELS_USED].target_w = VSE_WIDTH_TARGET;
+	vse_ochn_attr[VSE_CHANNELS_USED].target_h = input_height / ratio;
+
+
+	// 创建 VSE 节点
+	FUNC_EQ(hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, vse_node_handle), 0, return RET_FAILURE);
+	FUNC_EQ(hbn_vnode_set_attr(*vse_node_handle, &vse_attr), 0, return RET_FAILURE);
+	FUNC_EQ(hbn_vnode_set_ichn_attr(*vse_node_handle, ichn_id, &vse_ichn_attr), 0, return RET_FAILURE);
+	// 设置缓冲区属性
+	alloc_attr.buffers_num = 3;
+	alloc_attr.is_contig = 1;
+	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+
+	printf("hbn_vnode_set_ochn_attr: %d, %dx%d\n", VSE_CHANNELS_USED, vse_ochn_attr[VSE_CHANNELS_USED].target_w, vse_ochn_attr[VSE_CHANNELS_USED].target_h);
+	FUNC_EQ(hbn_vnode_set_ochn_attr(*vse_node_handle, VSE_CHANNELS_USED, &vse_ochn_attr[VSE_CHANNELS_USED]), 0, return RET_FAILURE);
+	FUNC_EQ(hbn_vnode_set_ochn_buf_attr(*vse_node_handle, VSE_CHANNELS_USED, &alloc_attr), 0, return RET_FAILURE);
+
+
+    return RET_SUCCESS;
+}
+
 static int32_t multi_pipe_create(tuning_context_t *ctx, uint32_t pipelinemode)
 {
 	int32_t i, ret = 0;
@@ -781,9 +870,13 @@ static int32_t multi_pipe_create(tuning_context_t *ctx, uint32_t pipelinemode)
 		FUNC_EQ(create_camera_node(pipe_contex), 0, return RET_FAILURE);
 		FUNC_EQ(create_vin_node(pipe_contex, pipelinemode), 0, return RET_FAILURE);
 		FUNC_EQ(create_isp_node(pipe_contex, pipelinemode), 0, return RET_FAILURE);
+		if(enable_vse)
+			FUNC_EQ(create_vse_node(pipe_contex, pipelinemode), 0, return RET_FAILURE);
 		FUNC_EQ(hbn_vflow_create(&pipe_contex->vflow_fd), 0, return RET_FAILURE);
 		FUNC_EQ(hbn_vflow_add_vnode(pipe_contex->vflow_fd, pipe_contex->vin_node_handle), 0, return RET_FAILURE);
 		FUNC_EQ(hbn_vflow_add_vnode(pipe_contex->vflow_fd, pipe_contex->isp_node_handle), 0, return RET_FAILURE);
+		if(enable_vse)
+			FUNC_EQ(hbn_vflow_add_vnode(pipe_contex->vflow_fd, pipe_contex->vse_node_handle), 0, return RET_FAILURE);
 
 		if (!BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
 			switch (pipelinemode) {
@@ -792,11 +885,27 @@ static int32_t multi_pipe_create(tuning_context_t *ctx, uint32_t pipelinemode)
 				ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 					pipe_contex->vin_node_handle, 1,
 					pipe_contex->isp_node_handle, 0);
+					if(enable_vse)
+					{
+						ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->isp_node_handle,
+								0,
+								pipe_contex->vse_node_handle,
+								0);
+					}
 				break;
 			case Offline:
 				ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 					pipe_contex->vin_node_handle, 0,
 					pipe_contex->isp_node_handle, 0);
+					if(enable_vse)
+					{
+						ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->isp_node_handle,
+								0,
+								pipe_contex->vse_node_handle,
+								0);
+					}
 				break;
 			default:
 				break;

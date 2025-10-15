@@ -384,7 +384,7 @@ int create_and_run_gdc_vflow(pipe_contex_t *pipe_contex, gdc_info_s *gdc_info) {
 	return ret;
 }
 
-static void gdc_dump_func(hbn_vnode_handle_t gdc_node_handle) {
+static void gdc_dump_func(hbn_vnode_handle_t gdc_node_handle, char *prefix) {
 	int ret;
 	char dst_file[128];
 	uint32_t ochn_id = 0;
@@ -400,7 +400,8 @@ static void gdc_dump_func(hbn_vnode_handle_t gdc_node_handle) {
 
 	// 将帧数据写入文件
 	snprintf(dst_file, sizeof(dst_file),
-		"gdc_handle_%d_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
+		"%s_gdc_handle_%d_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
+		prefix,
 		(int)gdc_node_handle, ochn_id,
 		out_img.buffer.width, out_img.buffer.height, out_img.buffer.stride,
 		out_img.info.frame_id, out_img.info.timestamps);
@@ -453,7 +454,7 @@ static void isp_dump_to_gdc_func(hbn_vnode_handle_t isp_node_handle,
 		return;
 	}
 
-	gdc_dump_func(gdc_node_handle);
+	gdc_dump_func(gdc_node_handle, "feedback");
 
 	// 释放帧数据
 	hbn_vnode_releaseframe(isp_node_handle, ochn_id, &out_img);
@@ -476,13 +477,13 @@ static int handle_user_command(pipe_contex_t *pipe_contex,
 				running = 0;
 				return 0;
 			case 'g':
-				gdc_dump_func(pipe_contex->gdc_node_handle);
+				gdc_dump_func(pipe_contex->gdc_node_handle, "pipeline");
 				isp_dump_to_gdc_func(pipe_contex->isp_node_handle,
 					gdc_pipe_contex->gdc_node_handle);
 				break;
 			case 'l': // 循环获取，用于计算帧率
 				for (i = 0; i < 12; i++) {
-					gdc_dump_func(pipe_contex->gdc_node_handle);
+					gdc_dump_func(pipe_contex->gdc_node_handle, "pipeline");
 					isp_dump_to_gdc_func(pipe_contex->isp_node_handle,
 						gdc_pipe_contex->gdc_node_handle);
 				}

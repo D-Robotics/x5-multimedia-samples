@@ -45,7 +45,7 @@ int32_t runtime_end(uvc_camera_context *context)
 		return 1;
 	}
 
-	if (context->loop_cnt > 0 && (context->work_info.remaining_loop-- <= 0)) {
+	if (context->loop_cnt > 0 && (--context->work_info.remaining_loop <= 0)) {
 		printf("loop cnt use up\n");
 		return 1;
 	}

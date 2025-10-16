@@ -115,14 +115,14 @@ int execute_command(const char *command, char *output, size_t max_size) {
 // 获取主芯片类型
 static int32_t vp_get_chip_type(char *chip_type)
 {
-	FILE *file = fopen("/sys/class/socinfo/soc_name", "r");
+	FILE *file = fopen("/sys/class/socinfo/soc_gen", "r");
 	if (file == NULL) {
-		SC_LOGE("Failed to open /sys/class/socinfo/soc_name");
+		SC_LOGE("Failed to open /sys/class/socinfo/soc_gen");
 		return -1;
 	}
 
 	if (fgets(chip_type, 16, file) == NULL) {
-		SC_LOGE("Failed to read from /sys/class/socinfo/soc_name");
+		SC_LOGE("Failed to read from /sys/class/socinfo/soc_gen");
 		fclose(file);
 		return -1;
 	}

@@ -251,7 +251,7 @@ int32_t vp_codec_release_output(media_codec_context_t *context, media_codec_buff
 }
 
 int32_t vp_decode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
-	int32_t width, int32_t height)
+	int32_t width, int32_t height, int32_t frame_buffer_count)
 {
 	mc_video_codec_dec_params_t *params;
 	context->encoder = false; // decoder output
@@ -260,7 +260,7 @@ int32_t vp_decode_config_param(media_codec_context_t *context, media_codec_id_t 
 	params->pix_fmt = MC_PIXEL_FORMAT_NV12;
 	params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
 	params->bitstream_buf_count = 3;
-	params->frame_buf_count = 3;
+	params->frame_buf_count = frame_buffer_count;
 
 	switch (codec_type)
 	{

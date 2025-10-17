@@ -148,6 +148,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vin_ochn_attr_t *vin_ochn_attr = NULL;
 	hbn_vnode_handle_t *vin_node_handle = NULL;
 	vin_attr_ex_t vin_attr_ex;
+	hbn_buf_alloc_attr_t alloc_attr = {0};
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
 	uint32_t ichn_id = 0;
@@ -195,6 +196,12 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
+	alloc_attr.buffers_num = 3;
+	alloc_attr.is_contig = 1;
+	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
+						| HB_MEM_USAGE_CPU_WRITE_OFTEN
+						| HB_MEM_USAGE_CACHED;
+	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
 
 	return 0;
 }

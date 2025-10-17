@@ -83,11 +83,13 @@ static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 	camera_config->gpio_enable_bit = 0;
 	camera_config->gpio_level_bit = 0;
 	/* 可以调整使用不用的 isp tuning 文件 根据 -s 指定的sensor决定*/
-	ret = snprintf(camera_config->calib_lname, sizeof(camera_config->calib_lname),
-			"%s_tuning.json", vin_sensor_config->camera_config->name);
-	if (ret >= sizeof(camera_config->calib_lname)) {
-		printf("Buffer truncated\n");
-		return ret;
+	if(!strcmp(vin_sensor_config->camera_config->calib_lname,"disable")){
+		ret = snprintf(camera_config->calib_lname, sizeof(camera_config->calib_lname),
+				"%s_tuning.json", vin_sensor_config->camera_config->name);
+		if (ret >= sizeof(camera_config->calib_lname)) {
+			printf("Buffer truncated\n");
+			return ret;
+		}
 	}
 	printf("dummy use calib %s\n", camera_config->calib_lname);
 
@@ -112,7 +114,7 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 
 	sensor_config = pipe_contex->sensor_config;
 	camera_config = sensor_config->camera_config;
-
+	memset(&sensor_config->vin_node_attr->lpwm_attr, 0, sizeof(lpwm_attr_t));
 	if (strcmp("dummy", camera_config->name) != 0) {
 		/* Debug settle */
 		if (settle >= 0 && settle <= 127) {
@@ -120,7 +122,7 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 		}
 		if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
 			camera_config->sensor_mode = sensor_mode;
-			sensor_config->vin_node_attr->lpwm_attr.enable = 1;
+			sensor_config->vin_node_attr->lpwm_attr.enable = 0;
 		}
 	}
 	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
@@ -489,6 +491,7 @@ int main(int argc, char** argv) {
 	ERR_CON_EQ(ret, 0);
 
 	read_raw_image(file_name, &raw_img, dummy_sensor_config.camera_config);
+	isp_dump_func(isp_contex.isp_node_handle, 0, &raw_img);
 	isp_dump_func(isp_contex.isp_node_handle, 1, &raw_img);
 
 	ret = hbn_vflow_stop(isp_contex.vflow_fd);

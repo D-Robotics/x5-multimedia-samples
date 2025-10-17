@@ -93,6 +93,9 @@ int32_t vp_display_wait_blank(vp_drm_context_t *drm_ctx);
 int32_t vp_display_wait_vsync(vp_drm_context_t *drm_ctx);
 int32_t vp_display_check_hdmi_is_connected();
 int32_t vp_display_get_max_resolution_if_not_match(int32_t width, int32_t height, int32_t *out_width, int32_t *out_height);
+int vp_display_is_resolution_supported(int width, int height);
+void vp_display_print_supported_resolutions();
+
 #ifdef __cplusplus
 }
 #endif /* extern "C" */

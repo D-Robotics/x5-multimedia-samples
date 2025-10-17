@@ -411,6 +411,60 @@ int32_t vp_display_check_hdmi_is_connected(){
 	return 1;
 }
 
+// 检查分辨率是否支持
+int vp_display_is_resolution_supported(int width, int height)
+{
+	int drm_fd = drmOpen("vs-drm", NULL);
+	if (drm_fd < 0) {
+		perror("drmOpen failed");
+		return 0;
+	}
+
+	drmModeConnectorPtr connector = find_connector(drm_fd);
+	if (!connector) {
+		close(drm_fd);
+		return 0;
+	}
+
+	int supported = 0;
+	for (int i = 0; i < connector->count_modes; i++) {
+		drmModeModeInfo *mode = &connector->modes[i];
+		if (mode->hdisplay == width && mode->vdisplay == height) {
+			supported = 1;
+			break;
+		}
+	}
+
+	drmModeFreeConnector(connector);
+	close(drm_fd);
+	return supported;
+}
+
+// 打印支持的分辨率
+void vp_display_print_supported_resolutions()
+{
+	int drm_fd = drmOpen("vs-drm", NULL);
+	if (drm_fd < 0) {
+		perror("drmOpen failed");
+		return;
+	}
+
+	drmModeConnectorPtr connector = find_connector(drm_fd);
+	if (!connector) {
+		close(drm_fd);
+		return;
+	}
+
+	printf("Supported resolutions:\n");
+	for (int i = 0; i < connector->count_modes; i++) {
+		drmModeModeInfo *mode = &connector->modes[i];
+		printf("  %dx%d@%dHz\n", mode->hdisplay, mode->vdisplay, mode->vrefresh);
+	}
+
+	drmModeFreeConnector(connector);
+	close(drm_fd);
+}
+
 int32_t vp_display_get_max_resolution_if_not_match(
 		int32_t width, int32_t height, int32_t *out_width, int32_t *out_height){
 

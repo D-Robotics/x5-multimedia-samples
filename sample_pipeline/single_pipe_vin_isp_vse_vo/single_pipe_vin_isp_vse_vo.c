@@ -106,12 +106,18 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
-	alloc_attr.buffers_num = 3;
-	alloc_attr.is_contig = 1;
-	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
-						| HB_MEM_USAGE_CPU_WRITE_OFTEN
-						| HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
+	if(vin_ochn_attr->ddr_en) {
+		memset(&alloc_attr, 0, sizeof(hbn_buf_alloc_attr_t));
+		alloc_attr.buffers_num = 3;
+		alloc_attr.is_contig = 1;
+		alloc_attr.flags =
+			HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
+		if (ret < 0) {
+			printf("hbn_vnode_set_ochn_buf_attr fail ret %d\n", ret);
+			return ret;
+		}
+	}
 
 	return 0;
 }
@@ -371,28 +377,40 @@ static int display_init(pipe_contex_t *pipe_contex)
 	output_width = isp_attr->crop.w;
 	output_height = isp_attr->crop.h;
 
+	// ==== 新增：检查分辨率是否支持 ====
+	if (!vp_display_is_resolution_supported(output_width, output_height)) {
+		printf("\n\nError: Resolution %dx%d is not supported by HDMI\n",
+			output_width, output_height);
+		vp_display_print_supported_resolutions();
+		return -1;
+	}
+
 	ret = vp_display_check_hdmi_is_connected();
-	if(ret == 0){
+	if(ret == 0) {
 		printf("\n\nFailed: output form is hdmi, but not found hdmi connector.\n\n");
 		return -1;
 	}
-	ret = vp_display_get_max_resolution_if_not_match(output_width, output_height, &hdmi_output_width, &hdmi_output_height);
-	if(ret == 1){
+
+	ret = vp_display_get_max_resolution_if_not_match(output_width, output_height,
+													&hdmi_output_width, &hdmi_output_height);
+	if (ret == 1) {
 		printf("hdmi support resolution %d*%d\n", output_width, output_height);
-	}else if(ret == 0){
+	} else if (ret == 0) {
 		printf("\nWarn !!! hdmi not found resolution %d*%d, usr max resolution %d*%d\n\n",
 			output_width, output_height, hdmi_output_width, hdmi_output_height);
-	}else{
+	} else {
 		printf("hdmi not found appropriate resolution\n");
 		return -1;
 	}
+
 	ret = vp_display_init(&vp_drm_context, hdmi_output_width, hdmi_output_height);
-	if(ret != 0){
+	if (ret != 0) {
 		printf("hdmi init failed.\n");
 		return -1;
 	}
 
-	printf("vp_display_init ok: %dx%d -> %dx%d\n", output_width, output_height, hdmi_output_width, hdmi_output_height);
+	printf("vp_display_init ok: %dx%d -> %dx%d\n",
+		output_width, output_height, hdmi_output_width, hdmi_output_height);
 
 	return 0;
 }
@@ -447,14 +465,20 @@ int main(int argc, char** argv) {
 	ERR_CON_EQ(ret, 0);
 
 	ret = display_init(&pipe_contex);
-	ERR_CON_EQ(ret, 0);
+	if (ret != 0) {
+		goto cleanup;
+	}
 
 	running = 1;
 	ret = pthread_create(&read_thread, NULL, (void *)read_vse_data,
 						(void *)&pipe_contex);
-
+	if (ret != 0) {
+		printf("\nError: Failed to create reader thread\n");
+		goto cleanup;
+	}
 	pthread_join(read_thread, NULL);
 
+cleanup:
 	ret = hbn_vflow_stop(pipe_contex.vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	display_deinit();

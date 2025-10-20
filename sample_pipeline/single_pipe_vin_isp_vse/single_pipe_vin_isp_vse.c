@@ -243,6 +243,43 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	return 0;
 }
 
+static int check_vse_scale_ratio(uint32_t input_width, uint32_t input_height,
+									uint32_t output_width, uint32_t output_height,
+									uint32_t roi_width, uint32_t roi_height) {
+	// 对于有ROI裁剪的情况，使用ROI尺寸作为输入基准
+	uint32_t effective_input_width = (roi_width > 0) ? roi_width : input_width;
+	uint32_t effective_input_height = (roi_height > 0) ? roi_height : input_height;
+
+	int width_scale = (output_width > effective_input_width) ? 1 :
+						(output_width < effective_input_width) ? -1 : 0;
+	int height_scale = (output_height > effective_input_height) ? 1 :
+						(output_height < effective_input_height) ? -1 : 0;
+
+	// VSE不允许宽高一个放大一个缩小
+	if ((width_scale == 1 && height_scale == -1) || (width_scale == -1 && height_scale == 1)) {
+		printf("VSE does not allow one dimension to scale up while the other scales down\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int check_vse_output_valid(uint32_t input_width, uint32_t input_height,
+									vse_ochn_attr_t *vse_ochn_attr) {
+	for (int i = 0; i < VSE_MAX_CHANNELS; ++i) {
+		int ret = check_vse_scale_ratio(input_width, input_height,
+										vse_ochn_attr[i].target_w, vse_ochn_attr[i].target_h,
+										vse_ochn_attr[i].roi.w, vse_ochn_attr[i].roi.h);
+		if (ret != 0) {
+			printf("Error: Sensor VSE Output channel %d resolution %dx%d scaling ratio invalid!\n",
+					i, vse_ochn_attr[i].target_w, vse_ochn_attr[i].target_h);
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
 static int create_vse_node(pipe_contex_t *pipe_contex) {
 	int ret = 0;
 	hbn_vnode_handle_t *vse_node_handle = &pipe_contex->vse_node_handle;
@@ -304,6 +341,11 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 	vse_ochn_attr[5].target_w = (input_width * 2) > 4096 ? 4096 : (input_width * 2);
 	vse_ochn_attr[5].target_h = (input_height * 2) > 3076 ? 3076 : (input_height * 2);
 
+	// 在设置VSE属性前先检测缩放比例
+	ret = check_vse_output_valid(input_width, input_height, vse_ochn_attr);
+	if (ret != 0) {
+		exit(-1);
+	}
 	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, vse_node_handle);
 	ERR_CON_EQ(ret, 0);
 
@@ -480,7 +522,7 @@ void *read_vse_data(void *context) {
 				for (int j = 0; j < 2; ++j) {
 					hb_mem_invalidate_buf_with_vaddr((uint64_t)out_img[i].buffer.virt_addr[j], out_img[i].buffer.size[j]);
 				}
-				snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%d.yuv", i, count);
+				snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%dx%d_%d.yuv", i, out_img[i].buffer.width, out_img[i].buffer.height, count);
 				dump_2plane_yuv_to_file(dst_file,
 					out_img[i].buffer.virt_addr[0],
 					out_img[i].buffer.virt_addr[1],

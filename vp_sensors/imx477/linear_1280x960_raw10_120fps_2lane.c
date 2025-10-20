@@ -2,15 +2,15 @@
 
 #define SENSOR_WIDTH  1280
 #define SENSOR_HEIGHT  960
-#define SENSOE_FPS 30
-#define RAW12 0x2B
+#define SENSOE_FPS 120
+#define RAW10 0x2B
 
 static mipi_config_t imx477_mipi_config = {
 	.rx_enable = 1,
 	.rx_attr = {
 		.phy = 0,
 		.lane = 2,
-		.datatype = RAW12,
+		.datatype = RAW10,
 		.fps = SENSOE_FPS,
 		.mclk = 24,
 		.mipiclk = 2250,
@@ -33,7 +33,7 @@ static camera_config_t imx477_camera_config = {
 	.addr = 0x1a,
 	.sensor_mode = 1,
 	.fps = SENSOE_FPS,
-	.format = RAW12,
+	.format = RAW10,
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
 	.gpio_enable_bit = 0x01,
@@ -68,14 +68,14 @@ static vin_attr_ex_t vin_attr_ex = {
 static vin_ichn_attr_t imx477_vin_ichn_attr = {
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
-	.format = RAW12,
+	.format = RAW10,
 };
 
 static vin_ochn_attr_t imx477_vin_ochn_attr = {
 	.ddr_en = 1,
 	.ochn_attr_type = VIN_BASIC_ATTR,
 	.vin_basic_attr = {
-		.format = RAW12,
+		.format = RAW10,
 		// 硬件 stride 跟格式匹配，通过行像素根据raw数据bit位数计算得来
 		// 8bit：x1, 10bit: x2 12bit: x2 16bit: x2,例raw10，1920 x 2 = 3840
 		.wstride = (SENSOR_WIDTH) * 2,
@@ -97,7 +97,7 @@ static isp_ichn_attr_t imx477_isp_ichn_attr = {
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
 	.fmt = FRM_FMT_RAW,
-	.bit_width = 12,
+	.bit_width = 10,
 };
 
 static isp_ochn_attr_t imx477_isp_ochn_attr = {

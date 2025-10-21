@@ -141,6 +141,13 @@ void vp_show_sensors_list_vse_limit(uint32_t width_limit, uint32_t height_limit)
 		if (width_tmp * height_tmp < quarter_of_vse_max_resolution) {
 			continue;
 		}
+
+		if((sensor_config->camera_config->width > width_limit &&
+		   sensor_config->camera_config->height < height_limit) ||
+		   (sensor_config->camera_config->width < width_limit &&
+		   sensor_config->camera_config->height > height_limit)) {
+			continue;
+		}
 		printf("index: %d  sensor_name: %-16s \tconfig_file:%s\n",
 			i, vp_sensor_config_list[i]->sensor_name,
 			vp_sensor_config_list[i]->config_file);

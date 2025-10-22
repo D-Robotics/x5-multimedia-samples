@@ -19,8 +19,12 @@ int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse,
 		int height_tmp = sensor_config->camera_config->height;
 		char *camera_name_tmp = sensor_config->camera_config->name;
 
+		if(sensor_config->isp_attr->sensor_mode == ISP_DOL2_M){
+			printf("\n\nERROR:[%s] sensor mode is DOL2, not support this sample.\n\n", camera_name_tmp);
+			return -1;
+		}
 		if(width_tmp * height_tmp < quarter_of_vse_max_resolution){
-			printf("camera %s width %d height %d is too small, after zooming in 4 times, the resolution cannot reach 4K.\n",
+			printf("\n\nERROR:[%s] width %d height %d is too small, after zooming in 4 times, the resolution cannot reach 4K.\n\n",
 					camera_name_tmp, width_tmp, height_tmp);
 			return -1;
 		}

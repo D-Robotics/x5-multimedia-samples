@@ -57,7 +57,6 @@ typedef struct {
 } frame_queue_t;
 
 static frame_queue_t frame_queue;
-static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static int32_t total_pipeline_num = 0;
 static int32_t verbose_flag = 0;
 static int32_t used_mipi_host = 0;
@@ -72,7 +71,8 @@ static struct option const long_options[] = {
 	{NULL, 0, NULL, 0}
 };
 
-static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host, int index);
+static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host,
+	 int index, uint32_t sensor_mode);
 int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
 int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
 void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeline_idx);
@@ -119,11 +119,13 @@ static void frame_queue_push(frame_queue_t *q, hbn_vnode_image_t *frame) {
 }
 
 static void show_help() {
-	printf("Usage: get_vin_data [OPTIONS]\n");
+	printf("Usage: single_pipe_vin_isp_vse_gpu2d [options]\n");
 	printf("Options:\n");
-	printf("  -s \"sensor=index\"    Specify sensor index\n");
-	printf("  -h                     Show this help message\n");
-	vp_show_sensors_list(); // Assuming this function displays sensor list
+	printf("  -s \"sensor=index\"            Select sensor index to use\n");
+	printf("  -m, --mode <sensor_mode>       Select sensor mode (1:NORMAL_M, 2:DOL2_M, 6:SLAVE_M)\n");
+	printf("  -h, --help                     Show this help message\n\n");
+	printf("Available sensors:\n");
+	vp_show_sensors_list();
 }
 
 
@@ -194,8 +196,7 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 						exit(1);
 					}
 					pipeline_info->select_sensor_id = sensor_idx;
-					pipeline_info->active_mipi_host =
-						pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx;
+					pipeline_info->active_mipi_host = pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx;
 					used_mipi_host |= (1 << pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx);
 				}
 			} else {
@@ -203,6 +204,12 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 				show_help();
 				exit(1);
 			}
+		} else if (strcmp(key_value[0], "mode") == 0) {
+			if (!is_number(key_value[1])) {
+				fprintf(stderr, "Invalid sensor mode number: %s\n", key_value[1]);
+				continue;
+			}
+			pipeline_info->sensor_mode = atoi(key_value[1]);
 		} else {
 			fprintf(stderr, "Unknown key: %s\n", key_value[0]);
 			exit(1);
@@ -218,24 +225,32 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 	}
 }
 
-static int create_camera_node(pipe_contex_t *pipe_contex) {
+static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode) {
+	if (!pipe_contex || !pipe_contex->sensor_config) {
+		fprintf(stderr, "Invalid pipe_contex or sensor_config\n");
+		return -1;
+	}
 
-	camera_config_t *camera_config = NULL;
-	vp_sensor_config_t *sensor_config = NULL;
-	int32_t ret = 0;
+	vp_sensor_config_t *sensor_cfg = pipe_contex->sensor_config;
+	camera_config_t *cam_cfg = sensor_cfg->camera_config;
 
-	sensor_config = pipe_contex->sensor_config;
-	camera_config = sensor_config->camera_config;
+	if (!cam_cfg) {
+		fprintf(stderr, "camera_config is NULL\n");
+		return -1;
+	}
 
 	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
-		camera_config->sensor_mode = sensor_mode;
-		sensor_config->vin_node_attr->lpwm_attr.enable = 1;
+		cam_cfg->sensor_mode = sensor_mode;
+		if (sensor_cfg->vin_node_attr)
+			sensor_cfg->vin_node_attr->lpwm_attr.enable = 1;
 	}
-	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
+
+	int32_t ret = hbn_camera_create(cam_cfg, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 
 	return 0;
 }
+
 static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host, int index) {
 	vp_sensor_config_t *sensor_config = NULL;
 	vin_node_attr_t *vin_node_attr = NULL;
@@ -277,15 +292,13 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host, int
 	ret = hbn_vnode_set_ichn_attr(*vin_node_handle, ichn_id, vin_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 	// 设置输出通道的属性
-
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
-	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)
 				continue;
-
 			vin_attr_ex.ex_attr_type = i;
 			/*we need to set hbn_vnode_set_attr_ex in a loop*/
 			ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
@@ -539,13 +552,14 @@ int set_n2d_crop_region_safe(pipeline_info_t *pipeline, int crop_x, int crop_y, 
 	return ret;
 }
 
-static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host, int index)
+static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host,
+	 int index, uint32_t sensor_mode)
 {
 	vp_sensor_config_t *sensor_config = pipe_contex->sensor_config;
 	int isp_mode = sensor_config->isp_attr->input_mode;
 	int32_t ret = 0;
 	// 创建 pipeline 中的每个 node
-	ret = create_camera_node(pipe_contex);
+	ret = create_camera_node(pipe_contex, sensor_mode);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vin_node(pipe_contex, active_mipi_host, index);
 	ERR_CON_EQ(ret, 0);
@@ -742,7 +756,9 @@ int main(int argc, char** argv) {
 
 	for (index = 0; index < total_pipeline_num; index++) {
 		ret = create_and_run_vflow(&args->pipeline_info[index]->pipe_contexts,
-			pipeline_info[index].active_mipi_host, index);
+			pipeline_info[index].active_mipi_host,
+			index,
+			pipeline_info[index].sensor_mode);
 		if (ret != 0) {
 			for (int j = 0; j < index; j++) {
 				hbn_vflow_stop(args->pipeline_info[j]->pipe_contexts.vflow_fd);

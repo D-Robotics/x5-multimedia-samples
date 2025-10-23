@@ -54,7 +54,7 @@ extern vp_sensor_config_t ov5647_linear_1920x1080_raw10_30fps_2lane;
 extern vp_sensor_config_t ov5647_linear_2592x1944_raw10_15fps_2lane;
 extern vp_sensor_config_t imx477_linear_1280x960_raw10_120fps_2lane;
 extern vp_sensor_config_t imx477_linear_1920x1080_raw12_50fps_2lane;
-extern vp_sensor_config_t imx477_linear_2016x1520_raw12_40fps_2lane;
+extern vp_sensor_config_t imx477_linear_2016x1520_raw12_21fps_2lane;
 extern vp_sensor_config_t imx477_linear_4000x3000_raw12_10fps_2lane;
 extern vp_sensor_config_t ov50h40_linear_4096x3072_raw10_30fps_4lane;
 extern vp_sensor_config_t ox05b1s_linear_2592x1944_raw10_30fps_4lane;
@@ -103,7 +103,7 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&ov5647_linear_2592x1944_raw10_15fps_2lane,
 	&imx477_linear_1280x960_raw10_120fps_2lane,
 	&imx477_linear_1920x1080_raw12_50fps_2lane,
-	&imx477_linear_2016x1520_raw12_40fps_2lane,
+	&imx477_linear_2016x1520_raw12_21fps_2lane,
 	&imx477_linear_4000x3000_raw12_10fps_2lane,
 	&ov50h40_linear_4096x3072_raw10_30fps_4lane,
 	&ox05b1s_linear_2592x1944_raw10_30fps_4lane,

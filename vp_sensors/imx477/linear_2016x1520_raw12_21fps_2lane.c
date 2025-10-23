@@ -22,7 +22,7 @@ static mipi_config_t imx477_mipi_config = {
 		.channel_num = 1,
 		.channel_sel = {0},
 	},
-	.rx_ex_mask = 0x21,
+	.rx_ex_mask = 0x40,
 	.rx_attr_ex = {
 		.stop_check_instart = 1,
 	}

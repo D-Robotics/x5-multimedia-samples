@@ -749,6 +749,9 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 		memset(csi_info_tmp.sensor_config_list, 0, sizeof(csi_info_tmp.sensor_config_list));
 		if (vcon_props_array[i].status[0] == 'o') {
 			for (int j = 0; j < vp_get_sensors_list_number(); j++) {
+				if(vp_sensor_config_list[j]->camera_config->sensor_mode == DOL2_M){
+					continue;
+				}
 				if(!mclk_is_not_configed){
 					/* enable mclk */
 					if (vp_sensor_config_list[j]->vin_attr_ex->vin_attr_ex_mask)

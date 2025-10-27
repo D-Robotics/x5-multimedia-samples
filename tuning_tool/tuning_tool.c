@@ -47,8 +47,12 @@ static uint32_t feedback_raw_hight;
 static uint32_t feedback_raw_width;
 static char feedback_raw_format[32] = {0};
 static int32_t used_mipi_host = 0;
+static uint32_t link_port = 0;
 
 int32_t lut3d_map[LUT_SIZE][LUT_SIZE][LUT_SIZE][3];
+
+int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
+int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
 
 static int is_number(const char *str) {
 	while (*str) {
@@ -104,6 +108,9 @@ void parse_config(pipe_contex_info_t *pipe_contex_info, const char *config, int 
 				vp_show_sensors_list();
 				exit(0);
 			}
+			uint32_t sensor_type = pipe_contex_info->pipe_contex.sensor_config->sensor_type;
+			if(sensor_type != SENSOR_TYPE_NORMAL)
+				continue;
 			if(strcmp(pipe_contex_info->pipe_contex.sensor_config->sensor_name, "dummy") != 0){
 				if(vp_sensor_multi_fixed_mipi_host(pipe_contex_info->pipe_contex.sensor_config, used_mipi_host,
 					&pipe_contex_info->pipe_contex.csi_config) < 0) {
@@ -225,7 +232,7 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 		printf("\tSensor index: %d\n", ctx->pipe_contex_info[i].select_sensor_id);
 		printf("\tSensor name: %s\n", ctx->pipe_contex_info[i].pipe_contex.sensor_config->sensor_name);
 		printf("\tUse mipi host: %d\n", ctx->pipe_contex_info[i].active_mipi_host);
-		raw_type = (!strcmp(feedback_raw_format, "raw8")) ? 0x2A : 
+		raw_type = (!strcmp(feedback_raw_format, "raw8")) ? 0x2A :
 			(!strcmp(feedback_raw_format, "raw10")) ? 0x2B :
 			(!strcmp(feedback_raw_format, "raw12")) ? 0x2C : 0x2B;
 		bit_width = (!strcmp(feedback_raw_format, "raw8")) ? 8 :
@@ -698,6 +705,7 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
+	link_port = vin_node_attr->cim_attr.vc_index;
 
 	switch (pipelinemode) {
 	case Online:
@@ -859,6 +867,28 @@ static int32_t create_vse_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
     return RET_SUCCESS;
 }
 
+static int create_deserial_node(pipe_contex_t *pipe_contex)
+{
+	vp_sensor_config_t *sensor_config = NULL;
+	deserial_config_t *deserial_config = NULL;
+	deserial_handle_t *des_handle = NULL;
+	int32_t ret = 0;
+
+	des_handle = &pipe_contex->des_fd;
+	sensor_config = pipe_contex->sensor_config;
+	deserial_config = sensor_config->deserial_node_attr;
+
+	ret = hbn_deserial_create(deserial_config, des_handle);
+	if (ret != 0) {
+		printf("hbn_deserial_create failed ret = %d\n", ret);
+		return ret;
+	}
+	printf("deserial_config: addr=0x%02x, name=%s, des_handle=%ld\n",
+		deserial_config->addr, deserial_config->name, *des_handle);
+
+	return ret;
+}
+
 static int32_t multi_pipe_create(tuning_context_t *ctx, uint32_t pipelinemode)
 {
 	int32_t i, ret = 0;
@@ -916,9 +946,35 @@ static int32_t multi_pipe_create(tuning_context_t *ctx, uint32_t pipelinemode)
 			}
 		}
 
-		FUNC_EQ(hbn_camera_attach_to_vin(pipe_contex->cam_fd, pipe_contex->vin_node_handle), 0, return RET_FAILURE);
-	}
+		/* === 4. 根据 sensor 类型执行 attach === */
+		if (pipe_contex->sensor_config &&
+			pipe_contex->sensor_config->sensor_type != SENSOR_TYPE_NORMAL) {
+			FUNC_EQ(create_deserial_node(pipe_contex), 0, return RET_FAILURE);
+			ret = hbn_camera_attach_to_deserial(pipe_contex->cam_fd,
+												pipe_contex->des_fd,
+												link_port);
+			if (ret < 0) {
+				printf("sensor-%d hbn_camera_attach_to_deserial fail\n", i);
+				return RET_FAILURE;
+			}
 
+			ret = hbn_deserial_attach_to_vin(pipe_contex->des_fd,
+											link_port,
+											pipe_contex->vin_node_handle);
+			if (ret < 0) {
+				printf("sensor-%d hbn_deserial_attach_to_vin fail\n", i);
+				return RET_FAILURE;
+			}
+		} else {
+			/* 普通 sensor：Camera 直接 attach 到 vin */
+			ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
+										pipe_contex->vin_node_handle);
+			if (ret < 0) {
+				printf("sensor-%d hbn_camera_attach_to_vin fail\n", i);
+				return RET_FAILURE;
+			}
+		}
+	}
 	return ret;
 }
 

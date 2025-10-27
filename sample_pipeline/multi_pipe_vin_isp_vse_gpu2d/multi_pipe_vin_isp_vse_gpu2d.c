@@ -13,6 +13,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <ctype.h>
+#include <stdbool.h>
 
 #include "hbn_api.h"
 #include "gdc_cfg.h"
@@ -49,11 +50,9 @@ typedef struct {
 	pipeline_info_t *pipeline_info[MAX_PIPE_NUM]; // 使用数组存储指针
 } thread_args_t;
 
-static   n2d_error_t error = N2D_SUCCESS;
 static   n2d_buffer_t tmpbuffer = {0};
 static   n2d_buffer_t dst_rotation = {0};
-static	 n2d_buffer_t dst_nv12_buffer = {0};
-static   n2d_buffer_t src = {0};
+static   n2d_buffer_t src_buffer = {0};
 
 static int32_t total_pipeline_num = 0;
 static int32_t verbose_flag = 0;
@@ -409,7 +408,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	configure_vse_max_resolution(vse_bind_index,
 		input_width, input_height,
 		&output_width, &output_height);
-
+	printf("vse output_width:%d , output_height:%d\n",output_width , output_height);
 	// 输出原分辨率
 	vse_ochn_attr[vse_bind_index].target_w = output_width;
 	vse_ochn_attr[vse_bind_index].target_h = output_height;
@@ -526,7 +525,8 @@ void *encode_vse_chn_data(void *context)
 {
 	int ret = 0;
 	uint32_t count = 0;
-	// 根据输入传参决定使用几路 pipeline
+	char dst_file[128];
+
 	thread_args_t *args = (thread_args_t *)context;
 	pipeline_info_t *current_pipeline[total_pipeline_num];
 	for (int i = 0; i < total_pipeline_num; i++) {
@@ -534,7 +534,10 @@ void *encode_vse_chn_data(void *context)
 	}
 
 	hbn_vnode_image_t vse_chn_frame = {0};
-	error = n2d_open();
+	hbn_vnode_image_t aligned_img = {0};
+	bool need_align_copy = false;
+
+	n2d_error_t error = n2d_open();
 	if (N2D_IS_ERROR(error)) {
 		printf("open context failed! error=%d.\n", error);
 		return NULL;
@@ -542,20 +545,26 @@ void *encode_vse_chn_data(void *context)
 
 	N2D_ON_ERROR(n2d_switch_device(N2D_DEVICE_0));
 	N2D_ON_ERROR(n2d_switch_core(N2D_CORE_0));
-	N2D_ON_ERROR(n2d_util_allocate_buffer(n2d_input_width, n2d_input_height, N2D_ABGR8888, N2D_0, N2D_LINEAR, N2D_TSC_DISABLE, &tmpbuffer));
-	N2D_ON_ERROR(n2d_util_allocate_buffer(n2d_input_width, n2d_input_height, N2D_BGRA8888, N2D_0, N2D_LINEAR, N2D_TSC_DISABLE, &dst_rotation));
-	N2D_ON_ERROR(n2d_util_allocate_buffer(n2d_input_width, n2d_input_height, N2D_NV12, N2D_0, N2D_LINEAR, N2D_TSC_DISABLE, &dst_nv12_buffer));
 
-	printf("************ n2d read start*********\n\r");
+	uint32_t aligned_w = gcmALIGN(n2d_input_width, 64);
+	uint32_t aligned_h = n2d_input_height;
+
+	N2D_ON_ERROR(n2d_util_allocate_buffer(aligned_w, aligned_h, N2D_ABGR8888,
+		N2D_0, N2D_LINEAR, N2D_TSC_DISABLE, &tmpbuffer));
+	N2D_ON_ERROR(n2d_util_allocate_buffer(aligned_w, aligned_h, N2D_BGRA8888,
+		N2D_0, N2D_LINEAR, N2D_TSC_DISABLE, &dst_rotation));
+
+	printf("************ n2d read start *********\n");
 
 	while (running) {
 		for (int index = 0; index < total_pipeline_num; index++) {
-			ret = hbn_vnode_getframe(current_pipeline[index]->pipe_contexts.isp_node_handle, args->pipeline_info[index]->gpu2d_channel, 2000, &vse_chn_frame);//current_pipeline[index]->pipe_contexts.gdc_node_handle
+			ret = hbn_vnode_getframe(current_pipeline[index]->pipe_contexts.isp_node_handle,
+				args->pipeline_info[index]->gpu2d_channel, 2000, &vse_chn_frame);
 			if (ret != 0) {
-				printf("sensor_%s_hbn_vnode_getframe GDC channel %d failed, error code %d\n",current_pipeline[index]->output_file, 0, ret);
+				printf("sensor_%s_hbn_vnode_getframe failed, error=%d\n",
+					current_pipeline[index]->output_file, ret);
 				continue;
 			}
-
 			if(yuv_debug_enabled) {
 
 				char dst_file[128];
@@ -574,57 +583,108 @@ void *encode_vse_chn_data(void *context)
 					vse_chn_frame.buffer.size[1]);
 				printf("dump %s ok\n" , current_pipeline[index]->output_file);
 			}
-			if (count % 3 == 0) {
-				// Create buffer from HB memory
-				error = create_n2d_buffer_from_hbm_graphic(&src, &vse_chn_frame.buffer);
-				if (N2D_IS_ERROR(error)) {
-					printf("Error loading buffer from hb_mem, error=%d.\n", error);
-					hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.vse_node_handle, current_pipeline[index]->gpu2d_channel, &vse_chn_frame);
-					continue;
+
+			uint32_t width = vse_chn_frame.buffer.width;
+			uint32_t height = vse_chn_frame.buffer.height;
+
+			if (width % 64 != 0) {
+				need_align_copy = true;
+
+				// 分配临时64字节对齐buffer
+				if (aligned_img.buffer.virt_addr[0] == NULL) {
+					if (alloc_graphic_buffer(&aligned_img, ALIGN_UP(width, 64),
+							height, 1, MEM_PIX_FMT_NV12) < 0) {
+						printf("Failed to alloc 64B-aligned temp buffer!\n");
+						hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.isp_node_handle,
+							args->pipeline_info[index]->gpu2d_channel, &vse_chn_frame);
+						continue;
+					}
 				}
 
-				// Perform Blit operation
-				error = n2d_blit(&tmpbuffer, N2D_NULL, &src, N2D_NULL, N2D_BLEND_NONE);
-				if (N2D_IS_ERROR(error)) {
-					printf("Blit error, error=%d.\n", error);
-					goto on_error;
-				}
-				N2D_ON_ERROR(n2d_commit());
+				uint8_t *src_y  = vse_chn_frame.buffer.virt_addr[0];
+				uint8_t *src_uv = vse_chn_frame.buffer.virt_addr[1];
+				uint8_t *dst_y  = aligned_img.buffer.virt_addr[0];
+				uint8_t *dst_uv = aligned_img.buffer.virt_addr[1];
 
-				// Perform rotation
-				error = rotation_sample(&tmpbuffer, &dst_rotation, N2D_90);
-				if (N2D_IS_ERROR(error)) {
-					printf("Rotation failed! error=%d.\n", error);
-					goto on_free_src;
-				}
+				uint32_t src_stride_y = vse_chn_frame.buffer.stride;
+				uint32_t src_stride_uv = vse_chn_frame.buffer.stride;
+				uint32_t dst_stride_y = aligned_img.buffer.stride;
+				uint32_t dst_stride_uv = aligned_img.buffer.stride;
 
-				char dst_file[128];
-				int len = snprintf(dst_file, sizeof(dst_file), "./%s_width:%d_height:%d_stride%d_frameid%d.bmp", current_pipeline[index]->output_file, vse_chn_frame.buffer.width,
-				vse_chn_frame.buffer.height,vse_chn_frame.buffer.stride,
-				vse_chn_frame.info.frame_id);
-				if (len < 0 || len >= sizeof(dst_file)) {
-					fprintf(stderr, "Warning: Output truncated for file name: %s\n", dst_file);
+				uint32_t copy_width_y = width;
+				uint32_t copy_width_uv = width;
+				uint32_t copy_height_y = height;
+				uint32_t copy_height_uv = height / 2;
+
+				for (uint32_t h = 0; h < copy_height_y; h++) {
+					memcpy(dst_y + h * dst_stride_y, src_y + h * src_stride_y, copy_width_y);
 				}
-				error = n2d_util_save_buffer_to_file(&dst_rotation, dst_file);
-				if (N2D_IS_ERROR(error)) {
-					printf("Save to file failed! error=%d.\n", error);
-				} else {
-					printf("Saved file to [%s].\n", dst_file);
+				for (uint32_t h = 0; h < copy_height_uv; h++) {
+					memcpy(dst_uv + h * dst_stride_uv, src_uv + h * src_stride_uv, copy_width_uv);
 				}
+			} else {
+				need_align_copy = false;
 			}
 
-			// 释放帧
-			hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.isp_node_handle, args->pipeline_info[index]->gpu2d_channel, &vse_chn_frame);
-			N2D_ON_ERROR(n2d_free(&src));
+			hbn_vnode_image_t *input_img = need_align_copy ? &aligned_img : &vse_chn_frame;
+			error = create_n2d_buffer_from_hbm_graphic(&src_buffer, &input_img->buffer);
+			if (N2D_IS_ERROR(error)) {
+				printf("Error loading buffer from hb_mem, error=%d.\n", error);
+				hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.isp_node_handle,
+					args->pipeline_info[index]->gpu2d_channel, &vse_chn_frame);
+				continue;
+			}
+
+			// GPU2D处理
+			error = n2d_blit(&tmpbuffer, N2D_NULL, &src_buffer, N2D_NULL, N2D_BLEND_NONE);
+			if (N2D_IS_ERROR(error)) {
+				printf("Blit error, error=%d.\n", error);
+				goto on_error;
+			}
+			N2D_ON_ERROR(n2d_commit());
+
+			if (N2D_IS_ERROR(error)) {
+				printf("Save file failed! error=%d.\n", error);
+			} else {
+				printf("Saved GPU2D output: %s\n", dst_file);
+			}
+
+			// 旋转操作
+			error = rotation_sample(&tmpbuffer, &dst_rotation, N2D_90);
+			if (N2D_IS_ERROR(error)) {
+				printf("Rotation failed! error=%d.\n", error);
+				goto on_free_src;
+			}
+
+			char dst_file[128];
+			int len = snprintf(dst_file, sizeof(dst_file), "./%s_width:%d_height:%d_stride%d_frameid%d.bmp", current_pipeline[index]->output_file, vse_chn_frame.buffer.width,
+			vse_chn_frame.buffer.height,vse_chn_frame.buffer.stride,
+			vse_chn_frame.info.frame_id);
+			if (len < 0 || len >= sizeof(dst_file)) {
+				fprintf(stderr, "Warning: Output truncated for file name: %s\n", dst_file);
+			}
+
+			error = n2d_util_save_buffer_to_file(&dst_rotation, dst_file);
+			if (N2D_IS_ERROR(error)) {
+				printf("Save rotation failed! error=%d.\n", error);
+			} else {
+				printf("Saved rotation file to [%s].\n", dst_file);
+			}
+
+			hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.isp_node_handle,
+				args->pipeline_info[index]->gpu2d_channel, &vse_chn_frame);
+			N2D_ON_ERROR(n2d_free(&src_buffer));
 		}
 		count++;
 	}
 
-on_error:
 on_free_src:
+on_error:
 	N2D_ON_ERROR(n2d_free(&tmpbuffer));
 	N2D_ON_ERROR(n2d_free(&dst_rotation));
-	N2D_ON_ERROR(n2d_free(&dst_nv12_buffer));
+	if (aligned_img.buffer.virt_addr[0]) {
+		hb_mem_free_buf(aligned_img.buffer.fd[0]);
+	}
 	error = n2d_close();
 	if (N2D_IS_ERROR(error)) {
 		printf("Close context failed! error=%d.\n", error);

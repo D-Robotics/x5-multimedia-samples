@@ -55,7 +55,13 @@ static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 	isp_ichn_attr_t *isp_ichn_attr = dummy_sensor_config->isp_ichn_attr;
 	isp_ochn_attr_t *isp_ochn_attr = dummy_sensor_config->isp_ochn_attr;
 
-	memcpy(camera_config, vin_sensor_config->camera_config, sizeof(camera_config_t));
+	camera_config->sensor_mode = vin_sensor_config->camera_config->sensor_mode;
+	camera_config->fps = vin_sensor_config->camera_config->fps;
+	camera_config->format = vin_sensor_config->camera_config->format;
+	camera_config->width = vin_sensor_config->camera_config->width;
+	camera_config->height = vin_sensor_config->camera_config->height;
+	strncpy(camera_config->calib_lname, vin_sensor_config->camera_config->calib_lname, sizeof(camera_config->calib_lname) - 1);
+	camera_config->calib_lname[sizeof(camera_config->calib_lname) - 1] = '\0';
 	memcpy(vin_node_attr, vin_sensor_config->vin_node_attr, sizeof(vin_node_attr_t));
 	memcpy(vin_ichn_attr, vin_sensor_config->vin_ichn_attr, sizeof(vin_ichn_attr_t));
 	memcpy(vin_ochn_attr, vin_sensor_config->vin_ochn_attr, sizeof(vin_ochn_attr_t));

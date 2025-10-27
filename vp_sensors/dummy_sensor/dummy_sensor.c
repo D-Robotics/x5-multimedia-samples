@@ -22,6 +22,15 @@ static camera_config_t camera_config = {
 	.height = SENSOR_HEIGHT,
 	.mipi_cfg = &mipi_config,
 	.calib_lname = "disable",
+	.sensor_param =
+	"{"
+		"\"tuning_data\": {"
+			"\"enable\": 1,"
+			"\"bayer_start\": 3,"  /* BAYER_START_B */
+			"\"bayer_pattern\": 0" /* BAYER_PATTERN_RGGB */
+		"}"
+	"}",
+	.end_flag = CAMERA_CONFIG_END_FLAG,
 };
 
 static vin_node_attr_t vin_node_attr = {

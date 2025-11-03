@@ -22,7 +22,7 @@ int32_t vp_codec_set_input(media_codec_context_t *context,
 	uint32_t data_size, int32_t eos);
 
 int32_t vp_decode_config_param(media_codec_context_t *context, media_codec_id_t codec_type,
-	int32_t width, int32_t height);
+	int32_t width, int32_t height, int32_t frame_buffer_count);
 int32_t vp_codec_get_output(media_codec_context_t *context, media_codec_buffer_t *frame_buffer, media_codec_output_buffer_info_t *buffer_info, int32_t timeout);
 int32_t vp_codec_release_output(media_codec_context_t *context, media_codec_buffer_t *frame_buffer);
 

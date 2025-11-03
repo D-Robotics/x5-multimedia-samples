@@ -27,6 +27,9 @@
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
 
+#define DRM_MAX_BLEND_WIDTH 1920
+#define DRM_MAX_BLEND_HEIGHT 1080
+
 #define DRM_MAX_BLEND_PLANES 3 // 只有3个图层支持 融合
 
 typedef struct param_config_s{
@@ -252,20 +255,17 @@ static drmModeModeInfo *__get_valid_mode_from_connector(drmModeConnector* conn, 
 		printf("display connector connector not found mode info.\n");
 		return mode;
 	}else{
-		if((width == -1) || (height == -1)){
-			return &conn->modes[0];;
-		}
+
 		for (int i = 0; i < conn->count_modes; i++){
 
-			if((conn->modes[i].hdisplay == width) &&
-				(conn->modes[i].vdisplay == height)){
+			if((conn->modes[i].hdisplay <= DRM_MAX_BLEND_WIDTH) &&
+				(conn->modes[i].vdisplay <= DRM_MAX_BLEND_HEIGHT)){
 				mode = &conn->modes[i];
 				break;
 			}
 		}
 		if(mode == NULL){
-			printf("display connector not support resolution: %d*%d.\n",
-				mode->hdisplay, mode->vdisplay);
+			printf("display connector not found suitable resolution:  less than or equal to 1920 * 1080.\n");
 			return mode;
 		}
 	}
@@ -358,6 +358,7 @@ static int display_setup(display_context_t *display_context){
 	}
 	drmModeModeInfo* mode = __get_valid_mode_from_connector(conn, param_config->width, param_config->height);
 	if(mode == NULL){
+		ret = -1;
 		goto free_conn;
 	}
 	display_context->width = mode->hdisplay;

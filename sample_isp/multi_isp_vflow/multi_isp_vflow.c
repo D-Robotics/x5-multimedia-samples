@@ -70,7 +70,14 @@ static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 	memcpy(isp_attr, vin_sensor_config->isp_attr, sizeof(isp_attr_t));
 	memcpy(isp_ichn_attr, vin_sensor_config->isp_ichn_attr, sizeof(isp_ichn_attr_t));
 	memcpy(isp_ochn_attr, vin_sensor_config->isp_ochn_attr, sizeof(isp_ochn_attr_t));
-
+	if(camera_config->sensor_mode == SLAVE_M || camera_config->sensor_mode == MONO_M){
+		camera_config->sensor_mode = NORMAL_M;
+	}
+	if(camera_config->sensor_mode == DOL2_M){
+		printf("Not Support feedback dol2 sensor,please check!\n");
+		hb_mem_module_close();
+		exit(-1);
+	}
 
 	/* 修改 dummy_camera_config 的 camera_config_t
 	 * 1. 设置 dummy sensor 的 name 为 dummy

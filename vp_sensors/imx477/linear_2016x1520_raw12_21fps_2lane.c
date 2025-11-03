@@ -2,7 +2,7 @@
 
 #define SENSOR_WIDTH  2016
 #define SENSOR_HEIGHT  1520
-#define SENSOE_FPS 40
+#define SENSOE_FPS 21
 #define RAW12 0x2C
 
 static mipi_config_t imx477_mipi_config = {
@@ -106,12 +106,12 @@ static isp_ochn_attr_t imx477_isp_ochn_attr = {
 	.bit_width = 8,
 };
 
-vp_sensor_config_t imx477_linear_2016x1520_raw12_40fps_2lane = {
+vp_sensor_config_t imx477_linear_2016x1520_raw12_21fps_2lane = {
 	.chip_id_reg = 0x0016,
 	.chip_id = 0x0477,
 	.sensor_i2c_addr_list = {0x1A},
-	.sensor_name = "imx477-2016x1520-40fps",
-	.config_file = "linear_2016x1520_raw12_40fps_2lane.c",
+	.sensor_name = "imx477-2016x1520-21fps",
+	.config_file = "linear_2016x1520_raw12_21fps_2lane.c",
 	.camera_config = &imx477_camera_config,
 	.vin_ichn_attr = &imx477_vin_ichn_attr,
 	.vin_node_attr = &imx477_vin_node_attr,

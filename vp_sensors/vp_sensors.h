@@ -20,6 +20,7 @@
 #define SENSOR_TYPE_GMSL_RAW	1
 #define SENSOR_TYPE_GMSL_YUV	2
 #define SENSOR_TYPE_GMSL_RGBIR	3
+#define SENSOR_TYPE_HSMT_RAW 4
 
 #define SENSOR_DATA_TYPE_RAW12 0x2C
 #define SENSOR_DATA_TYPE_RAW10 0x2B
@@ -33,7 +34,10 @@
 #define N2D_SCALE_CROP  5
 
 #define SIF_ONLINE_ISP      0
+#define SIF_MCM_ISP      	1
 #define SIF_OFFLINE_ISP     2
+
+#define ALIGN_UP(a, size) (((a) + (size)-1u) & (~((size)-1u)))
 
 typedef struct {
 	int index;

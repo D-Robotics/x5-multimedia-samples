@@ -308,7 +308,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 
 	// 输出 16 像素对齐的常用算法图像使用的分辨率
 	vse_ochn_attr[1].target_w = 512;
-	vse_ochn_attr[1].target_h = 512;
+	vse_ochn_attr[1].target_h = 480;
 
 	// 输出非 16 像素对齐的常用算法图像使用的分辨率
 	vse_ochn_attr[2].target_w = 224;
@@ -325,8 +325,8 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 	vse_ochn_attr[3].target_h = 64;
 
 	// 放大到支持的最大分辨率
-	vse_ochn_attr[4].target_w = 672;
-	vse_ochn_attr[4].target_h = 672;
+	vse_ochn_attr[4].target_w = 480;
+	vse_ochn_attr[4].target_h = 480;
 	vse_ochn_attr[5].target_w =
 		(input_width * 2) > 4096 ? 4096 : (input_width * 2);
 	vse_ochn_attr[5].target_h =

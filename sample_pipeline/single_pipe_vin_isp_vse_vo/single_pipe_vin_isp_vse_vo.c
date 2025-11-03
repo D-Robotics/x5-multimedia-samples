@@ -27,11 +27,16 @@ static struct option const long_options[] = {
 int32_t running = 0;
 vp_drm_context_t vp_drm_context;
 
-int create_and_run_vflow(pipe_contex_t *pipe_contex);
+static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host, uint32_t sensor_mode);
 void *read_vse_data(void *contex);
 
 static void print_help() {
-	printf("single_pipe_vin_isp_vse -s/--sensor sensor_index\n");
+	printf("Usage: single_pipe_vin_isp_vse [options]\n");
+	printf("Options:\n");
+	printf("  -s, --sensor <sensor_index>    Select sensor index to use\n");
+	printf("  -m, --mode <sensor_mode>       Select sensor mode (1:NORMAL_M, 2:DOL2_M, 6:SLAVE_M)\n");
+	printf("  -h, --help                     Show this help message\n\n");
+	printf("Available sensors:\n");
 	vp_show_sensors_list();
 }
 
@@ -39,50 +44,63 @@ void signal_handle(int signo) {
 	running = 0;
 }
 
-static int create_camera_node(pipe_contex_t *pipe_contex) {
+static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode) {
+	if (!pipe_contex || !pipe_contex->sensor_config) {
+		fprintf(stderr, "Invalid pipe_contex or sensor_config\n");
+		return -1;
+	}
 
-	camera_config_t *camera_config = NULL;
-	vp_sensor_config_t *sensor_config = NULL;
-	int32_t ret = 0;
+	vp_sensor_config_t *sensor_cfg = pipe_contex->sensor_config;
+	camera_config_t *cam_cfg = sensor_cfg->camera_config;
 
-	sensor_config = pipe_contex->sensor_config;
-	camera_config = sensor_config->camera_config;
-	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
+	if (!cam_cfg) {
+		fprintf(stderr, "camera_config is NULL\n");
+		return -1;
+	}
+
+	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
+		cam_cfg->sensor_mode = sensor_mode;
+		if (sensor_cfg->vin_node_attr)
+			sensor_cfg->vin_node_attr->lpwm_attr.enable = 1;
+	}
+
+	int32_t ret = hbn_camera_create(cam_cfg, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 
 	return 0;
 }
 
-static int create_vin_node(pipe_contex_t *pipe_contex) {
+static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 	vp_sensor_config_t *sensor_config = NULL;
 	vin_node_attr_t *vin_node_attr = NULL;
 	vin_ichn_attr_t *vin_ichn_attr = NULL;
 	vin_ochn_attr_t *vin_ochn_attr = NULL;
 	hbn_vnode_handle_t *vin_node_handle = NULL;
 	vin_attr_ex_t vin_attr_ex;
+	hbn_buf_alloc_attr_t alloc_attr = {0};
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
 	uint32_t ichn_id = 0;
 	uint32_t ochn_id = 0;
 	uint64_t vin_attr_ex_mask = 0;
-	hbn_buf_alloc_attr_t alloc_attr = {0};
 
 	sensor_config = pipe_contex->sensor_config;
 	vin_node_attr = sensor_config->vin_node_attr;
 	vin_ichn_attr = sensor_config->vin_ichn_attr;
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
+	vin_node_attr->cim_attr.mipi_rx = active_mipi_host;
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
 	if(pipe_contex->csi_config.mclk_is_not_configed){
-		//设备树中没有配置mclk：使用外部晶振
+		// 设备树中没有配置 mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 			pipe_contex->csi_config.index);
 	}else{
 		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
 		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
+		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
-
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
 	ERR_CON_EQ(ret, 0);
 	// 设置基本属性
@@ -94,12 +112,11 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	// 设置输出通道的属性
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
-	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)
 				continue;
-
 			vin_attr_ex.ex_attr_type = i;
 			/*we need to set hbn_vnode_set_attr_ex in a loop*/
 			ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
@@ -208,13 +225,13 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 }
 
 
-int create_and_run_vflow(pipe_contex_t *pipe_contex) {
+static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host, uint32_t sensor_mode)
+{
 	int32_t ret = 0;
-
 	// 创建pipeline中的每个node
-	ret = create_camera_node(pipe_contex);
+	ret = create_camera_node(pipe_contex, sensor_mode);
 	ERR_CON_EQ(ret, 0);
-	ret = create_vin_node(pipe_contex);
+	ret = create_vin_node(pipe_contex, active_mipi_host);
 	ERR_CON_EQ(ret, 0);
 	ret = create_isp_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
@@ -371,28 +388,40 @@ static int display_init(pipe_contex_t *pipe_contex)
 	output_width = isp_attr->crop.w;
 	output_height = isp_attr->crop.h;
 
+	// ==== 新增：检查分辨率是否支持 ====
+	if (!vp_display_is_resolution_supported(output_width, output_height)) {
+		printf("\n\nError: Resolution %dx%d is not supported by HDMI\n",
+			output_width, output_height);
+		vp_display_print_supported_resolutions();
+		return -1;
+	}
+
 	ret = vp_display_check_hdmi_is_connected();
-	if(ret == 0){
+	if(ret == 0) {
 		printf("\n\nFailed: output form is hdmi, but not found hdmi connector.\n\n");
 		return -1;
 	}
-	ret = vp_display_get_max_resolution_if_not_match(output_width, output_height, &hdmi_output_width, &hdmi_output_height);
-	if(ret == 1){
+
+	ret = vp_display_get_max_resolution_if_not_match(output_width, output_height,
+													&hdmi_output_width, &hdmi_output_height);
+	if (ret == 1) {
 		printf("hdmi support resolution %d*%d\n", output_width, output_height);
-	}else if(ret == 0){
+	} else if (ret == 0) {
 		printf("\nWarn !!! hdmi not found resolution %d*%d, usr max resolution %d*%d\n\n",
 			output_width, output_height, hdmi_output_width, hdmi_output_height);
-	}else{
+	} else {
 		printf("hdmi not found appropriate resolution\n");
 		return -1;
 	}
+
 	ret = vp_display_init(&vp_drm_context, hdmi_output_width, hdmi_output_height);
-	if(ret != 0){
+	if (ret != 0) {
 		printf("hdmi init failed.\n");
 		return -1;
 	}
 
-	printf("vp_display_init ok: %dx%d -> %dx%d\n", output_width, output_height, hdmi_output_width, hdmi_output_height);
+	printf("vp_display_init ok: %dx%d -> %dx%d\n",
+		output_width, output_height, hdmi_output_width, hdmi_output_height);
 
 	return 0;
 }
@@ -409,13 +438,16 @@ int main(int argc, char** argv) {
 	int opt_index = 0;
 	int c = 0;
 	int index = -1;
+	int active_mipi_host;
+	uint32_t sensor_mode_local = 0; // 本地 sensor_mode，可通过参数设置
 
-	while((c = getopt_long(argc, argv, "s:h",
-							long_options, &opt_index)) != -1) {
-		switch (c)
-		{
+	while ((c = getopt_long(argc, argv, "s:m:h", long_options, &opt_index)) != -1) {
+		switch (c) {
 		case 's':
 			index = atoi(optarg);
+			break;
+		case 'm':
+			sensor_mode_local = atoi(optarg);
 			break;
 		case 'h':
 		default:
@@ -435,6 +467,7 @@ int main(int argc, char** argv) {
 				"sensor is connected to the Camera interface.\n");
 			return ret;
 		}
+		active_mipi_host = pipe_contex.sensor_config->vin_node_attr->cim_attr.mipi_rx;
 	} else {
 		printf("Unsupport sensor index:%d\n", index);
 		print_help();
@@ -443,18 +476,24 @@ int main(int argc, char** argv) {
 
 	hb_mem_module_open();
 
-	ret = create_and_run_vflow(&pipe_contex);
+	ret = create_and_run_vflow(&pipe_contex, active_mipi_host, sensor_mode_local);
 	ERR_CON_EQ(ret, 0);
 
 	ret = display_init(&pipe_contex);
-	ERR_CON_EQ(ret, 0);
+	if (ret != 0) {
+		goto cleanup;
+	}
 
 	running = 1;
 	ret = pthread_create(&read_thread, NULL, (void *)read_vse_data,
 						(void *)&pipe_contex);
-
+	if (ret != 0) {
+		printf("\nError: Failed to create reader thread\n");
+		goto cleanup;
+	}
 	pthread_join(read_thread, NULL);
 
+cleanup:
 	ret = hbn_vflow_stop(pipe_contex.vflow_fd);
 	ERR_CON_EQ(ret, 0);
 	display_deinit();

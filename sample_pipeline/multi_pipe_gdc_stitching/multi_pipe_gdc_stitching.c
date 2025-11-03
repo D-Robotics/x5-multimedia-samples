@@ -873,6 +873,13 @@ void *encode_isp_chn_data(void *media)
 			printf("hbn_vnode_getframe isp_node_handle1 error\n");
 			continue;
 		}
+		// Exit the loop if the resolutions do not match
+		if (isp_out_img_0.buffer.height != isp_out_img_1.buffer.height || isp_out_img_0.buffer.width != isp_out_img_1.buffer.width) {
+			printf("The resolutions of the two Sensor are different! Please Check!! First Sensor: %dx%d, Second Sensor: %dx%d\n",
+				isp_out_img_0.buffer.width, isp_out_img_0.buffer.height,
+				isp_out_img_1.buffer.width, isp_out_img_1.buffer.height);
+			break;
+		}
 		gdc_attr.config_addr = gdc_bin_buf_bottom->phys_addr;
 		gdc_attr.config_size = gdc_bin_buf_bottom->size;
 		gdc_attr.binary_ion_id = gdc_bin_buf_bottom->share_id;

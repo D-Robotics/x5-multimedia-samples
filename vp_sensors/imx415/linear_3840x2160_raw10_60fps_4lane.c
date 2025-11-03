@@ -92,7 +92,7 @@ static vin_ochn_attr_t imx415_vin_ochn_attr = {
 };
 
 static isp_attr_t imx415_isp_attr = {
-	.input_mode = 2, // 0: online, 1: mcm, 类似offline
+	.input_mode = 1, // 0: online, 1: mcm, 类似offline
 	.sensor_mode= ISP_NORMAL_M,
 	.crop = {
 		.x = 0,

@@ -29,14 +29,23 @@ extern "C" {
 #define DRM_MAX_PLANES 3
 #define DRM_ION_MAX_BUFFERS 6
 
-#define VP_DEBUG_ENABLED 0   // 改成 0 就会关闭所有调试打印
+#define VP_LOG_LEVEL_ERROR 0
+#define VP_LOG_LEVEL_WARN  1
+#define VP_LOG_LEVEL_INFO  2
+#define VP_LOG_LEVEL_DEBUG 3
 
-#if VP_DEBUG_ENABLED
-	#define VP_DEBUG(fmt, args...) \
-		fprintf(stderr, "[DEBUG] %s:%d: " fmt, __func__, __LINE__, ##args)
-#else
-	#define VP_DEBUG(fmt, args...)  /* no-op */
-#endif
+/* 日志输出宏 */
+#define VP_LOG(ctx, lvl, fmt, ...) \
+	do { \
+		if ((ctx)->log_level >= (lvl)) { \
+			const char *prefix = \
+				(lvl == VP_LOG_LEVEL_ERROR) ? "[ERROR]" : \
+				(lvl == VP_LOG_LEVEL_WARN)  ? "[WARN]"  : \
+				(lvl == VP_LOG_LEVEL_INFO)  ? "[INFO]"  : "[DEBUG]"; \
+			fprintf(stderr, "%s " fmt, prefix, ##__VA_ARGS__); \
+		} \
+	} while (0)
+
 typedef struct
 {
 	int dma_buf_fd;
@@ -82,6 +91,13 @@ typedef struct
 	bool back_ready;         // 后台buffer是否就绪
 	pthread_mutex_t buf_mutex; // 保护buffer交换的互斥锁
 	drmEventContext evctx;  // DRM事件上下文
+
+	bool use_nonblock;
+	int max_wait_ms_for_back_ready;
+	int max_atomic_retries;
+	int busy_warn_threshold;
+
+	int log_level;    /* 新增字段，控制日志等级 */
 } vp_drm_context_t;
 
 int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height);
@@ -93,6 +109,9 @@ int32_t vp_display_wait_blank(vp_drm_context_t *drm_ctx);
 int32_t vp_display_wait_vsync(vp_drm_context_t *drm_ctx);
 int32_t vp_display_check_hdmi_is_connected();
 int32_t vp_display_get_max_resolution_if_not_match(int32_t width, int32_t height, int32_t *out_width, int32_t *out_height);
+int vp_display_is_resolution_supported(int width, int height);
+void vp_display_print_supported_resolutions();
+
 #ifdef __cplusplus
 }
 #endif /* extern "C" */

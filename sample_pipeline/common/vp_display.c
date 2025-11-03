@@ -411,6 +411,62 @@ int32_t vp_display_check_hdmi_is_connected(){
 	return 1;
 }
 
+// 检查分辨率是否支持
+int vp_display_is_resolution_supported(int width, int height)
+{
+	int drm_fd = drmOpen("vs-drm", NULL);
+	if (drm_fd < 0) {
+		perror("drmOpen failed");
+		return 0;
+	}
+
+	drmModeConnectorPtr connector = find_connector(drm_fd);
+	if (!connector) {
+		close(drm_fd);
+		return 0;
+	}
+
+	int supported = 0;
+	printf("Checking resolutions:\n");
+	for (int i = 0; i < connector->count_modes; i++) {
+		drmModeModeInfo *mode = &connector->modes[i];
+		printf("Mode %d: %dx%d @ %dHz\n", i, mode->hdisplay, mode->vdisplay, mode->vrefresh);
+		if (mode->hdisplay == width && mode->vdisplay == height) {
+			supported = 1;
+			break;
+		}
+	}
+
+	drmModeFreeConnector(connector);
+	close(drm_fd);
+	return supported;
+}
+
+// 打印支持的分辨率
+void vp_display_print_supported_resolutions()
+{
+	int drm_fd = drmOpen("vs-drm", NULL);
+	if (drm_fd < 0) {
+		perror("drmOpen failed");
+		return;
+	}
+
+	drmModeConnectorPtr connector = find_connector(drm_fd);
+	if (!connector) {
+		close(drm_fd);
+		return;
+	}
+
+	printf("Connected to connector: %d\n", connector->connector_id);
+	for (int i = 0; i < connector->count_modes; i++) {
+		drmModeModeInfo *mode = &connector->modes[i];
+		printf("  Mode %d: %dx%d @ %dHz\n", i, mode->hdisplay, mode->vdisplay, mode->vrefresh);
+	}
+
+	drmModeFreeConnector(connector);
+	close(drm_fd);
+}
+
 int32_t vp_display_get_max_resolution_if_not_match(
 		int32_t width, int32_t height, int32_t *out_width, int32_t *out_height){
 
@@ -478,6 +534,7 @@ int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height
 	int32_t ret = 0;
 	drmModeConnectorPtr connector = NULL;
 
+	VP_LOG(drm_ctx, VP_LOG_LEVEL_INFO, "Initializing DRM display...\n");
 	drm_init_config(drm_ctx, width, height);
 
 	drm_ctx->front_fb_id = 0;
@@ -488,6 +545,11 @@ int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height
 	memset(&drm_ctx->evctx, 0, sizeof(drm_ctx->evctx));
 	drm_ctx->evctx.version = DRM_EVENT_CONTEXT_VERSION;
 	drm_ctx->evctx.page_flip_handler = page_flip_handler;
+
+	drm_ctx->use_nonblock = true;
+	drm_ctx->max_wait_ms_for_back_ready = 50;  /* ms */
+	drm_ctx->max_atomic_retries = 5;
+	drm_ctx->busy_warn_threshold = 3;
 
 	drm_ctx->drm_fd = drmOpen("vs-drm", NULL);
 	if (drm_ctx->drm_fd < 0) {
@@ -503,7 +565,7 @@ int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height
 	}
 	drm_ctx->connector_id = connector->connector_id;
 
-	printf("Setting DRM client capabilities...\n");
+	VP_LOG(drm_ctx, VP_LOG_LEVEL_DEBUG, "Setting DRM client capabilities...\n");
 	drm_set_client_capabilities(drm_ctx->drm_fd);
 
 	printf("Setting up KMS...\n");
@@ -662,43 +724,55 @@ static uint32_t get_format_from_string(const char *format_str)
 	}
 }
 
+/* 处理一次 drm 事件（非阻塞），在需要时清理 event 队列 */
+static void drm_process_events_once(vp_drm_context_t *drm_ctx)
+{
+	struct pollfd pfd = { drm_ctx->drm_fd, POLLIN, 0 };
+	int ret = poll(&pfd, 1, 0);
+	if (ret > 0 && (pfd.revents & POLLIN)) {
+		drmHandleEvent(drm_ctx->drm_fd, &drm_ctx->evctx);
+		VP_LOG(drm_ctx, VP_LOG_LEVEL_DEBUG, "Processed one DRM event\n");
+	}
+}
+
 static void page_flip_handler(int fd, unsigned int frame,
 							unsigned int sec, unsigned int usec,
-							void *data) {
+							void *data)
+{
 	vp_drm_context_t *ctx = (vp_drm_context_t *)data;
 	static struct timespec last_flip;
 	struct timespec now;
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	long interval = (now.tv_sec - last_flip.tv_sec) * 1000000 +
-				   (now.tv_nsec - last_flip.tv_nsec) / 1000;
+	long interval_us = (now.tv_sec - last_flip.tv_sec) * 1000000 +
+					(now.tv_nsec - last_flip.tv_nsec) / 1000;
 	last_flip = now;
 
 	pthread_mutex_lock(&ctx->buf_mutex);
-
 	if (ctx->back_fb_id != 0) {
-		uint32_t tmp = ctx->front_fb_id;
 		ctx->front_fb_id = ctx->back_fb_id;
-		ctx->back_fb_id = tmp;
+		ctx->back_fb_id = 0;
 		ctx->back_ready = false;
 	} else {
-		fprintf(stderr, "Warning: No back buffer available\n");
+		VP_LOG(ctx, VP_LOG_LEVEL_WARN, "No back buffer available during page flip\n");
 	}
-
 	pthread_mutex_unlock(&ctx->buf_mutex);
 
-	printf("Page flip completed at %u.%06u (interval: %ldμs)\n",
-		  sec, usec, interval);
+	VP_LOG(ctx, VP_LOG_LEVEL_INFO,
+		"Page flip completed at %u.%06u (interval: %ldμs)\n",
+		sec, usec, interval_us);
+
+	(void)fd; (void)frame;
 }
 
-static uint32_t get_framebuffer(
-	vp_drm_context_t *drm_ctx,
-	int dma_buf_fd,
-	int plane_index,
-	int width,
-	int height,
-	int stride,
-	int vstride)
+// 获取或创建 framebuffer（保留旧 fb 直到 commit 完成）
+static uint32_t get_framebuffer(vp_drm_context_t *drm_ctx,
+								int dma_buf_fd,
+								int plane_index,
+								int width,
+								int height,
+								int stride,
+								int vstride)
 {
 	dma_buf_map_t *entry = NULL;
 	HASH_FIND_INT(drm_ctx->buffer_map, &dma_buf_fd, entry);
@@ -713,59 +787,41 @@ static uint32_t get_framebuffer(
 			}
 			drmModeFreeFB(fb_info);
 		}
-
-		drmModeRmFB(drm_ctx->drm_fd, entry->fb_id);
+		// 不立即删除旧 fb，留给 commit 翻转完成后再删除
 		HASH_DEL(drm_ctx->buffer_map, entry);
 		free(entry);
 		drm_ctx->buffer_count--;
 	}
-	VP_DEBUG("Creating new framebuffer:\n");
-	VP_DEBUG("  Resolution: %dx%d\n", width, height);
-	VP_DEBUG("  Format: %s\n", drm_ctx->planes[plane_index].format);
-	VP_DEBUG("  Stride: %d, vstride: %d\n", stride, vstride);
 
-	struct drm_prime_handle prime_handle = {
-		.fd = dma_buf_fd,
-		.flags = 0,
-		.handle = 0,
-	};
+	VP_LOG(drm_ctx, VP_LOG_LEVEL_DEBUG,
+		"Creating new framebuffer: %dx%d format=%s stride=%d vstride=%d\n",
+		width, height, drm_ctx->planes[plane_index].format, stride, vstride);
 
+	struct drm_prime_handle prime_handle = { .fd = dma_buf_fd, .flags = 0, .handle = 0 };
 	if (drmIoctl(drm_ctx->drm_fd, DRM_IOCTL_PRIME_FD_TO_HANDLE, &prime_handle) < 0) {
-		perror("DRM_IOCTL_PRIME_FD_TO_HANDLE");
-		printf("Failed to map dma_buf_fd=%d to GEM handle\n", dma_buf_fd);
+		VP_LOG(drm_ctx, VP_LOG_LEVEL_ERROR,
+			"Failed to map dma_buf_fd=%d to GEM handle: %s\n",
+			dma_buf_fd, strerror(errno));
 		return 0;
 	}
 
-	uint32_t handles[4] = {0};
-	uint32_t strides[4] = {0};
-	uint32_t offsets[4] = {0};
-
-	handles[0] = prime_handle.handle;
-	strides[0] = stride;
-	offsets[0] = 0;
-	handles[1] = prime_handle.handle;
-	strides[1] = stride;
-	offsets[1] = stride * vstride;
-
+	uint32_t handles[4] = { prime_handle.handle, prime_handle.handle, 0, 0 };
+	uint32_t strides[4] = { stride, stride, 0, 0 };
+	uint32_t offsets[4] = { 0, stride * vstride, 0, 0 };
 	uint32_t fb_id;
 	uint32_t drm_format = get_format_from_string(drm_ctx->planes[plane_index].format);
 
 	if (drmModeAddFB2(drm_ctx->drm_fd, width, height, drm_format,
-					 handles, strides, offsets, &fb_id, 0)) {
-		fprintf(stderr, "Failed to create framebuffer with params:\n");
-		fprintf(stderr, "  Width: %d, Height: %d\n", width, height);
-		fprintf(stderr, "  Format: %s (0x%x)\n",
-			   drm_ctx->planes[plane_index].format, drm_format);
-		fprintf(stderr, "  Strides: %u, %u\n", strides[0], strides[1]);
-		fprintf(stderr, "  Offsets: %u, %u\n", offsets[0], offsets[1]);
-		perror("drmModeAddFB2");
+					handles, strides, offsets, &fb_id, 0)) {
+		VP_LOG(drm_ctx, VP_LOG_LEVEL_ERROR,
+			"Failed to create framebuffer: %dx%d format=%s(0x%x)\n",
+			width, height, drm_ctx->planes[plane_index].format, drm_format);
 		return 0;
 	}
 
 	entry = (dma_buf_map_t *)malloc(sizeof(dma_buf_map_t));
-	if (!entry)
-	{
-		perror("malloc");
+	if (!entry) {
+		VP_LOG(drm_ctx, VP_LOG_LEVEL_ERROR, "Failed to allocate dma_buf_map entry\n");
 		drmModeRmFB(drm_ctx->drm_fd, fb_id);
 		return 0;
 	}
@@ -775,107 +831,101 @@ static uint32_t get_framebuffer(
 	HASH_ADD_INT(drm_ctx->buffer_map, dma_buf_fd, entry);
 	drm_ctx->buffer_count++;
 
-	VP_DEBUG("Created framebuffer ID: %u\n", fb_id);
+	VP_LOG(drm_ctx, VP_LOG_LEVEL_DEBUG, "Created framebuffer ID: %u\n", fb_id);
 	return fb_id;
 }
-int32_t vp_display_wait_blank(vp_drm_context_t *drm_ctx){
 
+
+int32_t vp_display_wait_blank(vp_drm_context_t *drm_ctx)
+{
 	drmVBlank vbl;
 	memset(&vbl, 0, sizeof(vbl));
-	vbl.request.type = (drmVBlankSeqType)(DRM_VBLANK_RELATIVE);;
-	vbl.request.sequence = 0;
- 	uint32_t high_crtc = (0 << DRM_VBLANK_HIGH_CRTC_SHIFT);
-	vbl.request.type = (drmVBlankSeqType)(DRM_VBLANK_RELATIVE | (high_crtc & DRM_VBLANK_HIGH_CRTC_MASK) );
+	vbl.request.type = (drmVBlankSeqType)(DRM_VBLANK_RELATIVE | 0);
 	vbl.request.sequence = 1;
-	//wait next vsync
+
 	int ret = drmWaitVBlank(drm_ctx->drm_fd, &vbl);
 	if (ret != 0) {
-		printf("drmWaitVBlank failed ret=%d\n", ret);
+		VP_LOG(drm_ctx, VP_LOG_LEVEL_ERROR, "drmWaitVBlank failed: ret=%d\n", ret);
 		return -1;
 	}
-
+	VP_LOG(drm_ctx, VP_LOG_LEVEL_DEBUG, "drmWaitVBlank succeeded\n");
 	return 0;
 }
 
 int32_t vp_display_set_frame(vp_drm_context_t *drm_ctx,
-	hb_mem_graphic_buf_t *image_frame)
+							hb_mem_graphic_buf_t *image_frame)
 {
-	int32_t ret = 0;
-	int retry_count = 3;
-	int dma_buf_fds[DRM_MAX_PLANES] = {-1, -1, -1};
-
 	if (!drm_ctx || !image_frame || image_frame->width == 0 || image_frame->height == 0) {
-		fprintf(stderr, "Invalid frame parameters\n");
+		VP_LOG(drm_ctx, VP_LOG_LEVEL_ERROR, "Invalid frame parameters\n");
 		return -1;
 	}
 
-	for (uint32_t i = 0; i < drm_ctx->plane_count; ++i) {
+	int dma_buf_fds[DRM_MAX_PLANES] = {-1, -1, -1};
+	for (uint32_t i = 0; i < drm_ctx->plane_count; ++i)
 		dma_buf_fds[i] = image_frame->fd[i];
-	}
 
 	drmModeAtomicReq *req = drmModeAtomicAlloc();
 	if (!req) {
-		perror("drmModeAtomicAlloc");
+		VP_LOG(drm_ctx, VP_LOG_LEVEL_ERROR, "drmModeAtomicAlloc failed\n");
 		return -1;
+	}
+
+	// 等待上一次 back flip 完成
+	while (1) {
+		pthread_mutex_lock(&drm_ctx->buf_mutex);
+		bool need_wait = drm_ctx->back_ready;
+		pthread_mutex_unlock(&drm_ctx->buf_mutex);
+
+		if (!need_wait) break;
+		drm_process_events_once(drm_ctx);
+		usleep(1000);
 	}
 
 	pthread_mutex_lock(&drm_ctx->buf_mutex);
-	uint32_t fb_id = get_framebuffer(
-		drm_ctx,
-		dma_buf_fds[0],
-		0,
-		image_frame->width,
-		image_frame->height,
-		image_frame->stride,
-		image_frame->vstride
-	);
-
+	uint32_t fb_id = get_framebuffer(drm_ctx, dma_buf_fds[0], 0,
+									image_frame->width, image_frame->height,
+									image_frame->stride, image_frame->vstride);
 	if (fb_id == 0) {
+		VP_LOG(drm_ctx, VP_LOG_LEVEL_ERROR, "Failed to get framebuffer\n");
 		pthread_mutex_unlock(&drm_ctx->buf_mutex);
 		drmModeAtomicFree(req);
 		return -1;
-	}
-
-	if (drm_ctx->back_fb_id != 0 && drm_ctx->back_fb_id != fb_id) {
-		drmModeRmFB(drm_ctx->drm_fd, drm_ctx->back_fb_id);
 	}
 
 	drm_ctx->back_fb_id = fb_id;
 	drm_ctx->back_ready = true;
 
 	add_property(drm_ctx->drm_fd, req, drm_ctx->planes[0].plane_id,
-		DRM_MODE_OBJECT_PLANE, "FB_ID", fb_id);
+				DRM_MODE_OBJECT_PLANE, "FB_ID", fb_id);
 	add_property(drm_ctx->drm_fd, req, drm_ctx->planes[0].plane_id,
-		DRM_MODE_OBJECT_PLANE, "CRTC_ID", drm_ctx->crtc_id);
+				DRM_MODE_OBJECT_PLANE, "CRTC_ID", drm_ctx->crtc_id);
+	pthread_mutex_unlock(&drm_ctx->buf_mutex);
 
-	uint32_t flags = DRM_MODE_ATOMIC_NONBLOCK | DRM_MODE_PAGE_FLIP_EVENT;
-
-	while (retry_count-- > 0) {
-		ret = drmModeAtomicCommit(drm_ctx->drm_fd, req, flags, drm_ctx);
-
-		if (ret == 0) {
-			drm_ctx->back_ready = false;
-			break;
-		} else if (errno == EBUSY) {
-			usleep(10000);
-			continue;
-		} else {
-			fprintf(stderr, "Atomic commit failed: %s (ret=%d)\n",
-				   strerror(errno), ret);
-			break;
-		}
+	// 阻塞式 atomic commit，确保 page flip 完全执行
+	int ret = drmModeAtomicCommit(drm_ctx->drm_fd, req,
+								DRM_MODE_PAGE_FLIP_EVENT,
+								drm_ctx);
+	if (ret != 0) {
+		VP_LOG(drm_ctx, VP_LOG_LEVEL_ERROR,
+			"Blocking drmModeAtomicCommit failed: ret=%d errno=%d (%s)\n",
+			ret, errno, strerror(errno));
+		drmModeAtomicFree(req);
+		return -1;
 	}
 
-	pthread_mutex_unlock(&drm_ctx->buf_mutex);
 	drmModeAtomicFree(req);
 
-	if (ret == 0) {
-		struct pollfd pfd = {drm_ctx->drm_fd, POLLIN, 0};
-		poll(&pfd, 1, 0);
-		if (pfd.revents & POLLIN) {
-			drmHandleEvent(drm_ctx->drm_fd, &drm_ctx->evctx);
-		}
+	// 等待 page_flip_handler 执行完成
+	while (1) {
+		pthread_mutex_lock(&drm_ctx->buf_mutex);
+		bool flip_done = !drm_ctx->back_ready;
+		pthread_mutex_unlock(&drm_ctx->buf_mutex);
+		if (flip_done) break;
+		drm_process_events_once(drm_ctx);
+		usleep(1000);
 	}
 
-	return ret;
+	VP_LOG(drm_ctx, VP_LOG_LEVEL_DEBUG, "Frame committed: fb_id=%u\n", fb_id);
+	return 0;
 }
+

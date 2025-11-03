@@ -148,6 +148,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vin_ochn_attr_t *vin_ochn_attr = NULL;
 	hbn_vnode_handle_t *vin_node_handle = NULL;
 	vin_attr_ex_t vin_attr_ex;
+	hbn_buf_alloc_attr_t alloc_attr = {0};
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
 	uint32_t ichn_id = 0;
@@ -195,6 +196,12 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
+	alloc_attr.buffers_num = 3;
+	alloc_attr.is_contig = 1;
+	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
+						| HB_MEM_USAGE_CPU_WRITE_OFTEN
+						| HB_MEM_USAGE_CACHED;
+	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
 
 	return 0;
 }
@@ -232,6 +239,43 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 						| HB_MEM_USAGE_CACHED;
 	ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, ochn_id, &alloc_attr);
 	ERR_CON_EQ(ret, 0);
+
+	return 0;
+}
+
+static int check_vse_scale_ratio(uint32_t input_width, uint32_t input_height,
+									uint32_t output_width, uint32_t output_height,
+									uint32_t roi_width, uint32_t roi_height) {
+	// 对于有ROI裁剪的情况，使用ROI尺寸作为输入基准
+	uint32_t effective_input_width = (roi_width > 0) ? roi_width : input_width;
+	uint32_t effective_input_height = (roi_height > 0) ? roi_height : input_height;
+
+	int width_scale = (output_width > effective_input_width) ? 1 :
+						(output_width < effective_input_width) ? -1 : 0;
+	int height_scale = (output_height > effective_input_height) ? 1 :
+						(output_height < effective_input_height) ? -1 : 0;
+
+	// VSE不允许宽高一个放大一个缩小
+	if ((width_scale == 1 && height_scale == -1) || (width_scale == -1 && height_scale == 1)) {
+		printf("VSE does not allow one dimension to scale up while the other scales down\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int check_vse_output_valid(uint32_t input_width, uint32_t input_height,
+									vse_ochn_attr_t *vse_ochn_attr) {
+	for (int i = 0; i < VSE_MAX_CHANNELS; ++i) {
+		int ret = check_vse_scale_ratio(input_width, input_height,
+										vse_ochn_attr[i].target_w, vse_ochn_attr[i].target_h,
+										vse_ochn_attr[i].roi.w, vse_ochn_attr[i].roi.h);
+		if (ret != 0) {
+			printf("Error: Sensor VSE Output channel %d resolution %dx%d scaling ratio invalid!\n",
+					i, vse_ochn_attr[i].target_w, vse_ochn_attr[i].target_h);
+			return -1;
+		}
+	}
 
 	return 0;
 }
@@ -275,7 +319,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 
 	// 输出 16 像素对齐的常用算法图像使用的分辨率
 	vse_ochn_attr[1].target_w = 512;
-	vse_ochn_attr[1].target_h = 512;
+	vse_ochn_attr[1].target_h = 480;
 
 	// 输出非 16 像素对齐的常用算法图像使用的分辨率
 	vse_ochn_attr[2].target_w = 224;
@@ -292,11 +336,16 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 	vse_ochn_attr[3].target_h = 64;
 
 	// 放大到支持的最大分辨率
-	vse_ochn_attr[4].target_w = 672;
-	vse_ochn_attr[4].target_h = 672;
+	vse_ochn_attr[4].target_w = 480;
+	vse_ochn_attr[4].target_h = 480;
 	vse_ochn_attr[5].target_w = (input_width * 2) > 4096 ? 4096 : (input_width * 2);
 	vse_ochn_attr[5].target_h = (input_height * 2) > 3076 ? 3076 : (input_height * 2);
 
+	// 在设置VSE属性前先检测缩放比例
+	ret = check_vse_output_valid(input_width, input_height, vse_ochn_attr);
+	if (ret != 0) {
+		exit(-1);
+	}
 	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, vse_node_handle);
 	ERR_CON_EQ(ret, 0);
 
@@ -473,7 +522,7 @@ void *read_vse_data(void *context) {
 				for (int j = 0; j < 2; ++j) {
 					hb_mem_invalidate_buf_with_vaddr((uint64_t)out_img[i].buffer.virt_addr[j], out_img[i].buffer.size[j]);
 				}
-				snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%d.yuv", i, count);
+				snprintf(dst_file, sizeof(dst_file), "vse_ch%d_%dx%d_%d.yuv", i, out_img[i].buffer.width, out_img[i].buffer.height, count);
 				dump_2plane_yuv_to_file(dst_file,
 					out_img[i].buffer.virt_addr[0],
 					out_img[i].buffer.virt_addr[1],

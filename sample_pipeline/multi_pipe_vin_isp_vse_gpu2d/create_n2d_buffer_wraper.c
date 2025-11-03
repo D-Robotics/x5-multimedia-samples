@@ -46,9 +46,6 @@ n2d_error_t create_n2d_buffer_from_hbm_graphic(n2d_buffer_t *n2d_buffer, hb_mem_
 	error = create_n2d_buffer_from_phyaddr_continuous_memory(n2d_buffer, N2D_NV12,
 		(n2d_uintptr_t)hbm_buffer->phys_addr[0], hbm_buffer->width, hbm_buffer->height);
 
-	// n2d_buffer->memory = hbm_buffer->virt_addr[0];
-	// n2d_buffer->uv_memory[0] = hbm_buffer->virt_addr[0];
-	// n2d_buffer->uv_memory[1] = hbm_buffer->virt_addr[1];
 	return error;
 }
 
@@ -58,13 +55,6 @@ n2d_error_t create_n2d_buffer_from_hbm_common(n2d_buffer_t *n2d_buffer,
 
 	error =  create_n2d_buffer_from_phyaddr_continuous_memory(n2d_buffer, N2D_NV12,
 		(n2d_uintptr_t)hbm_buffer->phys_addr, width, height);
-
-	// n2d_buffer->memory = hbm_buffer->virt_addr;
-
-	// n2d_buffer->uv_memory[0] = hbm_buffer->virt_addr;
-	// n2d_buffer->uv_memory[1] = (n2d_pointer)((uint64_t)hbm_buffer->virt_addr + width * height);
-
-	// n2d_buffer->stride = width;
 
 	return error;
 }

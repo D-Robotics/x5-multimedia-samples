@@ -14,7 +14,7 @@ show_help() {
     echo "Usage: $0 [options]"
     echo
     echo "Options:"
-    echo "  -d <device>      Set the SPI device to test (default: /dev/spidev0.0)."
+    echo "  -d <device>      Set the SPI device to test (default: /dev/spidev2.0)."
     echo "  -c <count>       Set the stress test count (default: 100)."
     echo "  -s <speed>       Set the SPI speed in Hz (default: 12000000)."
     echo "  -o <directory>   Set the output directory for logs (default: '../log')."

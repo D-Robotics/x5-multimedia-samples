@@ -54,7 +54,7 @@ extern vp_sensor_config_t ov5647_linear_1920x1080_raw10_30fps_2lane;
 extern vp_sensor_config_t ov5647_linear_2592x1944_raw10_15fps_2lane;
 extern vp_sensor_config_t imx477_linear_1280x960_raw10_120fps_2lane;
 extern vp_sensor_config_t imx477_linear_1920x1080_raw12_50fps_2lane;
-extern vp_sensor_config_t imx477_linear_2016x1520_raw12_40fps_2lane;
+extern vp_sensor_config_t imx477_linear_2016x1520_raw12_21fps_2lane;
 extern vp_sensor_config_t imx477_linear_4000x3000_raw12_10fps_2lane;
 extern vp_sensor_config_t ov50h40_linear_4096x3072_raw10_30fps_4lane;
 extern vp_sensor_config_t ox05b1s_linear_2592x1944_raw10_30fps_4lane;
@@ -103,7 +103,7 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&ov5647_linear_2592x1944_raw10_15fps_2lane,
 	&imx477_linear_1280x960_raw10_120fps_2lane,
 	&imx477_linear_1920x1080_raw12_50fps_2lane,
-	&imx477_linear_2016x1520_raw12_40fps_2lane,
+	&imx477_linear_2016x1520_raw12_21fps_2lane,
 	&imx477_linear_4000x3000_raw12_10fps_2lane,
 	&ov50h40_linear_4096x3072_raw10_30fps_4lane,
 	&ox05b1s_linear_2592x1944_raw10_30fps_4lane,
@@ -139,6 +139,13 @@ void vp_show_sensors_list_vse_limit(uint32_t width_limit, uint32_t height_limit)
 		int width_tmp = sensor_config->camera_config->width;
 		int height_tmp = sensor_config->camera_config->height;
 		if (width_tmp * height_tmp < quarter_of_vse_max_resolution) {
+			continue;
+		}
+
+		if((sensor_config->camera_config->width > width_limit &&
+		   sensor_config->camera_config->height < height_limit) ||
+		   (sensor_config->camera_config->width < width_limit &&
+		   sensor_config->camera_config->height > height_limit)) {
 			continue;
 		}
 		printf("index: %d  sensor_name: %-16s \tconfig_file:%s\n",
@@ -750,6 +757,9 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 		memset(csi_info_tmp.sensor_config_list, 0, sizeof(csi_info_tmp.sensor_config_list));
 		if (vcon_props_array[i].status[0] == 'o') {
 			for (int j = 0; j < vp_get_sensors_list_number(); j++) {
+				if(vp_sensor_config_list[j]->camera_config->sensor_mode == DOL2_M){
+					continue;
+				}
 				if(!mclk_is_not_configed){
 					/* enable mclk */
 					if (vp_sensor_config_list[j]->vin_attr_ex->vin_attr_ex_mask)

@@ -57,21 +57,22 @@ typedef struct {
 } frame_queue_t;
 
 static frame_queue_t frame_queue;
-static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static int32_t total_pipeline_num = 0;
 static int32_t verbose_flag = 0;
 static int32_t used_mipi_host = 0;
 static uint32_t link_port[MAX_SENSORS] = {};
 static int32_t running = 0;
 static uint16_t sensor_type;
-
+static n2d_config_t g_gpu2d_attr = {0};
+static pthread_mutex_t g_gpu2d_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
 	{NULL, 0, NULL, 0}
 };
 
-static int create_and_run_vflow(pipe_contex_t *pipe_contex, int index);
+static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host,
+	 int index, uint32_t sensor_mode);
 int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
 int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
 void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeline_idx);
@@ -118,11 +119,13 @@ static void frame_queue_push(frame_queue_t *q, hbn_vnode_image_t *frame) {
 }
 
 static void show_help() {
-	printf("Usage: get_vin_data [OPTIONS]\n");
+	printf("Usage: single_pipe_vin_isp_vse_gpu2d [options]\n");
 	printf("Options:\n");
-	printf("  -s \"sensor=index\"    Specify sensor index\n");
-	printf("  -h                     Show this help message\n");
-	vp_show_sensors_list(); // Assuming this function displays sensor list
+	printf("  -s \"sensor=index\"            Select sensor index to use\n");
+	printf("  -m, --mode <sensor_mode>       Select sensor mode (1:NORMAL_M, 2:DOL2_M, 6:SLAVE_M)\n");
+	printf("  -h, --help                     Show this help message\n\n");
+	printf("Available sensors:\n");
+	vp_show_sensors_list();
 }
 
 
@@ -149,59 +152,67 @@ static int split_string(const char *str, const char *delim, char *out[], int max
 	return count;
 }
 
-
 void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeline_idx) {
 	int ret = 0;
 	char *parts[4];
 	int sensor_idx = -1;
 	int count = split_string(config, " ", parts, 4);
-
-	// 默认值
 	pipeline_info->bind_chn = 0;
 
 	for (int i = 0; i < count; i++) {
 		char *key_value[2];
 		int kv_count = split_string(parts[i], "=", key_value, 2);
 		if (kv_count != 2) {
-			fprintf(stderr, "Invalid format in config: %s\n", parts[i]);
-			continue;
+			fprintf(stderr, "Invalid config format: '%s'. Expected format: sensor=index\n", parts[i]);
+			exit(1);
 		}
 
 		if (strcmp(key_value[0], "sensor") == 0) {
 			if (!is_number(key_value[1])) {
 				fprintf(stderr, "Invalid sensor ID: %s\n", key_value[1]);
-				continue;
+				exit(1);
 			}
 			sensor_idx = atoi(key_value[1]);
 
-			if (sensor_idx < vp_get_sensors_list_number() && sensor_idx >= 0) {
+			if (sensor_idx >= 0 && sensor_idx < vp_get_sensors_list_number()) {
 				pipeline_info->pipe_contexts.sensor_config = vp_sensor_config_list[sensor_idx];
 				printf("Using index:%d  sensor_name:%s  config_file:%s\n",
 						sensor_idx,
 						vp_sensor_config_list[sensor_idx]->sensor_name,
 						vp_sensor_config_list[sensor_idx]->config_file);
-						sensor_type = pipeline_info->pipe_contexts.sensor_config->sensor_type;
-			} else {
-				printf("Unsupport sensor index:%d\n", sensor_idx);
-				show_help();
-				exit(0);
-			}
-			if(sensor_type == SENSOR_TYPE_NORMAL) {
-				ret = vp_sensor_multi_fixed_mipi_host(pipeline_info->pipe_contexts.sensor_config, used_mipi_host,
-					&pipeline_info->pipe_contexts.csi_config);
-				if (ret < 0) {
-					printf("vp sensor fixed mipi host fail, sensor id %d."
-						"Maybe No Camera Sensor found. Please check if the specified "
-						"sensor is connected to the Camera interface.\n\n", sensor_idx);
-					exit(0);
+
+				sensor_type = pipeline_info->pipe_contexts.sensor_config->sensor_type;
+
+				if(sensor_type == SENSOR_TYPE_NORMAL) {
+					ret = vp_sensor_multi_fixed_mipi_host(
+						pipeline_info->pipe_contexts.sensor_config,
+						used_mipi_host,
+						&pipeline_info->pipe_contexts.csi_config
+					);
+					if (ret < 0) {
+						fprintf(stderr,
+							"Sensor %d init failed. No Camera Sensor found on the specified interface.\n",
+							sensor_idx);
+						exit(1);
+					}
+					pipeline_info->select_sensor_id = sensor_idx;
+					pipeline_info->active_mipi_host = pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx;
+					used_mipi_host |= (1 << pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx);
 				}
-				pipeline_info->select_sensor_id = sensor_idx;
-				// active_mipi_host 的配置在 create_vin_node 函数中需要再配置一下
-				pipeline_info->active_mipi_host = pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx;
-				used_mipi_host |= (1 << pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx);
+			} else {
+				fprintf(stderr, "Unsupported sensor index: %d\n", sensor_idx);
+				show_help();
+				exit(1);
 			}
+		} else if (strcmp(key_value[0], "mode") == 0) {
+			if (!is_number(key_value[1])) {
+				fprintf(stderr, "Invalid sensor mode number: %s\n", key_value[1]);
+				continue;
+			}
+			pipeline_info->sensor_mode = atoi(key_value[1]);
 		} else {
 			fprintf(stderr, "Unknown key: %s\n", key_value[0]);
+			exit(1);
 		}
 
 		for (int j = 0; j < kv_count; j++) {
@@ -214,30 +225,33 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 	}
 }
 
-static int create_camera_node(pipe_contex_t *pipe_contex) {
+static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode) {
+	if (!pipe_contex || !pipe_contex->sensor_config) {
+		fprintf(stderr, "Invalid pipe_contex or sensor_config\n");
+		return -1;
+	}
 
-	camera_config_t *camera_config = NULL;
-	vp_sensor_config_t *sensor_config = NULL;
-	int32_t ret = 0;
+	vp_sensor_config_t *sensor_cfg = pipe_contex->sensor_config;
+	camera_config_t *cam_cfg = sensor_cfg->camera_config;
 
-	sensor_config = pipe_contex->sensor_config;
-	camera_config = sensor_config->camera_config;
+	if (!cam_cfg) {
+		fprintf(stderr, "camera_config is NULL\n");
+		return -1;
+	}
 
 	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
-		camera_config->sensor_mode = sensor_mode;
-		sensor_config->vin_node_attr->lpwm_attr.enable = 1;
+		cam_cfg->sensor_mode = sensor_mode;
+		if (sensor_cfg->vin_node_attr)
+			sensor_cfg->vin_node_attr->lpwm_attr.enable = 1;
 	}
-	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
-	printf("camera_config :%02x,%02x,%s, mode = %d,format:%02x, cam_handle:%ld, chn_num:%d\n\r",
-		camera_config->serial_addr, camera_config->addr,
-		camera_config->name,camera_config->sensor_mode,camera_config->format,
-		pipe_contex->cam_fd, camera_config->mipi_cfg->rx_attr.channel_num);
+
+	int32_t ret = hbn_camera_create(cam_cfg, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 
 	return 0;
 }
 
-static int create_vin_node(pipe_contex_t *pipe_contex, int index) {
+static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host, int index) {
 	vp_sensor_config_t *sensor_config = NULL;
 	vin_node_attr_t *vin_node_attr = NULL;
 	vin_ichn_attr_t *vin_ichn_attr = NULL;
@@ -255,13 +269,11 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int index) {
 	vin_node_attr = sensor_config->vin_node_attr;
 	vin_ichn_attr = sensor_config->vin_ichn_attr;
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
-
+	vin_node_attr->cim_attr.mipi_rx = active_mipi_host;
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
 	link_port[index] = vin_node_attr->cim_attr.vc_index;
-	printf("link_port_index:%d:%d \n" ,index, link_port[index]);
-
 	if(pipe_contex->csi_config.mclk_is_not_configed){
 		// 设备树中没有配置 mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
@@ -269,6 +281,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int index) {
 	}else{
 		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
 		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
+		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
 	ERR_CON_EQ(ret, 0);
@@ -279,15 +292,13 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int index) {
 	ret = hbn_vnode_set_ichn_attr(*vin_node_handle, ichn_id, vin_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 	// 设置输出通道的属性
-
 	ret = hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr);
 	ERR_CON_EQ(ret, 0);
-	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
 			if ((vin_attr_ex_mask & (1 << i)) == 0)
 				continue;
-
 			vin_attr_ex.ex_attr_type = i;
 			/*we need to set hbn_vnode_set_attr_ex in a loop*/
 			ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
@@ -323,15 +334,15 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &pipe_contex->isp_node_handle;
 
-    /*—— 根据 isp_attr->input_mode 决定是否打开 VIN 的 fly-by ——*/
-    switch (isp_attr->input_mode) {
-        case SIF_ONLINE_ISP:
-            vin_node_attr->cim_attr.cim_isp_flyby = 1;
-            break;
-        default:
-            vin_node_attr->cim_attr.cim_isp_flyby = 0;
-            break;
-    }
+	/*—— 根据 isp_attr->input_mode 决定是否打开 VIN 的 fly-by ——*/
+	switch (isp_attr->input_mode) {
+		case SIF_ONLINE_ISP:
+			vin_node_attr->cim_attr.cim_isp_flyby = 1;
+			break;
+		default:
+			vin_node_attr->cim_attr.cim_isp_flyby = 0;
+			break;
+	}
 
 	ret = hbn_vnode_open(HB_ISP, 0, AUTO_ALLOC_ID, isp_node_handle);
 	ERR_CON_EQ(ret, 0);
@@ -416,34 +427,75 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	return 0;
 }
 
-static int create_gpu2d_node(pipe_contex_t *pipe_contex) {
+static int create_gpu2d_node(pipe_contex_t *pipe_contex)
+{
 	int ret = 0;
 	hbn_vnode_handle_t *gpu2d_node_handle = &pipe_contex->gpu2d_node_handle;
-	n2d_config_t *n2d_setting = pipe_contex->sensor_config->gpu2d_scale_crop_attr;
 	hbn_buf_alloc_attr_t alloc_attr = {0};
 	uint32_t ichn_id = 0;
+	uint32_t ochn_id = 0;
 	uint32_t hw_id = 0;
+	uint32_t input_width = 0, input_height = 0;
+	uint32_t output_width = 0, output_height = 0;
+	uint32_t input_stride = 0, output_stride = 0;
 
-	if (n2d_setting == NULL) {
-		printf("No GPU2D settings found for the sensor.\n");
-		return -1;
-	}
-	printf("GPU2D command: %u\n", n2d_setting->command);
+	isp_ichn_attr_t isp_ichn_attr = {0};
+	ret = hbn_vnode_get_ichn_attr(pipe_contex->isp_node_handle, ichn_id, &isp_ichn_attr);
+	ERR_CON_EQ(ret, 0);
 
+	input_width  = isp_ichn_attr.width;
+	input_height = isp_ichn_attr.height;
+
+	input_stride  = ALIGN_UP(input_width, 16);
+	output_width  = input_width;   // GPU2D 输出原分辨率
+	output_height = input_height;
+	output_stride = ALIGN_UP(output_width, 16);
+
+	printf("GPU2D input  %ux%u stride=%u\n", input_width, input_height, input_stride);
+	printf("GPU2D output %ux%u stride=%u\n", output_width, output_height, output_stride);
+
+	// ==== Step 2. 打开 GPU2D 节点 ====
 	ret = hbn_vnode_open(HB_N2D, hw_id, AUTO_ALLOC_ID, gpu2d_node_handle);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_attr(*gpu2d_node_handle, n2d_setting);
+		// ==== Step 3. 填充全局属性 ====
+	pthread_mutex_lock(&g_gpu2d_mutex);
+
+	// ==== Step 3. 设置 GPU2D 主属性 ====
+	n2d_config_t gpu2d_attr = {0};
+	gpu2d_attr.command = N2D_SCALE_CROP;  // 操作类型
+	gpu2d_attr.ninputs = 1;				// 输入通道数
+
+	// ==== Step 4. 设置输入通道属性 ====
+	gpu2d_attr.input_width[0]  = input_width;
+	gpu2d_attr.input_height[0] = input_height;
+	gpu2d_attr.input_stride[0] = input_stride;
+	// ==== Step 5. 设置输出通道属性 ====
+	gpu2d_attr.output_width  = output_width;
+	gpu2d_attr.output_height = output_height;
+	gpu2d_attr.output_stride = output_stride;
+	gpu2d_attr.output_format = MEM_PIX_FMT_NV12;  // 对应 NV12 输出格式
+
+	// 默认不裁剪
+	gpu2d_attr.crop_x = 0;
+	gpu2d_attr.crop_y = 0;
+	gpu2d_attr.crop_width = 0;
+	gpu2d_attr.crop_height = 0;
+	memcpy(&g_gpu2d_attr, &gpu2d_attr, sizeof(n2d_config_t));
+	pthread_mutex_unlock(&g_gpu2d_mutex);
+
+	ret = hbn_vnode_set_attr(*gpu2d_node_handle, &gpu2d_attr);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ichn_attr(*gpu2d_node_handle, ichn_id, n2d_setting);
+	ret = hbn_vnode_set_ichn_attr(*gpu2d_node_handle, ichn_id, &gpu2d_attr);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vnode_set_ochn_attr(*gpu2d_node_handle, 0, n2d_setting);
+	ret = hbn_vnode_set_ochn_attr(*gpu2d_node_handle, ochn_id, &gpu2d_attr);
 	ERR_CON_EQ(ret, 0);
 
+	// ==== Step 6. 设置输出 buffer 属性 ====
 	alloc_attr.buffers_num = 3;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN |
-					   HB_MEM_USAGE_CPU_WRITE_OFTEN |
-					   HB_MEM_USAGE_CACHED;
+					HB_MEM_USAGE_CPU_WRITE_OFTEN |
+					HB_MEM_USAGE_CACHED;
 	ret = hbn_vnode_set_ochn_buf_attr(*gpu2d_node_handle, 0, &alloc_attr);
 	if (ret < 0) {
 		printf("hbn_vnode_set_ochn_buf_attr failed, ret = %d\n", ret);
@@ -452,20 +504,25 @@ static int create_gpu2d_node(pipe_contex_t *pipe_contex) {
 
 	return 0;
 }
-
-static int set_n2d_crop_region(pipe_contex_t *pipe_contex, int crop_x, int crop_y, int crop_w, int crop_h) {
+static int set_n2d_crop_region(pipe_contex_t *pipe_contex,
+							int crop_x, int crop_y, int crop_w, int crop_h)
+{
 	int ret = 0;
-	n2d_config_t *n2d_setting = pipe_contex->sensor_config->gpu2d_scale_crop_attr;
+	pthread_mutex_lock(&g_gpu2d_mutex);
+
+	n2d_config_t *n2d_setting = &g_gpu2d_attr;
 
 	if (crop_x < 0 || crop_y < 0 || crop_w <= 0 || crop_h <= 0) {
 		fprintf(stderr, "Invalid crop parameters: x=%d, y=%d, w=%d, h=%d\n",
 				crop_x, crop_y, crop_w, crop_h);
+		pthread_mutex_unlock(&g_gpu2d_mutex);
 		return -1;
 	}
 
 	if (crop_x + crop_w > n2d_setting->input_width[0] ||
 		crop_y + crop_h > n2d_setting->input_height[0]) {
 		fprintf(stderr, "Crop region exceeds input image boundaries\n");
+		pthread_mutex_unlock(&g_gpu2d_mutex);
 		return -1;
 	}
 
@@ -475,15 +532,18 @@ static int set_n2d_crop_region(pipe_contex_t *pipe_contex, int crop_x, int crop_
 	n2d_setting->crop_height = crop_h;
 
 	ret = hbn_vnode_set_ochn_attr_ex(pipe_contex->gpu2d_node_handle, 0, n2d_setting);
+	pthread_mutex_unlock(&g_gpu2d_mutex);
+
 	if (ret != 0) {
 		fprintf(stderr, "Failed to set GPU2D attributes: %d\n", ret);
 		return ret;
 	}
 
 	printf("GPU2D crop region updated: x=%d, y=%d, w=%d, h=%d\n",
-		   crop_x, crop_y, crop_w, crop_h);
+		crop_x, crop_y, crop_w, crop_h);
 	return 0;
 }
+
 
 int set_n2d_crop_region_safe(pipeline_info_t *pipeline, int crop_x, int crop_y, int crop_w, int crop_h) {
 	pthread_mutex_lock(&pipeline->config_mutex);
@@ -492,15 +552,16 @@ int set_n2d_crop_region_safe(pipeline_info_t *pipeline, int crop_x, int crop_y, 
 	return ret;
 }
 
-static int create_and_run_vflow(pipe_contex_t *pipe_contex, int index)
+static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host,
+	 int index, uint32_t sensor_mode)
 {
 	vp_sensor_config_t *sensor_config = pipe_contex->sensor_config;
-    int isp_mode = sensor_config->isp_attr->input_mode;
+	int isp_mode = sensor_config->isp_attr->input_mode;
 	int32_t ret = 0;
 	// 创建 pipeline 中的每个 node
-	ret = create_camera_node(pipe_contex);
+	ret = create_camera_node(pipe_contex, sensor_mode);
 	ERR_CON_EQ(ret, 0);
-	ret = create_vin_node(pipe_contex, index);
+	ret = create_vin_node(pipe_contex, active_mipi_host, index);
 	ERR_CON_EQ(ret, 0);
 	ret = create_isp_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
@@ -524,22 +585,22 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex, int index)
 							pipe_contex->gpu2d_node_handle);
 	ERR_CON_EQ(ret, 0);
 
-    if (isp_mode == SIF_OFFLINE_ISP) {
-        ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-                                   pipe_contex->vin_node_handle,
-                                   0,
-                                   pipe_contex->isp_node_handle,
-                                   0);
-    } else if (isp_mode == SIF_ONLINE_ISP) {
-        ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-                                   pipe_contex->vin_node_handle,
-                                   1,
-                                   pipe_contex->isp_node_handle,
-                                   0);
-    } else {
-        printf("Unsupported ISP mode: %d\n", isp_mode);
-        return -1;
-    }
+	if (isp_mode == SIF_OFFLINE_ISP) {
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->vin_node_handle,
+								0,
+								pipe_contex->isp_node_handle,
+								0);
+	} else if (isp_mode == SIF_ONLINE_ISP || isp_mode == SIF_MCM_ISP) {
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->vin_node_handle,
+								1,
+								pipe_contex->isp_node_handle,
+								0);
+	} else {
+		printf("Unsupported ISP mode: %d\n", isp_mode);
+		return -1;
+	}
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->isp_node_handle,
 							1,
@@ -563,55 +624,55 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex, int index)
 }
 
 void *producer_thread(void *context) {
-    thread_args_t *args = (thread_args_t *)context;
+	thread_args_t *args = (thread_args_t *)context;
 
-    uint64_t frame_counters[MAX_SENSORS] = {0};
-    const uint64_t adjust_interval = 3;
+	uint64_t frame_counters[MAX_SENSORS] = {0};
+	const uint64_t adjust_interval = 3;
 
-    while (running) {
-        for (int i = 0; i < total_pipeline_num; i++) {
-            pipeline_info_t *p = args->pipeline_info[i];
-            hbn_vnode_image_t out_img = {0};
+	while (running) {
+		for (int i = 0; i < total_pipeline_num; i++) {
+			pipeline_info_t *p = args->pipeline_info[i];
+			hbn_vnode_image_t out_img = {0};
 
-            if (hbn_vnode_getframe(p->pipe_contexts.gpu2d_node_handle, p->bind_chn, 2000, &out_img) == 0) {
-                frame_queue_push(&frame_queue, &out_img);
-                frame_counters[i]++;
+			if (hbn_vnode_getframe(p->pipe_contexts.gpu2d_node_handle, p->bind_chn, 2000, &out_img) == 0) {
+				frame_queue_push(&frame_queue, &out_img);
+				frame_counters[i]++;
 
-                if (frame_counters[i] % adjust_interval == 0) {
-                    static int crop_x = 0;
-                    static int crop_y = 0;
-                    static int crop_w = 0;
-                    static int crop_h = 0;
+				if (frame_counters[i] % adjust_interval == 0) {
+					static int crop_x = 0;
+					static int crop_y = 0;
+					static int crop_w = 0;
+					static int crop_h = 0;
 
-                    int input_w = p->pipe_contexts.sensor_config->gpu2d_scale_crop_attr->input_width[0];
-                    int input_h = p->pipe_contexts.sensor_config->gpu2d_scale_crop_attr->input_height[0];
+					int input_w = g_gpu2d_attr.input_width[0];
+					int input_h = g_gpu2d_attr.input_height[0];
 
-                    if (crop_w == 0 || crop_h == 0) {
-                        crop_w = input_w;
-                        crop_h = input_h;
-                    }
+					if (crop_w == 0 || crop_h == 0) {
+						crop_w = input_w;
+						crop_h = input_h;
+					}
 
-                    crop_w -= 200;
-                    crop_h -= 100;
+					crop_w -= 200;
+					crop_h -= 100;
 
-                    if (crop_w < input_w / 2 || crop_h < input_h / 2) {
-                        crop_w = input_w;
-                        crop_h = input_h;
-                    }
-                    set_n2d_crop_region_safe(p, crop_x, crop_y, crop_w, crop_h);
+					if (crop_w < input_w / 2 || crop_h < input_h / 2) {
+						crop_w = input_w;
+						crop_h = input_h;
+					}
+					set_n2d_crop_region_safe(p, crop_x, crop_y, crop_w, crop_h);
 
-                    printf("Adjusted crop region for pipeline %d: x=%d, y=%d, w=%d, h=%d\n",
-                           i, crop_x, crop_y, crop_w, crop_h);
-                }
-            } else {
-                p->stats.drop_count++;
-                printf("hbn_vnode_getframe failed\n");
-            }
+					printf("Adjusted crop region for pipeline %d: x=%d, y=%d, w=%d, h=%d\n",
+						i, crop_x, crop_y, crop_w, crop_h);
+				}
+			} else {
+				p->stats.drop_count++;
+				printf("hbn_vnode_getframe failed\n");
+			}
 
-            hbn_vnode_releaseframe(p->pipe_contexts.gpu2d_node_handle, p->bind_chn, &out_img);
-        }
-    }
-    return NULL;
+			hbn_vnode_releaseframe(p->pipe_contexts.gpu2d_node_handle, p->bind_chn, &out_img);
+		}
+	}
+	return NULL;
 }
 
 
@@ -694,7 +755,10 @@ int main(int argc, char** argv) {
 	hb_mem_module_open();
 
 	for (index = 0; index < total_pipeline_num; index++) {
-		ret = create_and_run_vflow(&args->pipeline_info[index]->pipe_contexts, index);
+		ret = create_and_run_vflow(&args->pipeline_info[index]->pipe_contexts,
+			pipeline_info[index].active_mipi_host,
+			index,
+			pipeline_info[index].sensor_mode);
 		if (ret != 0) {
 			for (int j = 0; j < index; j++) {
 				hbn_vflow_stop(args->pipeline_info[j]->pipe_contexts.vflow_fd);

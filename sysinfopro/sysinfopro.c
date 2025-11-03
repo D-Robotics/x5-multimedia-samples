@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include <openssl/evp.h>
 #include "sysinfopro.h"
 #include "boardinfo.h"
@@ -53,38 +55,27 @@ void get_hardware_info() {
 	printf("\t%s (Board Id = %s)\n\n", model, board_id);
 }
 
-// 检测 Flash 类型并返回设备路径
-const char* detect_flash_device() {
-	char buffer[1024];
-	FILE *fp;
+// 检测 uboot 节点路径是否有效
+const char* detect_uboot_device() {
+    #define UBOOT_DEV_NODE	"/dev/block/platform/by-name/uboot"
+    struct stat path_stat;
 
-	// 使用 findmnt 命令检查根目录的挂载源
-	fp = popen("findmnt -n -o SOURCE /", "r");
-	if (fp == NULL) {
-		perror("Failed to run findmnt command");
-		return NULL;
-	}
+    // 使用 lstat 获取文件信息
+    if (lstat(UBOOT_DEV_NODE, &path_stat) == -1) {
+        if (errno == ENOENT) {
+            printf("Uboot Path Not Exist: %s\n", UBOOT_DEV_NODE);
+        } else {
+            perror("lstat error");
+        }
+        return NULL;
+    }
 
-	if (fgets(buffer, sizeof(buffer), fp) != NULL) {
-		buffer[strcspn(buffer, "\n")] = '\0'; // 去掉字符串末尾的换行符
-		pclose(fp);
+    // 判断是否为软链接
+    if (S_ISLNK(path_stat.st_mode)) {
+        return UBOOT_DEV_NODE;
+    }
 
-		// printf("Detected flash device: %s\n", buffer);
-
-		// 判断设备类型
-		if (strncmp(buffer, "/dev/mmcblk", 8) == 0) {
-			return "/dev/mmcblk0";
-		} else if (strncmp(buffer, "/dev/mtd", 8) == 0) {
-			return "/dev/mtd0";
-		} else {
-			printf("Unknown flash device type: %s\n", buffer);
-			return NULL; // 未知设备类型
-		}
-	} else {
-		pclose(fp);
-		printf("No valid flash device found\n");
-		return NULL; // 没有找到挂载源
-	}
+    return NULL;
 }
 
 void get_os_version() {
@@ -121,14 +112,13 @@ void get_os_version() {
 	printf("\n");
 
 	// 获取 Uboot 版本信息
-	const char *device = detect_flash_device();
-
+	const char *device = detect_uboot_device();
 	if (!device) {
 		perror("[Error] No supported flash device found\n");
 		return;
 	}
 	// 使用 "grep -m 1" 限制查找到第一个匹配项后立即退出
-	snprintf(command, sizeof(command), "strings %s | grep -m 1 -E 'U-Boot [0-9]{4}\\.[0-9]{2}.*\\('", device);
+	snprintf(command, sizeof(command), "strings %s | grep -E 'U-Boot [0-9]{4}\\.[0-9]{2}.*\\('", device);
 	fp = popen(command, "r");
 	if (fp == NULL) {
 			perror("Failed to run command for Miniboot Version");

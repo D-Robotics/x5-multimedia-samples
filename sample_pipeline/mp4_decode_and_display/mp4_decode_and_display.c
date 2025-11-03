@@ -14,6 +14,8 @@
 #include <time.h>
 #include <sys/time.h>
 #include <signal.h>
+#include <sys/select.h>
+#include <errno.h>
 
 // FFmpeg headers
 #include "libavformat/avformat.h"
@@ -29,11 +31,17 @@
 #include "vp_codec.h"
 #include "vp_display.h"
 #include "codec_helper.h"
+#include "circular_queue_with_timestamp.h"
 
 #define TAG "[MP4_PLAYER]"
 #define MAX_LINE_LENGTH 256
 #define ALIGN_32(v) ((v + (32 - 1)) / 32 * 32)
 
+#define DECODEC_FRAME_BUFFER_COUNT 6
+#define DECODEC_FRAME_BUFFER_RESERVE_COUNT 3
+#define CIRCUAR_QUEUE_COUNT (DECODEC_FRAME_BUFFER_COUNT - DECODEC_FRAME_BUFFER_RESERVE_COUNT)
+
+#define DISPLAY_DELAY_US (30 * 1000) // 30ms
 typedef struct
 {
     media_codec_id_t codec_type;
@@ -68,6 +76,7 @@ typedef struct
     atomic_bool running;
     pthread_t parse_thread;
     pthread_t player_thread;
+    pthread_t display_thread;
 
     // for debug
     int64_t frame_period_us;
@@ -76,9 +85,13 @@ typedef struct
 
     // for vpu
     DecodeParams decoder_param;
+
+    //for circular queue
+    CircularQueue* frame_queue;
 } Mp4Player;
 
 int enable_debug_info = 0;
+int enable_h264_file_save = 1;
 int enable_yuv_file_save = 0;
 vp_drm_context_t g_vp_drm_context;
 static Mp4Player g_mp4_player = {0};
@@ -96,23 +109,34 @@ static void *parser_thread_func(void *arg)
     printf("%s Parser thread start.\n", TAG);
     media_codec_buffer_t input_buffer = {0};
 
-    // 写入头信息（SPS/PPS 或 VPS/SPS/PPS）确保输出文件可被VLC播放
-    if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_H264)
-    {
-        strncpy(g_mp4_player.output_file, "output.h264", MAX_LINE_LENGTH - 1);
-        write_h264_header(g_mp4_player.codec_params, g_mp4_player.output_fp);
+
+    if(enable_h264_file_save){
+        if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_H264){
+            strncpy(g_mp4_player.output_file, "output.h264", MAX_LINE_LENGTH - 1);  
+        }
+        else if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_HEVC){
+            strncpy(g_mp4_player.output_file, "output.h265", MAX_LINE_LENGTH - 1);   
+        }
+
+        printf("%s Save raw h264 file to %s\n", TAG, g_mp4_player.output_file);
+        g_mp4_player.output_fp = fopen(g_mp4_player.output_file, "wb");
+        if (!g_mp4_player.output_fp)
+        {
+            printf("%s Failed to open output file: %s\n", TAG, g_mp4_player.output_file);
+            return NULL;
+        }
+        // 写入头信息（SPS/PPS 或 VPS/SPS/PPS）确保输出文件可被VLC播放
+        if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_H264){
+            write_h264_header(g_mp4_player.codec_params, g_mp4_player.output_fp);
+        }
+        else if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_HEVC){
+            write_h265_header(g_mp4_player.codec_params, g_mp4_player.output_fp);
+        }
+    }else{
+        printf("dont %s Save  h264 file to %s\n", TAG, g_mp4_player.output_file);
+        g_mp4_player.output_fp = NULL;
     }
-    else if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_HEVC)
-    {
-        strncpy(g_mp4_player.output_file, "output.h265", MAX_LINE_LENGTH - 1);
-        write_h265_header(g_mp4_player.codec_params, g_mp4_player.output_fp);
-    }
-    g_mp4_player.output_fp = fopen(g_mp4_player.output_file, "wb");
-    if (!g_mp4_player.output_fp)
-    {
-        printf("%s Failed to open output file: %s\n", TAG, g_mp4_player.output_file);
-        return NULL;
-    }
+
     AVPacket *packet = av_packet_alloc();
     if (!packet)
     {
@@ -154,6 +178,7 @@ static void *parser_thread_func(void *arg)
                 g_mp4_player.discard_until_keyframe = true;
                 g_mp4_player.reset_output_after_seek = true;
                 g_mp4_player.last_pkt_ts = AV_NOPTS_VALUE; // 重置时间戳，避免seek后的错误延迟
+                g_mp4_player.last_report_sec = seek_pos;
             }
 
             // 重置seek标志
@@ -191,7 +216,7 @@ static void *parser_thread_func(void *arg)
                 {
                     AVRational tb = g_mp4_player.format_ctx->streams[g_mp4_player.video_stream_index]->time_base;
                     int64_t cur_sec = av_rescale_q(pkt_ts, tb, (AVRational){1, 1});
-                    if (cur_sec != g_mp4_player.last_report_sec)
+                    if (cur_sec > g_mp4_player.last_report_sec)
                     {
                         g_mp4_player.last_report_sec = cur_sec;
                         printf("%s playback progress: %ld/%ld s\n", TAG, cur_sec, g_mp4_player.format_ctx->duration / AV_TIME_BASE);
@@ -203,28 +228,30 @@ static void *parser_thread_func(void *arg)
                     // 仅在到达关键帧时重置输出
                     if (packet->flags & AV_PKT_FLAG_KEY)
                     {
-                        // 关闭并重新打开输出文件（清空文件）
-                        if (g_mp4_player.output_fp)
-                        {
-                            fclose(g_mp4_player.output_fp);
+                        if(enable_h264_file_save){
+                            // 关闭并重新打开输出文件（清空文件）
+                            if (g_mp4_player.output_fp){
+                                fclose(g_mp4_player.output_fp);
+                            }
+                            printf("%s reopen file %s\n", TAG, g_mp4_player.output_file);
+                            g_mp4_player.output_fp = fopen(g_mp4_player.output_file, "wb");
+                            if (!g_mp4_player.output_fp)
+                            {
+                                printf("%s Failed to reopen output file: %s\n", TAG, g_mp4_player.output_file);
+                                av_packet_unref(packet);
+                                continue;
+                            }
+                            // 写入头信息
+                            if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_H264)
+                            {
+                                write_h264_header(g_mp4_player.codec_params, g_mp4_player.output_fp);
+                            }
+                            else if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_HEVC)
+                            {
+                                write_h265_header(g_mp4_player.codec_params, g_mp4_player.output_fp);
+                            }
                         }
-                        printf("%s reopen file %s\n", TAG, g_mp4_player.output_file);
-                        g_mp4_player.output_fp = fopen(g_mp4_player.output_file, "wb");
-                        if (!g_mp4_player.output_fp)
-                        {
-                            printf("%s Failed to reopen output file: %s\n", TAG, g_mp4_player.output_file);
-                            av_packet_unref(packet);
-                            continue;
-                        }
-                        // 写入头信息
-                        if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_H264)
-                        {
-                            write_h264_header(g_mp4_player.codec_params, g_mp4_player.output_fp);
-                        }
-                        else if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_HEVC)
-                        {
-                            write_h265_header(g_mp4_player.codec_params, g_mp4_player.output_fp);
-                        }
+
                         g_mp4_player.reset_output_after_seek = false;
                     }
                     else
@@ -274,7 +301,7 @@ static void *parser_thread_func(void *arg)
                         av_packet_free(&filtered);
                         break;
                     }
-                    if (filtered->size > 0)
+                    if ((filtered->size > 0) &&(enable_h264_file_save))
                     {
                         fwrite(filtered->data, 1, filtered->size, g_mp4_player.output_fp);
                         fflush(g_mp4_player.output_fp);
@@ -313,7 +340,23 @@ static void *parser_thread_func(void *arg)
     printf("%s Parse thread finished\n", TAG);
     return NULL;
 }
+uint64_t get_timestamp_ms()
+{
+	uint64_t timestamp;
+	struct timeval ts;
 
+	gettimeofday(&ts, NULL);
+	timestamp = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_usec / 1000;
+	return timestamp;
+}
+
+void old_data_handle_cb(void* old_data, void* user_handle){
+    media_codec_context_t *context = (media_codec_context_t *)user_handle;
+    media_codec_buffer_t* buffer = (media_codec_buffer_t*)old_data;
+
+    // printf("%s old_data_handle_cb release buffer %p\n", TAG, buffer);
+    vp_codec_release_output(context, buffer);
+}
 // 播放器线程函数
 void *player_thread_func(void *arg)
 {
@@ -336,8 +379,7 @@ void *player_thread_func(void *arg)
             printf("Failed to open output file: %s\n", "decoder_output.yuv");
             return NULL;
         }
-    }
-
+    }       
     while (g_mp4_player.running)
     {
         // 1. get output frame from decoder
@@ -348,25 +390,8 @@ void *player_thread_func(void *arg)
             { // timeout and endof : don't printf error log.
                 break;
             }
-
-            printf("decode output failed, so rreturn\n");
-            break;
-        }
-        hb_mem_graphic_buf_t image_tmp;
-        image_tmp.width = ouput_buffer.vframe_buf.width;
-        image_tmp.height = ouput_buffer.vframe_buf.height;
-        image_tmp.stride = ouput_buffer.vframe_buf.stride;
-        image_tmp.vstride = ouput_buffer.vframe_buf.vstride;
-        for (int i = 0; i < 3; i++)
-        {
-            image_tmp.fd[i] = ouput_buffer.vframe_buf.fd[i];
-        }
-
-        // 2. display on HDMI
-        ret = vp_display_set_frame(&g_vp_drm_context, &image_tmp);
-        if (ret != 0)
-        {
-            printf("vp_display_set_frame for hdmi failed %d.\n", ret);
+            printf("decode output failed, so return\n");
+            continue;
         }
 
         // 3. for debug: write yuv to file
@@ -396,9 +421,12 @@ void *player_thread_func(void *arg)
                 fp_output);
             fflush(fp_output);
         }
-
-        // 4. release output frame
-        vp_codec_release_output(context, &ouput_buffer);
+        bool enqueue_success = cq_enqueue(g_mp4_player.frame_queue, &ouput_buffer, 
+            old_data_handle_cb, context);
+        if (!enqueue_success) {
+            printf("%s ERR: Frame queue full, dropping frame\n", TAG);
+            vp_codec_release_output(context, &ouput_buffer);
+        }
     }
     printf("%s Player thread finished\n", TAG);
 
@@ -409,6 +437,49 @@ void *player_thread_func(void *arg)
     }
 
     pthread_exit(NULL);
+}
+void get_queue_cb(const void* data, void* user_arg){
+    media_codec_buffer_t* frame_buffer = (media_codec_buffer_t*)data;
+    media_codec_buffer_t* user_buffer = (media_codec_buffer_t*)user_arg;
+    memcpy(user_buffer, frame_buffer, sizeof(media_codec_buffer_t));
+}
+void *display_thread_func(void *arg)
+{
+    int ret = 0;
+    printf("%s Display thread start.\n", TAG);
+
+    while (g_mp4_player.running)
+    {
+        int64_t display_target_timestamp_us =  get_current_timestamp_us() - DISPLAY_DELAY_US;
+        media_codec_buffer_t frame_buffer = {0};
+        bool got_frame = cq_get_by_timestamp(g_mp4_player.frame_queue,
+            (DataCallback)get_queue_cb, &frame_buffer,
+            display_target_timestamp_us ,
+            2000);
+        if (!got_frame) {
+            printf("%s Warning: No frame available for display (timeout)\n", TAG);
+            continue;
+        }
+
+        hb_mem_graphic_buf_t image_tmp;
+        image_tmp.width = frame_buffer.vframe_buf.width;
+        image_tmp.height = frame_buffer.vframe_buf.height;
+        image_tmp.stride = frame_buffer.vframe_buf.stride;
+        image_tmp.vstride = frame_buffer.vframe_buf.vstride;
+        for (int i = 0; i < 3; i++)
+        {
+            image_tmp.fd[i] = frame_buffer.vframe_buf.fd[i];
+        }
+
+        // 2. display on HDMI
+        ret = vp_display_set_frame(&g_vp_drm_context, &image_tmp);
+        if (ret != 0)
+        {
+            printf("vp_display_set_frame for hdmi failed %d.\n", ret);
+        }
+    }
+    printf("%s Display thread finished\n", TAG);
+    return NULL;
 }
 
 // 清理资源
@@ -426,6 +497,43 @@ static void cleanup_resources(void)
     }
 
     pthread_mutex_destroy(&g_mp4_player.seek_mutex);
+}
+static char* fgets_timeout(char* buf, int size, FILE* stream, int timeout_sec) {
+    if (buf == NULL || size <= 0 || stream == NULL || timeout_sec < 0) {
+        errno = EINVAL; // 参数无效
+        return NULL;
+    }
+
+    // 1. 获取流对应的文件描述符
+    int fd = fileno(stream);
+    if (fd < 0) {
+        // 流无效（如关闭的流），errno 由 fileno 设置
+        return NULL;
+    }
+
+    // 2. 初始化 select 的文件描述符集合
+    fd_set read_fds;
+    FD_ZERO(&read_fds);       // 清空集合
+    FD_SET(fd, &read_fds);    // 将目标文件描述符加入集合
+
+    // 3. 设置超时时间（tv_sec：秒，tv_usec：微秒）
+    struct timeval timeout;
+    timeout.tv_sec = timeout_sec;
+    timeout.tv_usec = 0;      // 微秒部分设为 0，仅精确到秒（可按需调整）
+
+    // 4. 调用 select 监控“可读”状态
+    int ret = select(fd + 1, &read_fds, NULL, NULL, &timeout);
+    if (ret < 0) {
+        // 发生错误（如被信号中断），errno 由 select 设置
+        return NULL;
+    } else if (ret == 0) {
+        // 超时：select 未检测到可读状态，设置 errno 为 ETIMEDOUT
+        errno = ETIMEDOUT;
+        return NULL;
+    }
+
+    // 5. 检测到可读，调用 fgets 读取数据（此时不会阻塞）
+    return fgets(buf, size, stream);
 }
 
 int main(int argc, char *argv[])
@@ -557,6 +665,14 @@ int main(int argc, char *argv[])
            g_mp4_player.decoder_param.width, g_mp4_player.decoder_param.height);
     printf("\n\n");
 
+    g_mp4_player.frame_queue = cq_init(CIRCUAR_QUEUE_COUNT, sizeof(media_codec_buffer_t));
+    if (g_mp4_player.frame_queue == NULL)
+    {
+        printf("%s create frame queue failed\n", TAG);
+        cleanup_resources();
+        return -1;
+    }
+
     // 初始化bitstream filter
     const AVBitStreamFilter *filter = NULL;
     if (g_mp4_player.codec_params->codec_id == AV_CODEC_ID_H264)
@@ -635,7 +751,8 @@ int main(int argc, char *argv[])
     ret = vp_decode_config_param(&p_decode_params->decode_context,
                                  p_decode_params->codec_type,
                                  p_decode_params->width,
-                                 p_decode_params->height);
+                                 p_decode_params->height,
+                                DECODEC_FRAME_BUFFER_COUNT);
     if (ret != 0)
     {
         printf("Decode config param error, type:%d width:%d height:%d\n",
@@ -672,22 +789,25 @@ int main(int argc, char *argv[])
         cleanup_resources();
         return -1;
     }
+    if(pthread_create(&g_mp4_player.display_thread, NULL, display_thread_func, NULL) != 0)
+    {
+        printf("%s Failed to create display thread\n", TAG);
+        cleanup_resources();
+        return -1;
+    }
 
     printf("\n\n%s MP4 decoder started. Enter seek position in seconds (or 'q' to quit):\n", TAG);
     printf("%s Example: 30 (seek to 30 seconds)", TAG);
 
     // 主线程：处理用户输入
     char input[MAX_LINE_LENGTH];
+    printf("%s Seek to (seconds): \n\n", TAG);
     while (g_mp4_player.running)
     {
-        printf("%s Seek to (seconds): \n\n", TAG);
         fflush(stdout);
-
-        if (fgets(input, MAX_LINE_LENGTH, stdin) == NULL)
-        {
-            break;
+        if (fgets_timeout(input, MAX_LINE_LENGTH, stdin, 1) == NULL){
+            continue;
         }
-
         // 移除换行符
         input[strcspn(input, "\n")] = 0;
 
@@ -728,6 +848,7 @@ int main(int argc, char *argv[])
         pthread_mutex_unlock(&g_mp4_player.seek_mutex);
 
         printf("%s Seek request sent to position %ld seconds\n", TAG, seek_pos);
+        printf("%s Seek to (seconds): \n\n", TAG);
     }
 
     // 等待解析线程结束

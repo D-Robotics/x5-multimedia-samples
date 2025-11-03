@@ -5,7 +5,7 @@ RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DI
 TARGET = mp4_decode_and_display
 
 # 源文件列表
-SRCS := mp4_decode_and_display.c codec_helper.c vp_codec.c vp_display.c
+SRCS := mp4_decode_and_display.c codec_helper.c vp_codec.c vp_display.c circular_queue_with_timestamp.c
 OBJS := $(SRCS:.c=.o)
 
 INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/

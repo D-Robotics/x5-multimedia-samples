@@ -445,19 +445,23 @@ static int create_gpu2d_node(pipe_contex_t *pipe_contex)
 
 	input_width  = isp_ichn_attr.width;
 	input_height = isp_ichn_attr.height;
-
-	input_stride  = ALIGN_UP(input_width, 16);
-	output_width  = input_width;   // GPU2D 输出原分辨率
+	output_width  = input_width;
 	output_height = input_height;
-	output_stride = ALIGN_UP(output_width, 16);
 
+	// ==== Step 1. 检查输入宽度是否满足 64 字节对齐 ====
+	if ((input_width % 64) != 0) {
+		printf("[ERROR] GPU2D input width (%u) is not 64-byte aligned\n", input_width);
+		return -1;
+	}
+
+	input_stride  = input_width;   // 直接用原宽度
+	output_stride = output_width;
 	printf("GPU2D input  %ux%u stride=%u\n", input_width, input_height, input_stride);
 	printf("GPU2D output %ux%u stride=%u\n", output_width, output_height, output_stride);
 
 	// ==== Step 2. 打开 GPU2D 节点 ====
 	ret = hbn_vnode_open(HB_N2D, hw_id, AUTO_ALLOC_ID, gpu2d_node_handle);
 	ERR_CON_EQ(ret, 0);
-		// ==== Step 3. 填充全局属性 ====
 	pthread_mutex_lock(&g_gpu2d_mutex);
 
 	// ==== Step 3. 设置 GPU2D 主属性 ====
@@ -465,21 +469,23 @@ static int create_gpu2d_node(pipe_contex_t *pipe_contex)
 	gpu2d_attr.command = N2D_SCALE_CROP;  // 操作类型
 	gpu2d_attr.ninputs = 1;				// 输入通道数
 
-	// ==== Step 4. 设置输入通道属性 ====
+	// 输入通道属性
 	gpu2d_attr.input_width[0]  = input_width;
 	gpu2d_attr.input_height[0] = input_height;
 	gpu2d_attr.input_stride[0] = input_stride;
-	// ==== Step 5. 设置输出通道属性 ====
+
+	// 输出通道属性
 	gpu2d_attr.output_width  = output_width;
 	gpu2d_attr.output_height = output_height;
 	gpu2d_attr.output_stride = output_stride;
-	gpu2d_attr.output_format = MEM_PIX_FMT_NV12;  // 对应 NV12 输出格式
+	gpu2d_attr.output_format = MEM_PIX_FMT_NV12;
 
 	// 默认不裁剪
 	gpu2d_attr.crop_x = 0;
 	gpu2d_attr.crop_y = 0;
 	gpu2d_attr.crop_width = 0;
 	gpu2d_attr.crop_height = 0;
+
 	memcpy(&g_gpu2d_attr, &gpu2d_attr, sizeof(n2d_config_t));
 	pthread_mutex_unlock(&g_gpu2d_mutex);
 
@@ -490,7 +496,7 @@ static int create_gpu2d_node(pipe_contex_t *pipe_contex)
 	ret = hbn_vnode_set_ochn_attr(*gpu2d_node_handle, ochn_id, &gpu2d_attr);
 	ERR_CON_EQ(ret, 0);
 
-	// ==== Step 6. 设置输出 buffer 属性 ====
+	// ==== Step 4. 设置输出 buffer 属性 ====
 	alloc_attr.buffers_num = 3;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN |
@@ -504,6 +510,7 @@ static int create_gpu2d_node(pipe_contex_t *pipe_contex)
 
 	return 0;
 }
+
 static int set_n2d_crop_region(pipe_contex_t *pipe_contex,
 							int crop_x, int crop_y, int crop_w, int crop_h)
 {

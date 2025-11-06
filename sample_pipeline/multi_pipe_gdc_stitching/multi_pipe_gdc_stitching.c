@@ -873,13 +873,6 @@ void *encode_isp_chn_data(void *media)
 			printf("hbn_vnode_getframe isp_node_handle1 error\n");
 			continue;
 		}
-		// Exit the loop if the resolutions do not match
-		if (isp_out_img_0.buffer.height != isp_out_img_1.buffer.height || isp_out_img_0.buffer.width != isp_out_img_1.buffer.width) {
-			printf("The resolutions of the two Sensor are different! Please Check!! First Sensor: %dx%d, Second Sensor: %dx%d\n",
-				isp_out_img_0.buffer.width, isp_out_img_0.buffer.height,
-				isp_out_img_1.buffer.width, isp_out_img_1.buffer.height);
-			break;
-		}
 		gdc_attr.config_addr = gdc_bin_buf_bottom->phys_addr;
 		gdc_attr.config_size = gdc_bin_buf_bottom->size;
 		gdc_attr.binary_ion_id = gdc_bin_buf_bottom->share_id;
@@ -942,6 +935,8 @@ int main(int argc, char** argv) {
 	int ret = 0;
 	int c = 0;
 	int index = -1;
+	int sensor_width = -1;
+	int sensor_height = -1;
 	media_info_t media_info = {0};
 	memset(&media_info,0,sizeof(media_info_t));
 
@@ -1005,6 +1000,24 @@ int main(int argc, char** argv) {
 				hbn_vflow_stop(media_info.pipeinfo[j].pipe_contexts.vflow_fd);
 				hbn_vflow_destroy(media_info.pipeinfo[j].pipe_contexts.vflow_fd);
 			}
+			return 0;
+		}
+		if(sensor_width == -1 && sensor_height == -1)
+		{
+			sensor_width = media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->width;
+			sensor_height = media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->height;
+		}
+		else if(sensor_width != media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->width || sensor_height != media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->height)
+		{
+			printf("The resolutions of the two Sensor are different! Please Check!! First Sensor: %dx%d, Second Sensor: %dx%d\n",
+				sensor_width, sensor_height,
+				media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->width, media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->height);
+
+			for (int j = 0; j < index; j++) {
+				hbn_vflow_stop(media_info.pipeinfo[j].pipe_contexts.vflow_fd);
+				hbn_vflow_destroy(media_info.pipeinfo[j].pipe_contexts.vflow_fd);
+			}
+			hb_mem_module_close();
 			return 0;
 		}
 	}

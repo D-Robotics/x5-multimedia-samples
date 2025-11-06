@@ -1056,6 +1056,8 @@ int main(int argc, char** argv) {
 	int ret = 0;
 	int c = 0;
 	int index = -1;
+	int sensor_width = -1;
+	int sensor_height = -1;
 	media_info_t media_info = {0};
 	memset(&media_info,0,sizeof(media_info_t));
 
@@ -1139,6 +1141,24 @@ int main(int argc, char** argv) {
 				hbn_vflow_stop(media_info.pipeinfo[j].pipe_contexts.vflow_fd);
 				hbn_vflow_destroy(media_info.pipeinfo[j].pipe_contexts.vflow_fd);
 			}
+			return 0;
+		}
+		if(sensor_width == -1 && sensor_height == -1)
+		{
+			sensor_width = media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->width;
+			sensor_height = media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->height;
+		}
+		else if(sensor_width != media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->width || sensor_height != media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->height)
+		{
+			printf("The resolutions of the two Sensor are different! Please Check!! First Sensor: %dx%d, Second Sensor: %dx%d\n",
+				sensor_width, sensor_height,
+				media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->width, media_info.pipeinfo[index].pipe_contexts.sensor_config->isp_ichn_attr->height);
+
+			for (int j = 0; j < index; j++) {
+				hbn_vflow_stop(media_info.pipeinfo[j].pipe_contexts.vflow_fd);
+				hbn_vflow_destroy(media_info.pipeinfo[j].pipe_contexts.vflow_fd);
+			}
+			hb_mem_module_close();
 			return 0;
 		}
 	}

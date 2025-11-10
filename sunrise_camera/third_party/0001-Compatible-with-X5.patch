@@ -101,7 +101,7 @@ index 00000000..1702e4b8
 +cd build || exit
 +
 +# 3. 执行 cmake 命令
-+cmake -DCMAKE_BUILD_TYPE="RELEASE" -DCMAKE_TOOLCHAIN_FILE=../cmake/aarch64_toolchain.cmake -DENABLE_API_STATIC_LIB=ON ..
++cmake -DCMAKE_BUILD_TYPE="RELEASE" -DCMAKE_TOOLCHAIN_FILE=../cmake/aarch64_toolchain.cmake -DENABLE_API_STATIC_LIB=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON ..
 +
 +# 4. 执行 make 命令
 +make -j

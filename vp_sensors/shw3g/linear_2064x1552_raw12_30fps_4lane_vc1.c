@@ -51,7 +51,7 @@ static deserial_config_t shw3g_deserial_config = {
 static vin_node_attr_t shw3g_vin_node_attr = {
 	.cim_attr = {
 		.mipi_rx = 0,
-		.vc_index = 0,
+		.vc_index = 1,
 		.ipi_channel = 1,
 		.cim_isp_flyby = 1,
 		.func = {
@@ -149,13 +149,13 @@ static isp_ochn_attr_t shw3g_isp_ochn_attr = {
 	.bit_width = 8,
 };
 
-vp_sensor_config_t shw3g_linear_2064x1552_raw12_30fps_4lane = {
+vp_sensor_config_t shw3g_linear_2064x1552_raw12_30fps_4lane_vc1 = {
 	.chip_id_reg = 0x3107,
 	.chip_id = 0xcb34,
 	.sensor_type = SENSOR_TYPE_GMSL_RAW,
 	.sensor_i2c_addr_list = {0x36},
-	.sensor_name = "shw3g-30fps",
-	.config_file = "linear_2064x1552_raw12_30fps_4lane.c",
+	.sensor_name = "shw3g-30fps_vc1",
+	.config_file = "linear_2064x1552_raw12_30fps_4lane_vc1.c",
 	.camera_config = &shw3g_camera_config,
 	.vin_ichn_attr = &shw3g_vin_ichn_attr,
 	.vin_node_attr = &shw3g_vin_node_attr,

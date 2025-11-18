@@ -28,6 +28,7 @@ static struct option const long_options[] = {
 static int create_and_run_vflow(pipe_contex_t *pipe_contex);
 static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count);
 static int lpwm_enable_chn(hbn_vnode_handle_t vin_node_handle, uint8_t enable, uint8_t chn);
+static void check_frame_rate(pipe_contex_t *pipe_contex, int sensor_count);
 
 int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
 int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
@@ -39,6 +40,7 @@ static void print_help() {
 	printf("  -s <sensor_index>      Specify sensor index\n");
 	printf("  -t <settle_value>      Specify settle time for debug\n");
 	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t\n");
+	printf("  -f                     Check frame rate and compare with configured fps\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
 }
@@ -50,6 +52,7 @@ static void command_help() {
 	printf(" l	-- get a set frames \n");
 	printf(" x      -- only enable lpwm, support sc035hgs sensor \n");
 	printf(" y      -- only disable lpwm, support sc035hgs sensor \n");
+	printf(" f	-- check frame rate and compare with configured fps \n");
 	printf(" q	-- quit  \n");
 	printf(" h	-- print help message\n");
 }
@@ -397,6 +400,104 @@ static int lpwm_enable_chn(hbn_vnode_handle_t vin_node_handle, uint8_t enable, u
 	return ret;
 }
 
+static void check_frame_rate(pipe_contex_t *pipe_contex, int sensor_count)
+{
+	int ret;
+	uint32_t ochn_id = 0;
+	uint32_t timeout = 10000;
+	hbn_vnode_image_t out_img;
+	int64_t first_timestamp = 0;
+	int64_t last_timestamp = 0;
+	uint32_t first_frame_id = 0;
+	uint32_t last_frame_id = 0;
+	double avg_fps = 0.0;
+	double configured_fps = 0.0;
+	double fps_diff = 0.0;
+	const double FPS_TOLERANCE = 1; // Allow 1s difference
+
+	printf("\n========== Frame Rate Check ==========\n");
+	for (int i = 0; i < sensor_count; i++) {
+		hbn_vnode_handle_t vin_node_handle = pipe_contex[i].vin_node_handle;
+		camera_config_t *camera_config = pipe_contex[i].sensor_config->camera_config;
+		char *camera_name = pipe_contex[i].sensor_config->sensor_name;
+
+		if (camera_config == NULL) {
+			printf("Sensor %d: Error - camera_config is NULL\n", i);
+			continue;
+		}
+
+		// Get configured fps from camera_config
+		configured_fps = (double)camera_config->fps;
+		printf("Sensor %s: Configured FPS = %.2f\n", camera_name, configured_fps);
+		// Collect 5s frames for statistics
+		const int FRAME_COUNT = configured_fps * 5;
+
+		// Collect frames and timestamps
+		first_timestamp = 0;
+		last_timestamp = 0;
+		first_frame_id = 0;
+		last_frame_id = 0;
+
+		for (int j = 0; j < FRAME_COUNT; j++) {
+			ret = hbn_vnode_getframe(vin_node_handle, ochn_id, timeout, &out_img);
+			if (ret != 0) {
+				printf("Sensor %d: Error - hbn_vnode_getframe failed (ret=%d) at frame %d\n",
+					i, ret, j);
+				return;
+			}
+
+			if (j == 0) {
+				first_timestamp = out_img.info.timestamps;
+				first_frame_id = out_img.info.frame_id;
+			}
+			if (j == FRAME_COUNT - 1) {
+				last_timestamp = out_img.info.timestamps;
+				last_frame_id = out_img.info.frame_id;
+			}
+			hbn_vnode_releaseframe(vin_node_handle, ochn_id, &out_img);
+		}
+
+		// Calculate average frame rate using frame_id difference and timestamp difference
+		if (last_timestamp > first_timestamp && last_frame_id > first_frame_id) {
+			// Timestamps convert to seconds
+			double time_span_seconds = (double)(last_timestamp - first_timestamp) / 1000000000.0;
+			uint32_t frame_id_diff = last_frame_id - first_frame_id + 1;
+			if (time_span_seconds > 0) {
+				avg_fps = (double)frame_id_diff / time_span_seconds;
+			} else {
+				printf("Sensor %d: Error - Invalid timestamp difference\n", i);
+				continue;
+			}
+		} else {
+			printf("Sensor %d: Error - Invalid timestamps or frame_ids (first_frame_id=%u, last_frame_id=%u, first_ts=%ld, last_ts=%ld)\n",
+				i, first_frame_id, last_frame_id, first_timestamp, last_timestamp);
+			continue;
+		}
+
+		// Print statistics
+		printf("Statistics (timestamp): Average FPS = %.2f\n", avg_fps);
+		printf("First frame_id = %u, Last frame_id = %u, Frame count = %u\n",
+			first_frame_id, last_frame_id, last_frame_id - first_frame_id + 1);
+		printf("First timestamp = %ld, Last timestamp = %ld\n",
+			first_timestamp, last_timestamp);
+
+		// Compare with configured fps
+		fps_diff = avg_fps - configured_fps;
+		if (fps_diff < 0) {
+			fps_diff = -fps_diff;
+		}
+
+		printf("Sensor %s: Frame rate check: ", camera_name);
+		if (fps_diff <= FPS_TOLERANCE) {
+			printf("Success\n");
+		} else {
+			printf("Failed (Difference: %.2f fps)\n", fps_diff);
+		}
+	}
+
+	printf("========== Frame Rate Check Complete ==========\n");
+}
+
 static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 {
 	int i, j;
@@ -453,6 +554,9 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 						printf("only support rx0 sc035hgs.\n");
 					}
 				}
+				break;
+			case 'f':  // check frame rate
+				check_frame_rate(pipe_contex, sensor_count);
 				break;
 			case 'h':
 				command_help();

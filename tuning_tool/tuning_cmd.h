@@ -83,6 +83,8 @@ typedef struct tuning_cmd_func {
 			"C -> get dpcc attr\n"\
 			"g -> set bayer pattern attr\n"\
 			"i -> handle with 3dlut\n"\
+			"x -> set af attr\n"\
+			"X -> get af attr\n"\
 			"q -> quit\n"\
 			"h -> help\n"
 
@@ -119,6 +121,8 @@ typedef struct tuning_cmd_func {
 	{'C',	tuning_handle_get_dpcc_attr},\
 	{'g',	tuning_handle_set_pattern_attr},\
 	{'i',	tuning_handle_3dlut},\
+	{'x',	tuning_handle_set_af_attr},\
+	{'X',	tuning_handle_get_af_attr},\
 }
 
 void tuning_dump_sif_raw(tuning_context_t *ctx);
@@ -148,6 +152,8 @@ void tuning_handle_set_dpcc_attr(tuning_context_t *ctx);
 void tuning_handle_get_dpcc_attr(tuning_context_t *ctx);
 void tuning_handle_set_pattern_attr(tuning_context_t *ctx);
 void tuning_handle_3dlut(tuning_context_t *ctx);
+void tuning_handle_get_af_attr(tuning_context_t *ctx);
+void tuning_handle_set_af_attr(tuning_context_t *ctx);
 
 
 void tuning_time_point();

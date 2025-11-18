@@ -729,47 +729,30 @@ void tuning_get_af_statistics(tuning_context_t *ctx)
 {
 	int32_t i, j, pos;
 	hbn_isp_af_statistics_t af_statistics = {0};
+	hbn_isp_af_attr_t af_attr = {0};
+	int32_t min_pos, max_pos, step;
 
-	TUNING_API_EQ(hbn_isp_get_af_statistics, &af_statistics, return);
+	read_p("min_pos: ", "%d", &min_pos);
+	read_p("max_pos: ", "%d", &max_pos);
+	read_p("step: ", "%d", &step);
+	
+	af_attr.mode = HBN_ISP_MODE_MANUAL;
+	af_attr.position = min_pos;
+	while (af_attr.position < max_pos) {
+		TUNING_API_EQ(hbn_isp_set_af_attr, &af_attr, return);
+		if (af_attr.position == min_pos) usleep(1000 * 1000);
+		TUNING_API_EQ(hbn_isp_get_af_statistics, &af_statistics, return);
 
-	printf("frame_id: %d\n", af_statistics.frame_id);
-	printf("sharpnessLowPass:\n");
-	for (i = 0; i < 15; i++) {
-		for (j = 0; j < 15; j++) {
-			pos = i * 15 + j;
-			printf(" %d", af_statistics.sharpnessLowPass[pos]);
+		uint32_t fv = 0.0f;
+		for (i = 0; i < 15; i++) {
+			for (j = 0; j < 15; j++) {
+				pos = i * 15 + j;
+				fv += af_statistics.sharpnessHighPass[pos];
+			}
 		}
-		printf("\n");
-	}
-	printf("\n");
-
-	printf("sharpnessHighPass:\n");
-	for (i = 0; i < 15; i++) {
-		for (j = 0; j < 15; j++) {
-			pos = i * 15 + j;
-			printf(" %d", af_statistics.sharpnessHighPass[pos]);
-		}
-		printf("\n");
-	}
-	printf("\n");
-
-	printf("histLowData:\n");
-	for (i = 0; i < 15; i++) {
-		for (j = 0; j < 15; j++) {
-			pos = i * 15 + j;
-			printf(" %d", af_statistics.histLowData[pos]);
-		}
-		printf("\n");
-	}
-	printf("\n");
-
-	printf("histHighData:\n");
-	for (i = 0; i < 15; i++) {
-		for (j = 0; j < 15; j++) {
-			pos = i * 15 + j;
-			printf(" %d", af_statistics.histHighData[pos]);
-		}
-		printf("\n");
+		printf("%d, ", fv);
+		af_attr.position += step;
+		usleep(100*1000);
 	}
 }
 
@@ -1320,4 +1303,52 @@ void tuning_handle_3dlut(tuning_context_t *ctx)
 #endif
 	if (buf_opencl)
 		free(buf_opencl);
+}
+
+void tuning_handle_get_af_attr(tuning_context_t *ctx)
+{
+	hbn_isp_af_attr_t af_attr = {0};
+	TUNING_API_EQ(hbn_isp_get_af_attr, &af_attr, return);
+
+	printf("Currently AF is in %s mode\n", (af_attr.mode == HBN_ISP_MODE_MANUAL)?"manual":"auto");
+	printf("positon: %d\n", af_attr.position);
+
+	printf("af_mode: %d\n", af_attr.auto_attr.af_mode);
+	printf("stable_tolerance: %f\n", af_attr.auto_attr.stable_tolerance);
+	printf("points_of_curve: %d\n", af_attr.auto_attr.points_of_curve);
+	printf("min_focal: %d\n", af_attr.auto_attr.min_focal);
+	printf("max_focal: %d\n", af_attr.auto_attr.max_focal);
+	printf("motion_threshold: %f\n", af_attr.auto_attr.motion_threshold);
+	printf("uphill_allowance: %d\n", af_attr.auto_attr.uphill_allowance);
+	printf("downhill_allowance: %d\n", af_attr.auto_attr.downhill_allowance);
+	printf("pdconf_threshold: %f\n", af_attr.auto_attr.pdconf_threshold);
+	printf("pdshift_threshold: %f\n", af_attr.auto_attr.pdshift_threshold);
+	printf("pdstable_count_max: %d\n", af_attr.auto_attr.pdstable_count_max);
+	printf("pdaf_unlock_threshold: %f\n", af_attr.auto_attr.pdaf_unlock_threshold);
+
+	printf("defocus_framenum: %d\n", af_attr.auto_attr.defocus_framenum);
+	printf("lossconfidence_framenum: %d\n", af_attr.auto_attr.lossconfidence_framenum);
+	printf("accurate_focus_step: %d\n", af_attr.auto_attr.accurate_focus_step);
+	printf("accurate_focus_enable: %d\n", af_attr.auto_attr.accurate_focus_enable);
+}
+
+void tuning_handle_set_af_attr(tuning_context_t *ctx)
+{
+	int32_t mode;
+	hbn_isp_af_attr_t af_attr = {0};
+
+	read_p("typing the af mode, manual(0)/auto(1): ", "%d", &mode);
+
+	if (mode == 0) {
+		af_attr.mode = HBN_ISP_MODE_MANUAL;
+		read_p("pos: ", "%d", &af_attr.position);
+	} else {
+		TUNING_API_EQ(hbn_isp_get_af_attr, &af_attr, return);
+		af_attr.mode = HBN_ISP_MODE_AUTO;
+		read_p("minfocal: ", "%hd", &af_attr.auto_attr.min_focal);
+		read_p("maxfocal: ", "%hd", &af_attr.auto_attr.max_focal);
+		read_p("points: ", "%hhd", &af_attr.auto_attr.points_of_curve);
+	}
+
+	TUNING_API_EQ(hbn_isp_set_af_attr, &af_attr, return);
 }

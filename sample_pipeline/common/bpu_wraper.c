@@ -451,7 +451,7 @@ bpu_model_descriptor bpu_models[] = {
 
 	{
 		.model_name = "yolov5s",
-		.model_path = "../model_zoom/yolov5s_672x672_nv12.bin",
+		.model_path = "/opt/hobot/model/x5/basic/yolov5s_672x672_nv12.bin",
 		.inference_func = inference_yolov5s,
 		.post_proc_func = post_process_yolov5s
 	},

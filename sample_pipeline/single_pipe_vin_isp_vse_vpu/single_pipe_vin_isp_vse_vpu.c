@@ -817,7 +817,7 @@ int encode_init(void *data, int fps) {
 	encode_height = vse_ochn_attr.target_h;
 	ret = vp_encode_config_param(&media_context, MEDIA_CODEC_ID_H264,
 								encode_width, encode_height,
-								encode_fps, 8192);
+								encode_fps, 16384);
 	ERR_CON_EQ(ret, 0);
 	ret = hb_mm_mc_initialize(&media_context);
 	ERR_CON_EQ(ret, 0);

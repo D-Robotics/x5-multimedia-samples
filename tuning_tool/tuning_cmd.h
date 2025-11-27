@@ -120,7 +120,8 @@ typedef struct tuning_cmd_func {
 	{'c',	tuning_handle_set_dpcc_attr},\
 	{'C',	tuning_handle_get_dpcc_attr},\
 	{'g',	tuning_handle_set_pattern_attr},\
-	{'i',	tuning_handle_3dlut},\
+	{'i',	tuning_handle_set_rgbir_attr},\
+	{'I',	tuning_handle_get_rgbir_attr},\
 	{'x',	tuning_handle_set_af_attr},\
 	{'X',	tuning_handle_get_af_attr},\
 }
@@ -154,7 +155,8 @@ void tuning_handle_set_pattern_attr(tuning_context_t *ctx);
 void tuning_handle_3dlut(tuning_context_t *ctx);
 void tuning_handle_get_af_attr(tuning_context_t *ctx);
 void tuning_handle_set_af_attr(tuning_context_t *ctx);
-
+void tuning_handle_get_rgbir_attr(tuning_context_t *ctx);
+void tuning_handle_set_rgbir_attr(tuning_context_t *ctx);
 
 void tuning_time_point();
 void tuning_time_delay(const char *func_name);

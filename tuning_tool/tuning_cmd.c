@@ -1352,3 +1352,50 @@ void tuning_handle_set_af_attr(tuning_context_t *ctx)
 
 	TUNING_API_EQ(hbn_isp_set_af_attr, &af_attr, return);
 }
+
+void tuning_handle_set_rgbir_attr(tuning_context_t *ctx)
+{
+	hbn_isp_rgbir_attr_t rgbir_attr = {0};
+
+	printf("typing the rgbir mode only support manual.\n");
+
+	TUNING_API_EQ(hbn_isp_get_rgbir_attr, &rgbir_attr, return);
+
+	for (size_t i = 0; i < CAMDEV_RGBIR_CC_MATRIX_SIZE; i++){
+		rgbir_attr.cc_matrix[i] += 0.001;
+	}
+
+	for (size_t i = 0; i < CAMDEV_RGBIR_CHANNEL_NUM; i++){
+		rgbir_attr.dpcc_mid_th[i] += 1;
+	}
+
+	for (size_t i = 0; i < CAMDEV_RGBIR_CHANNEL_NUM; i++){
+		rgbir_attr.dpcc_th[i] += 1;
+	}
+
+	rgbir_attr.ir_threshold += 1;
+	rgbir_attr.l_threshold += 1;
+
+	TUNING_API_EQ(hbn_isp_set_rgbir_attr, &rgbir_attr, return);
+}
+
+void tuning_handle_get_rgbir_attr(tuning_context_t *ctx)
+{
+	hbn_isp_rgbir_attr_t rgbir_attr = {0};
+
+	TUNING_API_EQ(hbn_isp_get_rgbir_attr, &rgbir_attr, return);
+	printf("rgbir current value:\n");
+	for (size_t i = 0; i < CAMDEV_RGBIR_CC_MATRIX_SIZE; i++){
+		printf("cc_matrix[%zu]: %f\n", i, rgbir_attr.cc_matrix[i]);
+	}
+
+	for (size_t i = 0; i < CAMDEV_RGBIR_CHANNEL_NUM; i++){
+		printf("dpcc_mid_th[%zu]: %d\n", i, rgbir_attr.dpcc_mid_th[i]);
+	}
+
+	for (size_t i = 0; i < CAMDEV_RGBIR_CHANNEL_NUM; i++){
+		printf("dpcc_th[%zu]: %d\n", i, rgbir_attr.dpcc_th[i]);
+	}
+	printf("ir_threshold: %d\n", rgbir_attr.ir_threshold);
+	printf("l_threshold: %d\n", rgbir_attr.l_threshold);
+}

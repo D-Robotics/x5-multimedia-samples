@@ -38,18 +38,18 @@ void crop_performance_test(struct PerformanceTestParam *param)
 	//1. 创建输入图片：构造最大分辨率的图片作为输入(4K 3840*2160)
 	src.width = 3840;
 	src.height = 2160;
-	N2D_ON_ERROR(performance_test_create_buffer_black(param, N2D_BGRA8888, &src));
-	N2D_ON_ERROR(performance_test_add_rect(param, &src,TOP_LEFT, n2d_blue)); 		//左上角 添加 蓝色矩形框
+	N2D_ON_ERROR(performance_test_create_buffer_black(param, N2D_NV12, &src));
+	N2D_ON_ERROR(performance_test_add_rect(param, &src,TOP_LEFT, n2d_blue)); //左上角 添加 蓝色矩形框
 
 	//2. 创建输出图片: 根据输入的参数从 输入的左上角裁剪
-	N2D_ON_ERROR(performance_test_create_buffer_black(param, N2D_BGRA8888, &dst));
+	N2D_ON_ERROR(performance_test_create_buffer_black(param, N2D_NV12, &dst));
 
 	//3. 裁剪的位置：根据输入参数大小
 	n2d_rectangle_t src_rect;
 	src_rect.x = 0;
-    src_rect.y = 0;
-    src_rect.width  = dst.width;
-    src_rect.height = dst.height;
+	src_rect.y = 0;
+	src_rect.width  = dst.width;
+	src_rect.height = dst.height;
 
 	struct ResolutionInformation res_info = {
 		.input_batch = 1,
@@ -94,8 +94,15 @@ n2d_error_t crop_sample()
 	n2d_buffer_t dst = {0};
 
 	// 读取文件
-	char *input_file_name = "../resource/RGBA8888_640x480.bmp";
-	error = n2d_util_load_buffer_from_file(input_file_name, &src);
+	char *input_file_name = "../resource/nv12_1920x1080.yuv";
+	error = n2d_util_load_buffer_from_raw_file(
+		input_file_name,
+		1920,
+		1080,
+		N2D_NV12,
+		N2D_LINEAR,
+		&src);
+
 	if (N2D_IS_ERROR(error))
 	{
 		printf("load buffer from file %s failed! error=%d.\n", input_file_name, error);
@@ -108,7 +115,7 @@ n2d_error_t crop_sample()
 	error = n2d_util_allocate_buffer(
 		dst_width,
 		dst_height,
-		N2D_BGRA8888,
+		N2D_NV12,
 		N2D_0,
 		N2D_LINEAR,
 		N2D_TSC_DISABLE,
@@ -118,11 +125,12 @@ n2d_error_t crop_sample()
 		printf("load buffer from file %s failed! error=%d.\n", input_file_name, error);
 		goto on_free_src;
 	}
+
 	n2d_rectangle_t src_rect;
 	src_rect.x = 0;
-    src_rect.y = 0;
-    src_rect.width  = dst.width;
-    src_rect.height = dst.height;
+	src_rect.y = 0;
+	src_rect.width  = dst.width;
+	src_rect.height = dst.height;
 
 	//从src图中裁剪矩形框（src_rect）到 dst中
 	N2D_ON_ERROR(n2d_blit(&dst, N2D_NULL, &src, &src_rect, N2D_BLEND_NONE));
@@ -131,8 +139,8 @@ n2d_error_t crop_sample()
 	// 保存图片
 	char output_file_name[128];
 	memset(output_file_name, 0, sizeof(output_file_name));
-	sprintf(output_file_name, "./crop_sample_%d_%d.bmp", dst.width, dst.height);
-	error = n2d_util_save_buffer_to_file(&dst, output_file_name);
+	sprintf(output_file_name, "./crop_sample_%d_%d.yuv", dst.width, dst.height);
+	error = n2d_util_save_buffer_to_vimg(&dst, output_file_name);
 	if (N2D_IS_ERROR(error))
 	{
 		printf("alphablend failed! error=%d.\n", error);

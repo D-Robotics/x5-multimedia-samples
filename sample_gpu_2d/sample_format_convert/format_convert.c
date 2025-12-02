@@ -52,12 +52,12 @@ void format_convert_performance_test(struct PerformanceTestParam *param){
 	//原图: 黑底 + 蓝色矩形框
 	N2D_ON_ERROR(performance_test_create_buffer_with_rect(param, N2D_NV12, &src));
 	//存储转换后的图: 初始化为黑底
-	N2D_ON_ERROR(performance_test_create_buffer_black(param, N2D_NV12, &dst));
+	N2D_ON_ERROR(performance_test_create_buffer_black(param, N2D_NV21, &dst));
 
 	int run_count = 0;
 	performance_test_start(param);
 	while (run_count < param->iteration_number){
-		//foramt convert: N2D_BGRA8888 -> N2D_NV12
+		//foramt convert: N2D_NV12 -> N2D_NV21
 		N2D_ON_ERROR(n2d_blit(&dst, N2D_NULL, &src, N2D_NULL, N2D_BLEND_NONE));
 		N2D_ON_ERROR(n2d_commit());
 		run_count++;
@@ -76,12 +76,18 @@ on_error:
 	}
 }
 
-//nv12 => yuyv/uyvy/yv12/I420/nv21/nv12/nv16/nv61/p010_msb/p010_lsb/I010
+//nv12 => yuyv/uyvy/yv12/I420/nv12/nv21/nv16/nv61/p010_msb/p010_lsb/I010
 n2d_error_t format_convert()
 {
 	n2d_error_t error = N2D_SUCCESS;
 	n2d_buffer_t tmpbuffer1 = {0};
 	n2d_buffer_t tmpbuffer2 = {0};
+
+	if(!n2d_is_feature_support(N2D_FEATURE_YUV420_OUTPUT))
+	{
+		printf("Not supported YUV!!!\n");
+		return N2D_SUCCESS;
+	}
 
 	//读取文件
 	n2d_buffer_t src = {0};
@@ -99,12 +105,6 @@ n2d_error_t format_convert()
 	{
 		printf("load buffer from file %s failed! error=%d.\n", input_file_name, error);
 		goto on_error;
-	}
-
-	if(!n2d_is_feature_support(N2D_FEATURE_YUV420_OUTPUT))
-	{
-		printf("Not supported YUV!!!\n");
-		return N2D_SUCCESS;
 	}
 
 	char output_file_name[128];
@@ -138,7 +138,7 @@ n2d_error_t format_convert()
 			&tmpbuffer2));
 
 		//将yuv_format[i]格式再转回源文件的格式
-		error = n2d_blit(&tmpbuffer2, N2D_NULL, &src, N2D_NULL, N2D_BLEND_NONE);
+		error = n2d_blit(&tmpbuffer2, N2D_NULL, &tmpbuffer1, N2D_NULL, N2D_BLEND_NONE);
 		if (N2D_IS_ERROR(error))
 		{
 			printf("blit error, error=%d.\n", error);
@@ -149,8 +149,9 @@ n2d_error_t format_convert()
 
 		//保存图片
 		memset(output_file_name, 0, sizeof(output_file_name));
-		sprintf(output_file_name, "./resize_sample_yuv_format_%d.yuv", i);
+		sprintf(output_file_name, "./format_sample_yuv_format_%d.yuv", i);
 		error = n2d_util_save_buffer_to_vimg(&tmpbuffer2, output_file_name);
+
 		if (N2D_IS_ERROR(error))
 		{
 			printf("alphablend failed! error=%d.\n", error);

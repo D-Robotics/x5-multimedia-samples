@@ -56,6 +56,21 @@ void create_n2d_buffer_performance_test(struct PerformanceTestParam *param)
 		goto on_error;
 	}
 
+	//纯黑 = Y=0, U=128, V=128
+	memset(hbn_mem_src.virt_addr[0], 0, src_width * src_height);
+	memset(hbn_mem_src.virt_addr[1], 128, (src_width * src_height) / 2);
+
+	ret = hb_mem_flush_buf_with_vaddr((uint64_t)hbn_mem_src.virt_addr[0], hbn_mem_src.size[0]);
+	if(ret != 0){
+		printf("hb_mem_flush_buf_with_vaddr failed :%d\n", ret);
+		goto on_error;
+	}
+	ret = hb_mem_flush_buf_with_vaddr((uint64_t)hbn_mem_src.virt_addr[1], hbn_mem_src.size[1]);
+	if(ret != 0){
+		printf("hb_mem_flush_buf_with_vaddr failed :%d\n", ret);
+		goto on_error;
+	}
+
 	error = create_n2d_buffer_from_hbm_graphic(&src, &hbn_mem_src);
 	if (N2D_IS_ERROR(error)){
 		printf("create_n2d_buffer_from_hbm_graphic failed! error=%d.\n", error);

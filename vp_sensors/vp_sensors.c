@@ -558,6 +558,8 @@ static int32_t check_sensor_reg_value(vcon_propertie_t vcon_props,
 		if (sensor_config->sensor_i2c_addr_list[i] == 0) {
 			sensor_config->sensor_i2c_addr_list[i] = addr;
 			break;
+		}else if (sensor_config->sensor_i2c_addr_list[i] == addr) {
+			break;
 		}
 	}
 
@@ -575,8 +577,8 @@ static int32_t check_sensor_reg_value(vcon_propertie_t vcon_props,
 			sensor_config->vin_node_attr->cim_attr.mipi_rx = vcon_props.rx_phy[1];
 			return 0;
 		} else {
-			printf("WARN: Sensor Name: %s, Expected Chip ID: 0x%02X, Actual Chip ID Read: 0x%02X\n",
-					sensor_config->sensor_name, sensor_config->chip_id & 0x0000FFFF, chip_id);
+			printf("WARN: Sensor Name: %s, Addr: 0x%02x Expected Chip ID: 0x%02X, Actual Chip ID Read: 0x%02X\n",
+					sensor_config->sensor_name, addr, sensor_config->chip_id & 0x0000FFFF, chip_id);
 		}
 
 	}
@@ -730,7 +732,63 @@ static int32_t vp_sensor_mipi_host_mclk_is_not_configed(int csi_index){
 		}
 	return mclk_is_not_configed;
 }
+//检测是否需要复位
+static int vp_sensor_detect_is_need_reset(vp_sensor_config_t *cur_sensor_config, vp_sensor_config_t *last){
+	if(last == NULL){
+		return 1;
+	}
+	//gpio_enable_bit 不一样
+	if(cur_sensor_config->camera_config->gpio_enable_bit != last->camera_config->gpio_enable_bit){
+		return 1;
+	}
+	
+	//当前需要，上次不需要，或者频率不一样
+	if (((cur_sensor_config->vin_attr_ex->vin_attr_ex_mask) && (!last->vin_attr_ex->vin_attr_ex_mask)) ||
+		(cur_sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq != last->vin_attr_ex->mclk_ex_attr.mclk_freq)){
+		return 1;
+	}
+	return 0;
+}
+// 比较函数
+static int compare_gpio_enable_bit(const void *a, const void *b)
+{
+	const vp_sensor_config_t *cfg_a = *(const vp_sensor_config_t **)a;
+	const vp_sensor_config_t *cfg_b = *(const vp_sensor_config_t **)b;
 
+	if (!cfg_a || !cfg_a->camera_config || !cfg_b || !cfg_b->camera_config) {
+		return (cfg_a == cfg_b) ? 0 : (cfg_a ? -1 : 1);
+	}
+	int a_value = cfg_a->camera_config->gpio_enable_bit * 1000 + cfg_a->vin_attr_ex->mclk_ex_attr.mclk_freq / 1000000;
+	int b_value = cfg_b->camera_config->gpio_enable_bit * 1000 + cfg_b->vin_attr_ex->mclk_ex_attr.mclk_freq / 1000000;
+	if (a_value < b_value)
+		return -1;
+	else if (a_value > b_value)
+		return 1;
+	else
+		return 0;
+}
+
+static void sort_vp_sensor_config_by_gpio_bit(vp_sensor_config_t **ordered_list)
+{
+	int vp_sensor_config_count = vp_get_sensors_list_number();
+		
+	if (!ordered_list || vp_sensor_config_count <= 1)
+		return;
+	qsort(ordered_list,				  // 待排序数组
+		  vp_sensor_config_count,		// 元素个数
+		  sizeof(vp_sensor_config_t *),  // 每个元素的大小
+		  compare_gpio_enable_bit);	  // 比较函数
+}
+static uint64_t get_timestamp_ms()
+{
+	uint64_t timestamp;
+	struct timeval ts;
+
+	gettimeofday(&ts, NULL);
+	timestamp = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_usec / 1000;
+	return timestamp;
+}
+//only userd by sunrise_camera
 void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 {
 	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
@@ -738,7 +796,14 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 	csi_list_info->valid_count = 0;
 	csi_list_info->max_count = VP_MAX_VCON_NUM;
 	int is_need_used_csi[VP_MAX_VCON_NUM] = {true, true, true, true};
+
+	uint64_t start_time = get_timestamp_ms();
 	should_used_csi(is_need_used_csi);
+
+	vp_sensor_config_t **ordered_list = malloc(sizeof(vp_sensor_config_list));
+	memcpy(ordered_list, vp_sensor_config_list, sizeof(vp_sensor_config_list));
+	sort_vp_sensor_config_by_gpio_bit(ordered_list);
+
 	// Iterate over vcon@0 - 3
 	for (int i = 0; i < VP_MAX_VCON_NUM; ++i) {
 		csi_info_t csi_info_tmp = {.index = i, .is_valid = 0};
@@ -762,39 +827,65 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 		}
 		csi_info_tmp.mclk_is_not_configed = mclk_is_not_configed;
 
+		vp_sensor_config_t *last_reset_config = NULL;
 		memset(csi_info_tmp.sensor_config_list, 0, sizeof(csi_info_tmp.sensor_config_list));
 		if (vcon_props_array[i].status[0] == 'o') {
 			for (int j = 0; j < vp_get_sensors_list_number(); j++) {
-				if(vp_sensor_config_list[j]->camera_config->sensor_mode == DOL2_M){
+				vp_sensor_config_t *vp_sensor_config_ptr = ordered_list[j];
+				
+				//sunrise_camera dont support dol2 mode's sensor
+				if(vp_sensor_config_ptr->camera_config->sensor_mode == DOL2_M){
+					printf("INFO: skip dol2 mode's sensor name:%s\n", vp_sensor_config_ptr->sensor_name);
 					continue;
 				}
-				if(!mclk_is_not_configed){
-					/* enable mclk */
-					if (vp_sensor_config_list[j]->vin_attr_ex->vin_attr_ex_mask)
-					{
-						write_mipi_host_freq(i, vp_sensor_config_list[j]->vin_attr_ex->mclk_ex_attr.mclk_freq);
-						enable_mipi_host_clock(i, 1);
-					}
-
+				//sunrise_camera dont support dummy sensor
+				if(strcmp(vp_sensor_config_ptr->camera_config->name, "dummy") == 0){
+					printf("INFO: skip dummy sensor name:%s\n", vp_sensor_config_ptr->sensor_name);
+					continue;
 				}
-				for (int k = 0; k < 8; ++k) {
-					if (vcon_props_array[i].gpio_oth[k] != 0) {
-						if ((vp_sensor_config_list[j]->camera_config->gpio_enable_bit & (1 << k)) != 0) {
-							enable_sensor_pin(vcon_props_array[i].gpio_oth[k],
-								(1 - vp_sensor_config_list[j]->camera_config->gpio_level_bit));
+				//检测是否需要复位
+				int is_need_reset = vp_sensor_detect_is_need_reset(vp_sensor_config_ptr, last_reset_config);
+				if(is_need_reset){
+					if(!mclk_is_not_configed){
+						/* enable mclk */
+						if (vp_sensor_config_ptr->vin_attr_ex->vin_attr_ex_mask)
+						{
+							write_mipi_host_freq(i, vp_sensor_config_ptr->vin_attr_ex->mclk_ex_attr.mclk_freq);
+							enable_mipi_host_clock(i, 1);
 						}
 					}
-				}
 
-				int ret = check_sensor_reg_value(vcon_props_array[i], vp_sensor_config_list[j]);
+					//复位
+					for (int k = 0; k < 8; ++k) {
+						if (vcon_props_array[i].gpio_oth[k] != 0) {
+							if ((vp_sensor_config_ptr->camera_config->gpio_enable_bit & (1 << k)) != 0) {
+								enable_sensor_pin(vcon_props_array[i].gpio_oth[k],
+									(1 - vp_sensor_config_ptr->camera_config->gpio_level_bit));
+							}
+						}
+					}
+					if(last_reset_config != NULL){
+						printf("INFO: [csi%d]reset sensor pin for sensor name:%s, because [reset: %d <-> %d] [freq enable: %lx <-> %lx] [freq: %d <-> %d]\n", 
+							i, vp_sensor_config_ptr->sensor_name, 
+							vp_sensor_config_ptr->camera_config->gpio_enable_bit, last_reset_config->camera_config->gpio_enable_bit, 
+							vp_sensor_config_ptr->vin_attr_ex->vin_attr_ex_mask, last_reset_config->vin_attr_ex->vin_attr_ex_mask, 
+							vp_sensor_config_ptr->vin_attr_ex->mclk_ex_attr.mclk_freq, last_reset_config->vin_attr_ex->mclk_ex_attr.mclk_freq);
+					}else{
+						printf("INFO: [csi%d]reset sensor pin for sensor name:%s, because last is null.\n", i, vp_sensor_config_ptr->sensor_name);
+					}
+
+					last_reset_config = vp_sensor_config_ptr;
+				}
+			
+				int ret = check_sensor_reg_value(vcon_props_array[i], vp_sensor_config_ptr);
 				if (ret == 0) {
 
 					printf("INFO: Support sensor name:%s on mipi rx csi %d, "
 							"i2c addr 0x%x, config_file:%s\n",
-						vp_sensor_config_list[j]->sensor_name,
+						vp_sensor_config_ptr->sensor_name,
 						vcon_props_array[i].rx_phy[1],
-						vp_sensor_config_list[j]->camera_config->addr,
-						vp_sensor_config_list[j]->config_file);
+						vp_sensor_config_ptr->camera_config->addr,
+						vp_sensor_config_ptr->config_file);
 
 					csi_info_tmp.index = i;
 					csi_info_tmp.is_valid = 1;
@@ -803,7 +894,7 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 					if (strlen(csi_info_tmp.sensor_config_list) > 1) {
 						strcat(csi_info_tmp.sensor_config_list, "/");
 					}
-					strcat(csi_info_tmp.sensor_config_list, vp_sensor_config_list[j]->sensor_name);
+					strcat(csi_info_tmp.sensor_config_list, vp_sensor_config_ptr->sensor_name);
 				}
 			}
 			csi_list_info->csi_info[i] = csi_info_tmp;
@@ -812,6 +903,11 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 			}
 		}
 	}
+	if(ordered_list){
+		free(ordered_list);
+	}
+	uint64_t end_time = get_timestamp_ms();
+	printf("\nINFO: vp_sensor_detect_structed total time: %lu ms\n", (end_time - start_time));
 }
 
 int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int used_mipi_host, vp_csi_config_t* csi_config)

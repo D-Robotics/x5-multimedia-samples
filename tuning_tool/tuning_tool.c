@@ -322,6 +322,7 @@ static void *tuning_main_worker_thread(void *arg)
 	char file_name[32] = {0};
 	tuning_context_t *ctx = (tuning_context_t *)arg;;
 	int32_t dump_index = 0;
+	hbn_isp_af_attr_t af_attr = {0};
 
 #ifdef TUNING_DEBUG
 	pr_tuning("%s run sensor count: %d\n", __func__, ctx->sensor_count);
@@ -375,6 +376,19 @@ static void *tuning_main_worker_thread(void *arg)
 			}
 		}
 
+		if (i == 0 && (ctx->run_fv == 1 || ctx->run_fv > FV_DELAY_FRAME - 2)) {
+			af_attr.mode = HBN_ISP_MODE_MANUAL;
+			af_attr.position = ctx->cur_focal;
+
+			if (!BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
+				ret = hbn_isp_set_af_attr(isp_node_handle, &af_attr);
+				if (ret) {
+					pr_tuning("Set Focal fail\n");
+					goto out;
+				}
+			}
+		}
+
 		if(enable_vse)
 		{
 			ret = hbn_vnode_getframe(vse_node_handle, i, 2000, &vse_img[VSE_CHANNELS_USED]);
@@ -421,6 +435,39 @@ static void *tuning_main_worker_thread(void *arg)
 		if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
 			usleep(20*1000);
 		}
+
+		if (i == 0 && ctx->run_fv == 1) {
+			cmd_header_new_t head = {0};
+			tuning_fv_buffer_t fv_buf = {0};
+			// int raw, col;
+			// hbn_isp_af_statistics_t af_statistics = {0};
+			hbn_isp_afmv1_statistics_t afmv1_statistics= {0};
+
+			hbn_isp_get_afmv1_statistics(isp_node_handle, &afmv1_statistics);
+			fv_buf.fv += afmv1_statistics.sharpness_a;
+			fv_buf.fv += afmv1_statistics.sharpness_b;
+			fv_buf.fv += afmv1_statistics.sharpness_c;
+
+			// hbn_isp_get_af_statistics(isp_node_handle, &af_statistics);
+			// for (raw = 0; raw < 15; raw++) {
+			// 	for (col = 0; col < 15; col++) {
+			// 		fv_buf.fv += af_statistics.sharpnessHighPass[raw * 15 + col];
+			// 	}
+			// }
+			fv_buf.pos = ctx->cur_focal;
+
+			head.len = sizeof(tuning_fv_buffer_t);
+			head.type = STATS_AF_DATA;
+			head.format = FV_CURVE_RUN;
+			hb_tool_used_define_pic(ctx->hbplayer_event, &head, &fv_buf, sizeof(tuning_fv_buffer_t));
+
+			if (ctx->cur_focal + ctx->step >= ctx->max_focal) {
+				ctx->run_fv = 0;
+				continue;
+			}
+			ctx->cur_focal += ctx->step;
+		}
+		if (i == 0 && ctx->run_fv > 1) ctx->run_fv--;
 	}
 	}
 out:
@@ -846,6 +893,7 @@ static int32_t create_vse_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	vse_ochn_attr[VSE_CHANNELS_USED].bit_width = 8;
 	// 全部设置到宽为 640 的像素，保证流畅，但是要注意，每个通道的功能和限制不同，如果修改 VSE_CHANNELS_USED 的数值，可能导致功能异常，需要参考 VSE 文档，了解每个通道的功能再进行修改。
 	ratio = input_width / VSE_WIDTH_TARGET;
+	global_ctx->vse_ratio = ratio;
 	vse_ochn_attr[VSE_CHANNELS_USED].target_w = VSE_WIDTH_TARGET;
 	vse_ochn_attr[VSE_CHANNELS_USED].target_h = input_height / ratio;
 
@@ -978,6 +1026,48 @@ static int32_t multi_pipe_create(tuning_context_t *ctx, uint32_t pipelinemode)
 	return ret;
 }
 
+int32_t tuning_common_ctrl_cb(cmd_header_new_t *message, void *ptr, uint32_t size, void *arg)
+{
+	int32_t ret;
+	hbn_isp_afmv1_attr_t afmv1_attr = {0};
+
+	switch (message->format) {
+	case FV_CURVE_RUN:
+		global_ctx->min_focal = message->metadata.calib_rw.id;		// min_focal
+		global_ctx->max_focal = message->metadata.calib_rw.type;	// max_focal
+		global_ctx->step = message->metadata.calib_rw.size;		// step
+		global_ctx->run_fv = FV_DELAY_FRAME;
+		global_ctx->cur_focal = global_ctx->min_focal;
+		break;
+	case FV_AFM_WIN:
+		ret = hbn_isp_get_afmv1_attr(global_ctx->pipe_contex_info[0].pipe_contex.isp_node_handle, &afmv1_attr);
+		if (ret) {
+			pr_tuning("Get AFMV1 attr fail\n");
+			return 0;
+		}
+		afmv1_attr.threshold = message->metadata.calib_rw.id;	// fv_afmwin_on
+		if (enable_vse) {
+			for (int32_t i = 0; i < HBN_ISP_AFMV1_WINDOW_NUM; i++) {
+				afmv1_attr.afm_windows[i].h_offset = afmv1_attr.afm_windows[i].h_offset / global_ctx->vse_ratio;
+				afmv1_attr.afm_windows[i].v_offset = afmv1_attr.afm_windows[i].v_offset / global_ctx->vse_ratio;
+				afmv1_attr.afm_windows[i].height = afmv1_attr.afm_windows[i].height / global_ctx->vse_ratio;
+				afmv1_attr.afm_windows[i].width = afmv1_attr.afm_windows[i].width / global_ctx->vse_ratio;
+			}
+		}
+		cmd_header_new_t head = {0};
+
+		head.len = sizeof(hbn_isp_afmv1_attr_t);
+		head.type = STATS_AF_DATA;
+		head.format = FV_AFM_WIN;
+		hb_tool_used_define_pic(global_ctx->hbplayer_event, &head, &afmv1_attr, sizeof(hbn_isp_afmv1_attr_t));
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
 static int32_t tuning_case_run(tuning_context_t *ctx)
 {
 	int32_t i, ret = 0;
@@ -1007,7 +1097,9 @@ static int32_t tuning_case_run(tuning_context_t *ctx)
 
 	if (HBPLAYER_EN) {
 		ctx->hbplayer_event = hb_tool_start_transfer(0);
-		hb_tool_event_setcb(ctx->hbplayer_event, NULL, NULL, NULL, NULL, NULL);
+		hb_tool_event_setcb(ctx->hbplayer_event, NULL, NULL, NULL, tuning_common_ctrl_cb, NULL);
+		uint32_t event = EV_COMMON_FLAG;
+		hb_tool_event_enable(ctx->hbplayer_event, event);
 	}
 
 	if (BIT_ENABLE(ctx->work_mode, LUT3D_MASK)) {

@@ -20,6 +20,7 @@
 
 #define LUT_SIZE 10
 #define LUT_KNEE 150
+#define FV_DELAY_FRAME 60
 
 #define DEF_DUMP_PATH	"/userdata"
 #define DEF_TMPFS_DUMP_PATH	"/tmp"
@@ -78,6 +79,16 @@ typedef struct tuning_context {
 	char img_path[TUNING_FEEDBACK_FILE_MAX][128];
 	char img_name[TUNING_FEEDBACK_FILE_MAX][128];
 	hbn_vnode_image_t src_img;
+
+	uint32_t vse_ratio;
+
+	// fv curve
+	uint32_t run_fv;
+	uint32_t cur_focal;
+	uint32_t min_focal;
+	uint32_t max_focal;
+	uint32_t step;
+	uint32_t afm_version;
 } tuning_context_t;
 
 typedef struct
@@ -101,6 +112,16 @@ typedef struct
 	int thread_id;
 	dump_mode_t dump_mode;
 } yuv_thread_param_t;
+
+typedef struct tuning_fv_buffer_s {
+	uint32_t fv;
+	uint32_t pos;
+} tuning_fv_buffer_t;
+
+enum fv_command_s {
+	FV_CURVE_RUN,
+	FV_AFM_WIN,
+};
 
 #define select_id(ctx, pparam) do { \
 	if (ctx->sensor_count > 1) { \

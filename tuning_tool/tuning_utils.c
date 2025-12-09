@@ -132,7 +132,7 @@ int32_t tuning_send_yuv_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t
 	return hb_tool_send_yuv_pic(event, &hbplayer_info, plane0_addr, size, plane1_addr, size / 2, 0, 0);
 }
 
-int32_t tuning_dump_file(char *filename, hbn_vnode_image_t *out_img)
+int32_t tuning_dump_yuv_file(char *filename, hbn_vnode_image_t *out_img)
 {
 	FILE *Fd = NULL;
 	Fd = fopen(filename, "a");
@@ -143,18 +143,58 @@ int32_t tuning_dump_file(char *filename, hbn_vnode_image_t *out_img)
 	}
 
 	fflush(stdout);
-	if (is_buf_format_raw(out_img)) {
-		fwrite((char *)out_img->buffer.virt_addr[0], 1, out_img->buffer.size[0], Fd);
-	} else {
-		fwrite((char *)out_img->buffer.virt_addr[0], 1, out_img->buffer.size[0], Fd);
-		fwrite((char *)out_img->buffer.virt_addr[1], 1, out_img->buffer.size[1], Fd);
-	}
+	fwrite((char *)out_img->buffer.virt_addr[0], 1, out_img->buffer.size[0], Fd);
+	fwrite((char *)out_img->buffer.virt_addr[1], 1, out_img->buffer.size[1], Fd);
 	fflush(Fd);
 
 	if (Fd)
 		fclose(Fd);
 	pr_tuning("filedump %s done\n", filename);
 
+	return 0;
+}
+
+int32_t tuning_dump_raw_file(char *filename, hbn_vnode_image_t *out_img)
+{
+
+	if (out_img->buffer.plane_cnt == 2) {//DOL2
+		char long_file[256] = {0};
+		char short_file[256] = {0};
+		// Long Frame
+		snprintf(long_file, sizeof(long_file), "%s_long.raw", filename);
+		FILE *Fd_long = fopen(long_file, "ab");
+		fflush(stdout);
+		if (Fd_long) {
+			fwrite((char *)out_img->buffer.virt_addr[0], 1, out_img->buffer.size[0], Fd_long);
+			fflush(Fd_long);
+			fclose(Fd_long);
+			pr_tuning("Dumping DOL2 long frame to %s\n", long_file);
+		}
+
+		// Short Frame
+		snprintf(short_file, sizeof(short_file), "%s_short.raw", filename);
+		FILE *Fd_short = fopen(short_file, "ab");
+		if (Fd_short) {
+			fwrite((char *)out_img->buffer.virt_addr[1], 1, out_img->buffer.size[1], Fd_short);
+			fflush(Fd_short);
+			fclose(Fd_short);
+			pr_tuning("Dumping DOL2 short frame to %s\n", short_file);
+		}
+	} else if(out_img->buffer.plane_cnt == 1){
+		char file_name[256] = {0};
+		snprintf(file_name, sizeof(file_name), "%s.raw", filename);
+		FILE *Fd = NULL;
+		Fd = fopen(file_name, "a");
+
+		if (Fd == NULL) {
+			pr_tuning("open %s fail", file_name);
+			return -1;
+		}
+		fwrite((char *)out_img->buffer.virt_addr[0], 1, out_img->buffer.size[0], Fd);
+		pr_tuning("Dumping RAW data to %s\n", file_name);
+		fflush(Fd);
+		fclose(Fd);
+	}
 	return 0;
 }
 

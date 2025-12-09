@@ -36,8 +36,8 @@ void tuning_dump_sif_raw(tuning_context_t *ctx)
 			break;
 		}
 
-		snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/SIF_S%d_STREAM%d.raw", DEF_DUMP_PATH, ctx->handle_id, i);
-		tuning_dump_file(file_name, &raw_img);
+		snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/SIF_S%d_STREAM%d", DEF_DUMP_PATH, ctx->handle_id, i);
+		tuning_dump_raw_file(file_name, &raw_img);
 		hbn_vnode_releaseframe(pipe_info->pipe_contex.vin_node_handle, 0, &raw_img);
 	}
 	raw_stream_cnt++;
@@ -76,7 +76,7 @@ void *raw_thread_func(void *arg)
 		pthread_mutex_unlock(&param->control->mutex);
 
 		snprintf(filename, sizeof(filename),
-				 "%s/SIF_S%d_frameid_%d_ts_%ld.raw", DEF_TMPFS_DUMP_PATH, param->handle_id,
+				 "%s/SIF_S%d_frameid_%d_ts_%ld", DEF_TMPFS_DUMP_PATH, param->handle_id,
 				 raw_img.info.frame_id, raw_img.info.timestamps);
 		if (param->dump_mode != DUMP_RAW_YUV_AE){
 			TUNING_API_EQ(hbn_isp_get_exposure_attr, &exp_attr, continue);
@@ -102,7 +102,7 @@ void *raw_thread_func(void *arg)
 		}
 
 		tuning_time_cost_start(&tc, "Dump raw_file");
-		tuning_dump_file(filename, &raw_img);
+		tuning_dump_raw_file(filename, &raw_img);
 		tuning_time_cost_end(&tc);
 		pr_tuning("Dump raw_file took %.3f ms\n", tc.elapsed_time);
 
@@ -184,7 +184,7 @@ void *yuv_thread_func(void *arg)
 				exp_attr.manual_attr.timestamps);
 
 		tuning_time_cost_start(&tc, "Dump yuv_file");
-		tuning_dump_file(filename, &yuv_img);
+		tuning_dump_yuv_file(filename, &yuv_img);
 		tuning_time_cost_end(&tc);
 		pr_tuning("Dump yuv_file took %.3f ms\n", tc.elapsed_time);
 
@@ -221,6 +221,7 @@ void tuning_dump_raw_and_yuv(tuning_context_t *ctx)
 	raw_thread_param_t raw_param = {0};
 	yuv_thread_param_t yuv_param = {0};
 	uint64_t rawsize, yuvsize;
+	uint32_t isp_mode = 0;
 
 	uint32_t img_height = ctx->pipe_contex_info[ctx->handle_id].img_height;
 	uint32_t img_width = ctx->pipe_contex_info[ctx->handle_id].img_width;
@@ -229,6 +230,7 @@ void tuning_dump_raw_and_yuv(tuning_context_t *ctx)
 		(ctx->pipe_contex_info[ctx->handle_id].vin_format == 0x2C) ? RAW_12 : RAW_10;
 
 	pipe_info = &ctx->pipe_contex_info[ctx->handle_id];
+	isp_mode = pipe_info->pipe_contex.sensor_config->isp_attr->sensor_mode;
 	if (!pipe_info->is_offline)
 	{
 		pr_tuning("Cannot dump raw when sif otf isp\n");
@@ -277,14 +279,26 @@ void tuning_dump_raw_and_yuv(tuning_context_t *ctx)
 	switch (dump_mode)
 	{
 	case DUMP_RAW_AE:
-		bytes_per_frame = rawsize;
-		max_frames = tmpfs_available_bytes / bytes_per_frame;
-		pr_tuning("Mode 1: RAW + AE Info, %lu bytes per frame\n", bytes_per_frame);
+		if(isp_mode == ISP_NORMAL_M){
+			bytes_per_frame = rawsize;
+			max_frames = tmpfs_available_bytes / bytes_per_frame;
+			pr_tuning("Mode 1: RAW + AE Info, %lu bytes per frame\n", bytes_per_frame);
+		}else if(isp_mode == ISP_DOL2_M){
+			bytes_per_frame = rawsize * 2;
+			max_frames = tmpfs_available_bytes / bytes_per_frame;
+			pr_tuning("Mode 1: RAW + AE Info, %lu bytes per frame\n", bytes_per_frame);
+		}
 		break;
 	case DUMP_RAW_YUV_AE:
-		bytes_per_frame = rawsize + yuvsize;
-		max_frames = tmpfs_available_bytes / bytes_per_frame;
-		pr_tuning("Mode 2: RAW + YUV + AE Info, %lu bytes per frame\n", bytes_per_frame);
+		if(isp_mode == ISP_NORMAL_M){
+			bytes_per_frame = rawsize + yuvsize;
+			max_frames = tmpfs_available_bytes / bytes_per_frame;
+			pr_tuning("Mode 2: RAW + YUV + AE Info, %lu bytes per frame\n", bytes_per_frame);
+		}else if(isp_mode == ISP_DOL2_M){
+			bytes_per_frame = rawsize * 2 + yuvsize;
+			max_frames = tmpfs_available_bytes / bytes_per_frame;
+			pr_tuning("Mode 2: RAW + YUV + AE Info, %lu bytes per frame\n", bytes_per_frame);
+		}
 		break;
 	case DUMP_YUV_AE:
 		bytes_per_frame = yuvsize;
@@ -1251,7 +1265,7 @@ void tuning_handle_3dlut(tuning_context_t *ctx)
 	memcpy(buf_src + yuv_img.buffer.size[0], (unsigned char *)yuv_img.buffer.virt_addr[1], yuv_img.buffer.size[1]);
 
 	snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/lut_src.yuv", DEF_DUMP_PATH);
-	tuning_dump_file(file_name, &yuv_img);
+	tuning_dump_yuv_file(file_name, &yuv_img);
 
 	hbn_vnode_releaseframe(isp_node_handle, 0, &yuv_img);
 

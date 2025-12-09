@@ -404,7 +404,7 @@ static void *tuning_main_worker_thread(void *arg)
 		}
 		if (ctx->pipe_contex_info[i].yuv_dump_cnt) {
 			snprintf(file_name, TUNING_PRINT_SIZE_MAX, "%s/ISP_S%d_STREAM%d.yuv", DEF_DUMP_PATH, i, dump_index++);
-			tuning_dump_file(file_name, &yuv_img);
+			tuning_dump_yuv_file(file_name, &yuv_img);
 			ctx->pipe_contex_info[i].yuv_dump_cnt--;
 			if (!ctx->pipe_contex_info[i].yuv_dump_cnt) {
 				yuv_stream_cnt++;

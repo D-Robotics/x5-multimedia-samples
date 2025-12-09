@@ -139,7 +139,8 @@ void tuning_get_filename(char *name, char *path, hbn_vnode_image_t *out_img, df_
 int32_t tuning_send_raw_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf,
 				enum RAW_BIT format, int32_t pipe_id);
 int32_t tuning_send_yuv_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf, int32_t pipe_id);
-int32_t tuning_dump_file(char *filename, hbn_vnode_image_t *out_img);
+int32_t tuning_dump_raw_file(char *filename, hbn_vnode_image_t *out_img);
+int32_t tuning_dump_yuv_file(char *filename, hbn_vnode_image_t *out_img);
 int32_t tuning_alloc_feedback_buffer(hb_mem_graphic_buf_t *buf, uint32_t width, uint32_t height, uint32_t cached);
 int32_t tuning_free_feedback_buffer(hb_mem_graphic_buf_t *buf);
 int32_t tuning_get_raw_list(char *path, char img_path[][128], char img_name[][128], int32_t *img_num);

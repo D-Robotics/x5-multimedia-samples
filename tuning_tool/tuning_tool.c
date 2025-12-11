@@ -291,19 +291,6 @@ static int32_t tuning_feeback_prepare_next(tuning_context_t *ctx)
 	fread(ctx->src_img.buffer.virt_addr[0], 1, statbuf.st_size, file);
 	fclose(file);
 
-	if ((ctx->feedback_times <= 1) &&
-		((ctx->cur_img + 1) >= ctx->img_num)) {
-		pr_tuning("feedback raw list done!\n");
-		return RET_FAILURE;
-	}
-
-	if ((ctx->cur_img + 1) >= ctx->img_num) {
-		ctx->cur_img = 0;
-		ctx->feedback_times -= 1;
-	} else {
-		ctx->cur_img += 1;
-	}
-
 	return RET_SUCCESS;
 }
 
@@ -367,16 +354,39 @@ static void *tuning_main_worker_thread(void *arg)
 		}
 
 		if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
-			ret = tuning_feeback_prepare_next(ctx);
-			if (ret) goto out;
+			if ((ctx->feedback_times >= 1) && (ctx->cur_img < ctx->img_num)) {
+				ret = tuning_feeback_prepare_next(ctx);
+				if (ret == RET_FAILURE) goto out;
+			} else {
+				if (i == 0 && ctx->run_feedback_fv == 1) {
+					ctx->cur_img = 0;
+					ctx->feedback_times = 1;
+					ctx->run_feedback_fv = 0;
+					ret = tuning_feeback_prepare_next(ctx);
+					if (ret == RET_FAILURE) goto out;
+				} else {
+					usleep(20*1000);
+					continue;
+				}
+			}
+
 			ret = hbn_vnode_sendframe(isp_node_handle, 0, &ctx->src_img);
 			if (ret) {
 				pr_tuning("isp hbn_vnode_sendframe failed!\n");
 				goto out;
 			}
+
+			if ((ctx->cur_img + 1) >= ctx->img_num) {
+				if (ctx->feedback_times <= 1)
+					pr_tuning("feedback raw list done!\n");
+				ctx->cur_img = 0;
+				ctx->feedback_times -= 1;
+			} else {
+				ctx->cur_img += 1;
+			}
 		}
 
-		if (i == 0 && (ctx->run_fv == 1 || ctx->run_fv > FV_DELAY_FRAME - 2)) {
+		if (i == 0 && (ctx->run_fv == 1 || ctx->run_fv > FV_DELAY_FRAME - 2) && ctx->feedback_fv == 0) {
 			af_attr.mode = HBN_ISP_MODE_MANUAL;
 			af_attr.position = ctx->cur_focal;
 
@@ -436,24 +446,40 @@ static void *tuning_main_worker_thread(void *arg)
 			usleep(20*1000);
 		}
 
-		if (i == 0 && ctx->run_fv == 1) {
+		if (i == 0 && (ctx->run_fv == 1 || ctx->feedback_fv == 1)) {
 			cmd_header_new_t head = {0};
 			tuning_fv_buffer_t fv_buf = {0};
-			// int raw, col;
-			// hbn_isp_af_statistics_t af_statistics = {0};
+			int raw, col;
+			hbn_isp_af_statistics_t af_statistics = {0};
 			hbn_isp_afmv1_statistics_t afmv1_statistics= {0};
 
-			hbn_isp_get_afmv1_statistics(isp_node_handle, &afmv1_statistics);
-			fv_buf.fv += afmv1_statistics.sharpness_a;
-			fv_buf.fv += afmv1_statistics.sharpness_b;
-			fv_buf.fv += afmv1_statistics.sharpness_c;
-
-			// hbn_isp_get_af_statistics(isp_node_handle, &af_statistics);
-			// for (raw = 0; raw < 15; raw++) {
-			// 	for (col = 0; col < 15; col++) {
-			// 		fv_buf.fv += af_statistics.sharpnessHighPass[raw * 15 + col];
-			// 	}
-			// }
+			if (ctx->afm_version == 0) {
+				hbn_isp_get_afmv1_statistics(isp_node_handle, &afmv1_statistics);
+				fv_buf.fv += afmv1_statistics.sharpness_a;
+				fv_buf.fv += afmv1_statistics.sharpness_b;
+				fv_buf.fv += afmv1_statistics.sharpness_c;
+			} else {
+				hbn_isp_get_af_statistics(isp_node_handle, &af_statistics);
+				if (ctx->block_select == 0) {
+					for (raw = 0; raw < 15; raw++) {
+					for (col = 0; col < 15; col++) {
+						if (ctx->afm_version == 1) {
+							fv_buf.fv += af_statistics.sharpnessHighPass[raw * 15 + col];
+						} else {
+							fv_buf.fv += af_statistics.sharpnessLowPass[raw * 15 + col];
+						}
+					}
+					}
+				} else {
+					ctx->block_select = ctx->block_select < 0 ? 1: ctx->block_select;
+					ctx->block_select = ctx->block_select > 225 ? 225: ctx->block_select;
+					if (ctx->afm_version == 1) {
+						fv_buf.fv = af_statistics.sharpnessHighPass[ctx->block_select - 1];
+					} else {
+						fv_buf.fv = af_statistics.sharpnessLowPass[ctx->block_select - 1];
+					}
+				}
+			}
 			fv_buf.pos = ctx->cur_focal;
 
 			head.len = sizeof(tuning_fv_buffer_t);
@@ -461,7 +487,7 @@ static void *tuning_main_worker_thread(void *arg)
 			head.format = FV_CURVE_RUN;
 			hb_tool_used_define_pic(ctx->hbplayer_event, &head, &fv_buf, sizeof(tuning_fv_buffer_t));
 
-			if (ctx->cur_focal + ctx->step >= ctx->max_focal) {
+			if (ctx->cur_focal + ctx->step >= ctx->max_focal && ctx->feedback_fv == 0) {
 				ctx->run_fv = 0;
 				continue;
 			}
@@ -1036,7 +1062,14 @@ int32_t tuning_common_ctrl_cb(cmd_header_new_t *message, void *ptr, uint32_t siz
 		global_ctx->min_focal = message->metadata.calib_rw.id;		// min_focal
 		global_ctx->max_focal = message->metadata.calib_rw.type;	// max_focal
 		global_ctx->step = message->metadata.calib_rw.size;		// step
+		global_ctx->afm_version = message->metadata.calib_rw.width;	// afm_version
+		global_ctx->block_select = message->metadata.calib_rw.rows;	// block
+		global_ctx->feedback_fv = message->metadata.calib_rw.cols;	// feedback_enbale
 		global_ctx->run_fv = FV_DELAY_FRAME;
+		if (global_ctx->feedback_fv) {
+			global_ctx->run_feedback_fv = 1;
+			global_ctx->run_fv = 0;
+		}
 		global_ctx->cur_focal = global_ctx->min_focal;
 		break;
 	case FV_AFM_WIN:

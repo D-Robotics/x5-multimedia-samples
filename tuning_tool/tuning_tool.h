@@ -89,6 +89,9 @@ typedef struct tuning_context {
 	uint32_t max_focal;
 	uint32_t step;
 	uint32_t afm_version;
+	uint32_t block_select;
+	uint32_t feedback_fv;
+	uint32_t run_feedback_fv;
 } tuning_context_t;
 
 typedef struct

@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <pthread.h>
+#include "channel_param_parser.h"
 
 #include "common_utils.h"
 
@@ -20,6 +21,7 @@
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
+	{"channel-type", optional_argument, NULL, 'c'},
 	{NULL, 0, NULL, 0}
 };
 
@@ -27,14 +29,31 @@ static struct option const long_options[] = {
 static int32_t running = 0;
 static uint32_t sensor_type = 0;
 static uint32_t link_port = 0;
+extern int vin_isp_is_online;
+extern int isp_vse_is_online;
 
 int create_and_run_vflow(pipe_contex_t *pipe_contex);
 void *read_vse_data(void *contex);
 int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
 int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
 
-static void print_help() {
-	printf("single_pipe_vin_isp_vse -s/--sensor sensor_index\n");
+static void print_help(const char *argv0) {
+	printf("Usage: %s [OPTIONS]\n", argv0);
+	printf("Options:\n");
+	printf("  -s <sensor_index>		Specify sensor index\n");
+	printf("  -c <channel_type>		Specify channel type: vo and vf and io and if, default: vf:if\n");
+	printf("		Support both individual configuration and combined configuration.\n");
+	printf("		The individual configuration supports four types:\n");
+	printf("				1. vo: vin online isp\n");
+	printf("				2. vf: vin offline isp\n");
+	printf("				3. io: isp online vse\n");
+	printf("				4. if: isp offline vse\n");
+	printf("		The combination configuration supports four types:\n");
+	printf("				1. vo:io  vin online isp + isp online vse\n");
+	printf("				2. vo:if  vin online isp + isp offline vse\n");
+	printf("				3. vf:io  vin offline isp + isp online vse\n");
+	printf("				4. vf:if  vin offline isp + isp offline vse\n");
+	printf("  -h	Show help message\n");
 	vp_show_sensors_list();
 }
 
@@ -51,16 +70,23 @@ int main(int argc, char** argv) {
 	int c = 0;
 	int index = -1;
 
-	while((c = getopt_long(argc, argv, "s:h",
+	/* parse options */
+	while((c = getopt_long(argc, argv, "s:c:h",
 							long_options, &opt_index)) != -1) {
 		switch (c)
 		{
 		case 's':
 			index = atoi(optarg);
 			break;
+		case 'c':
+			if (parse_channel_string(optarg) != 0) {
+				printf("Invalid channel type %s.\n", optarg);
+				return -1;
+			}
+			break;
 		case 'h':
 		default:
-			print_help();
+			print_help(argv[0]);
 			return 0;
 		}
 	}
@@ -81,10 +107,21 @@ int main(int argc, char** argv) {
 		}
 	} else {
 		printf("Unsupport sensor index:%d\n", index);
-		print_help();
+		print_help(argv[0]);
 		return 0;
 	}
-
+	if((pipe_contex.sensor_config->camera_config->sensor_mode == DOL2_M)
+		&& (vin_isp_is_online == 0)){
+		printf("\nError:%s's sensor_mode is DOL2_M, must work in online mode.\n\n",
+			pipe_contex.sensor_config->sensor_name);
+		return -1;
+	}
+	printf("\n");
+	printf("Connection method from VIN to ISP: %s\n",
+		(vin_isp_is_online == 1) ? "vin online isp" : "vin offline isp");
+	printf("Connection method from VIN to ISP: %s.\n",
+		(isp_vse_is_online == 1) ? "isp online vse" : "isp offline vse");
+	printf("\n");
 
 	hb_mem_module_open();
 	ret = create_and_run_vflow(&pipe_contex);
@@ -148,7 +185,6 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	vin_ochn_attr_t *vin_ochn_attr = NULL;
 	hbn_vnode_handle_t *vin_node_handle = NULL;
 	vin_attr_ex_t vin_attr_ex;
-	hbn_buf_alloc_attr_t alloc_attr = {0};
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
 	uint32_t ichn_id = 0;
@@ -171,6 +207,13 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
 		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
 		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+	}
+	if(vin_isp_is_online){ /*vin->isp: online mode*/
+		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 1;
+		sensor_config->vin_ochn_attr->ddr_en = 0;
+	}else{ /* vin->isp: offline mode*/
+		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 0;
+		sensor_config->vin_ochn_attr->ddr_en = 1;
 	}
 
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
@@ -196,13 +239,16 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
-	alloc_attr.buffers_num = 3;
-	alloc_attr.is_contig = 1;
-	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
-						| HB_MEM_USAGE_CPU_WRITE_OFTEN
-						| HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
-
+	if(!vin_isp_is_online){
+		hbn_buf_alloc_attr_t alloc_attr = {0};
+		memset(&alloc_attr, 0, sizeof(hbn_buf_alloc_attr_t));
+		alloc_attr.buffers_num = 3;
+		alloc_attr.is_contig = 1;
+		alloc_attr.flags =
+			HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
+		ERR_CON_EQ(ret, 0);
+	}
 	return 0;
 }
 
@@ -212,7 +258,7 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ichn_attr_t *isp_ichn_attr = NULL;
 	isp_ochn_attr_t *isp_ochn_attr = NULL;
 	hbn_vnode_handle_t *isp_node_handle = NULL;
-	hbn_buf_alloc_attr_t alloc_attr = {0};
+
 	uint32_t ichn_id = 0;
 	uint32_t ochn_id = 0;
 	int ret = 0;
@@ -223,6 +269,17 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &pipe_contex->isp_node_handle;
 
+	if(vin_isp_is_online){ /*vin->isp: online mode*/
+		sensor_config->isp_attr->input_mode = PASSTHROUGH_MODE;
+	}else{ 				/* vin->isp: offline mode*/
+		sensor_config->isp_attr->input_mode = DDR_MODE;
+	}
+
+	if(isp_vse_is_online){
+		isp_ochn_attr->ddr_en = 0;
+	}else{
+		isp_ochn_attr->ddr_en = 1;
+	}
 	ret = hbn_vnode_open(HB_ISP, 0, AUTO_ALLOC_ID, isp_node_handle);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vnode_set_attr(*isp_node_handle, isp_attr);
@@ -232,14 +289,16 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, ichn_id, isp_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
-	alloc_attr.buffers_num = 3;
-	alloc_attr.is_contig = 1;
-	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
-						| HB_MEM_USAGE_CPU_WRITE_OFTEN
-						| HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, ochn_id, &alloc_attr);
-	ERR_CON_EQ(ret, 0);
-
+	if(!isp_vse_is_online){
+		hbn_buf_alloc_attr_t alloc_attr = {0};
+		alloc_attr.buffers_num = 3;
+		alloc_attr.is_contig = 1;
+		alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
+							| HB_MEM_USAGE_CPU_WRITE_OFTEN
+							| HB_MEM_USAGE_CACHED;
+		ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, ochn_id, &alloc_attr);
+		ERR_CON_EQ(ret, 0);
+	}
 	return 0;
 }
 
@@ -396,17 +455,34 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vse_node_handle);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							pipe_contex->vin_node_handle,
-							1,
-							pipe_contex->isp_node_handle,
-							0);
+	if(vin_isp_is_online){
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+						pipe_contex->vin_node_handle,
+						1,
+						pipe_contex->isp_node_handle,
+						0);
+	}else{
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+						pipe_contex->vin_node_handle,
+						0,
+						pipe_contex->isp_node_handle,
+						0);
+	}
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							pipe_contex->isp_node_handle,
-							0,
-							pipe_contex->vse_node_handle,
-							0);
+
+	if(isp_vse_is_online){
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+						pipe_contex->isp_node_handle,
+						1,
+						pipe_contex->vse_node_handle,
+						0);
+	}else{
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+						pipe_contex->isp_node_handle,
+						0,
+						pipe_contex->vse_node_handle,
+						0);
+	}
 	ERR_CON_EQ(ret, 0);
 
 	if(sensor_type != SENSOR_TYPE_NORMAL) {

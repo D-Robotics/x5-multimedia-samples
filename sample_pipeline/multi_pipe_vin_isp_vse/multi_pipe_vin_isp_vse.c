@@ -22,7 +22,6 @@
 
 typedef struct {
 	int select_sensor_id;
-	uint32_t sensor_mode;
 	pipe_contex_t pipe_contexts;
 	int active_mipi_host; // 根据实际的硬件连接情况确定使用对应的 mipi host
 	int vse_bind_codec_chn;
@@ -58,7 +57,6 @@ static void print_help(void) {
 	printf("-c, --config=\"sensor=id channel=vse_chn type=TYPE output=FILE\"\n");
 	printf("\t\tConfigure parameters for each video pipeline, can be repeated up to %d times.\n", MAX_PIPE_NUM);
 	printf("\t\tsensor   --  Sensor index,can have multiple parameters, reference sensor list.\n");
-	printf("\t\tmode     --  Sensor mode of camera_config_t\n");
 	printf("\t\tchannel  --  Vse channel index bind to encode, default 0, can be set to [0-5].\n");
 	printf("\t\ttype     --  Encode type, default is h264, can be set to [h264, h265].\n");
 	printf("\t\toutput   --  Save codec stream data to file, defaule is 'pipeline[xx]_[width]x[height]_[xxx]fps.[type]'.\n");
@@ -380,12 +378,6 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 				continue;
 			}
 			pipeline_info->vse_bind_codec_chn = atoi(key_value[1]);
-		} else if (strcmp(key_value[0], "mode") == 0) {
-			if (!is_number(key_value[1])) {
-				fprintf(stderr, "Invalid sensor mode number: %s\n", key_value[1]);
-				continue;
-			}
-			pipeline_info->sensor_mode = atoi(key_value[1]);
 		} else if (strcmp(key_value[0], "type") == 0) {
 			strncpy(pipeline_info->encode_type, key_value[1], sizeof(pipeline_info->encode_type) - 1);
 			pipeline_info->encode_type[sizeof(pipeline_info->encode_type) - 1] = '\0';
@@ -480,7 +472,7 @@ int32_t vflow_fd_start(pipe_contex_t *pipe_contex)
 
 }
 
-static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
+static int create_camera_node(pipe_contex_t *pipe_contex)
 {
 	camera_config_t *camera_config = NULL;
 	vp_sensor_config_t *sensor_config = NULL;
@@ -488,10 +480,6 @@ static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
 
 	sensor_config = pipe_contex->sensor_config;
 	camera_config = sensor_config->camera_config;
-	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
-		camera_config->sensor_mode = sensor_mode;
-		sensor_config->vin_node_attr->lpwm_attr.enable = 1;
-	}
 	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 
@@ -531,6 +519,14 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host, int
 		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 
+	int vin_isp_is_online = (pipe_contex->sensor_config->isp_attr->input_mode != DDR_MODE) ? 1 : 0;
+	if(vin_isp_is_online){ /*vin->isp: online mode*/
+		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 1;
+		sensor_config->vin_ochn_attr->ddr_en = 0;
+	}else{ /* vin->isp: offline mode*/
+		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 0;
+		sensor_config->vin_ochn_attr->ddr_en = 1;
+	}
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
 	ERR_CON_EQ(ret, 0);
 	// 设置基本属性
@@ -552,6 +548,17 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host, int
 			ret = hbn_vnode_set_attr_ex(*vin_node_handle, &vin_attr_ex);
 			ERR_CON_EQ(ret, 0);
 		}
+	}
+	if(!vin_isp_is_online){
+		uint32_t ochn_id = 0;
+		hbn_buf_alloc_attr_t alloc_attr = {0};
+		memset(&alloc_attr, 0, sizeof(hbn_buf_alloc_attr_t));
+		alloc_attr.buffers_num = 3;
+		alloc_attr.is_contig = 1;
+		alloc_attr.flags =
+			HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
+		ERR_CON_EQ(ret, 0);
 	}
 	return 0;
 }
@@ -656,12 +663,22 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 }
 
 static int create_and_run_vflow(pipe_contex_t *pipe_contex,
-	int active_mipi_host, int vse_bind_index, uint32_t sensor_mode, int index)
+	int active_mipi_host, int vse_bind_index, int index)
 {
 	int32_t ret = 0;
+	int vin_isp_is_online = (pipe_contex->sensor_config->isp_attr->input_mode != DDR_MODE) ? 1 : 0;
+	uint32_t src_out_channel = 0;
+	uint32_t dst_input_channel = 0;
+	if(vin_isp_is_online){ /*vin->isp: online mode*/
+		src_out_channel = 1;
+		dst_input_channel = 0;
+	}else{ 				/* vin->isp: offline mode*/
+		src_out_channel = 0;
+		dst_input_channel = 0;
+	}
 
 	// 创建 pipeline 中的每个 node
-	ret = create_camera_node(pipe_contex, sensor_mode);
+	ret = create_camera_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vin_node(pipe_contex, active_mipi_host, index);
 	ERR_CON_EQ(ret, 0);
@@ -682,15 +699,18 @@ static int create_and_run_vflow(pipe_contex_t *pipe_contex,
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vse_node_handle);
 	ERR_CON_EQ(ret, 0);
+
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vin_node_handle,
-							1,
+							src_out_channel,
 							pipe_contex->isp_node_handle,
-							0);
+							dst_input_channel);
 	ERR_CON_EQ(ret, 0);
+
+	//多路实例：isp 固定 online 到 vse
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->isp_node_handle,
-							0,
+							1,
 							pipe_contex->vse_node_handle,
 							0);
 	ERR_CON_EQ(ret, 0);
@@ -786,6 +806,47 @@ void *encode_vse_chn_data(void *context)
 	return NULL;
 }
 
+static int check_sensor_config_valid(pipeline_info_t *pipeline_info, int total_pipeline_num){
+
+	printf("\n");
+	for (int i = 0; i < total_pipeline_num; i++){
+		vp_sensor_config_t *sensor_config_ptr = pipeline_info[i].pipe_contexts.sensor_config;
+		// 1. DOL2_M 模式下，要求 Vin->ISP 必须是在线模式,且单路
+		if(sensor_config_ptr->camera_config->sensor_mode == DOL2_M){
+			if(sensor_config_ptr->isp_attr->input_mode != PASSTHROUGH_MODE /*online*/){
+				printf("Error: %s is DOL2_M mode, the connection from Vin to ISP must be in online mode.\n", sensor_config_ptr->sensor_name);
+				printf("	Please set isp_attr->input_mode = PASSTHROUGH_MODE in the sensor(%s) configuration file.\n\n",
+					sensor_config_ptr->sensor_name);
+				return -1;
+			}
+			if(total_pipeline_num >= 2){
+				printf("Error: %s is DOL2_M mode, only single pipeline is supported, but used %d pipeline.\n\n",
+						sensor_config_ptr->sensor_name, total_pipeline_num);
+				return -1;
+			}
+		}
+		// 2. 多路情况下，要求所有 ISP 都是离线模式
+		if((sensor_config_ptr->isp_attr->input_mode != DDR_MODE /*offline*/) && (total_pipeline_num >= 2)){
+			printf("Error: In the case of multiple paths, the connection from Vin to ISP must be in offline mode.\n");
+			printf("	Please set isp_attr->input_mode = DDR_MODE in the sensor(%s) configuration file.\n\n",
+					sensor_config_ptr->sensor_name);
+			return -1;
+		}
+
+		//3. 不支持 MCM模式
+		if(sensor_config_ptr->isp_attr->input_mode == MCM_MODE){
+			printf("Error: %s is MCM mode, which is for debug, should not use in release version.\n\n", sensor_config_ptr->sensor_name);
+			printf("	Please set isp_attr->input_mode = DDR_MODE or PASSTHROUGH_MODE in the sensor(%s) configuration file.\n\n",
+					sensor_config_ptr->sensor_name);
+			return -1;
+		}
+
+		printf("[%s] Connection method from Vin to ISP: %s.\n", sensor_config_ptr->sensor_name,
+			(sensor_config_ptr->isp_attr->input_mode != DDR_MODE) ? "online" : "offline");
+	}
+	printf("\n");
+	return 0;
+}
 int main(int argc, char** argv) {
 	int ret = 0;
 	int c = 0;
@@ -836,12 +897,17 @@ int main(int argc, char** argv) {
 	}
 	printf("Verbose: %d\n", verbose_flag);
 
+	// 检测 sensor 配置的合法性
+	ret = check_sensor_config_valid(pipeline_info, total_pipeline_num);
+	if(ret != 0){
+		return ret;
+	}
+
 	hb_mem_module_open();
 	for (index = 0; index < total_pipeline_num; index++) {
 		ret = create_and_run_vflow(&pipeline_info[index].pipe_contexts,
 			pipeline_info[index].active_mipi_host,
 			pipeline_info[index].vse_bind_codec_chn,
-			pipeline_info[index].sensor_mode,
 			index);
 		if (ret != 0) {
 			for (int j = 0; j < index; j++) {

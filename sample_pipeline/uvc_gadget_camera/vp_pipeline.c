@@ -6,7 +6,7 @@ static uint32_t link_port = 0;
 int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
 int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
 
-static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
+static int create_camera_node(pipe_contex_t *pipe_contex)
 {
 	camera_config_t *camera_config = NULL;
 	vp_sensor_config_t *sensor_config = NULL;
@@ -14,10 +14,7 @@ static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
 
 	sensor_config = pipe_contex->sensor_config;
 	camera_config = sensor_config->camera_config;
-	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
-		camera_config->sensor_mode = sensor_mode;
-		sensor_config->vin_node_attr->lpwm_attr.enable = 1;
-	}
+
 	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 
@@ -46,7 +43,7 @@ static int create_deserial_node(pipe_contex_t *pipe_contex) {
 	return 0;
 }
 
-static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
+static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host, int vin_isp_is_online) {
 	vp_sensor_config_t *sensor_config = NULL;
 	vin_node_attr_t *vin_node_attr = NULL;
 	vin_ichn_attr_t *vin_ichn_attr = NULL;
@@ -78,6 +75,14 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 
+	if(vin_isp_is_online){ /*vin->isp: online mode*/
+		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 1;
+		sensor_config->vin_ochn_attr->ddr_en = 0;
+	}else{ /* vin->isp: offline mode*/
+		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 0;
+		sensor_config->vin_ochn_attr->ddr_en = 1;
+	}
+
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
 	ERR_CON_EQ(ret, 0);
 	// 设置基本属性
@@ -100,16 +105,26 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
+
+	if(!vin_isp_is_online){
+		hbn_buf_alloc_attr_t alloc_attr = {0};
+		memset(&alloc_attr, 0, sizeof(hbn_buf_alloc_attr_t));
+		alloc_attr.buffers_num = 3;
+		alloc_attr.is_contig = 1;
+		alloc_attr.flags =
+			HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
+		ERR_CON_EQ(ret, 0);
+	}
 	return 0;
 }
 
-static int create_isp_node(pipe_contex_t *pipe_contex) {
+static int create_isp_node(pipe_contex_t *pipe_contex, int vin_isp_is_online, int isp_vse_is_online) {
 	vp_sensor_config_t *sensor_config = NULL;
 	isp_attr_t      *isp_attr = NULL;
 	isp_ichn_attr_t *isp_ichn_attr = NULL;
 	isp_ochn_attr_t *isp_ochn_attr = NULL;
 	hbn_vnode_handle_t *isp_node_handle = NULL;
-	hbn_buf_alloc_attr_t alloc_attr = {0};
 	uint32_t ichn_id = 0;
 	uint32_t ochn_id = 0;
 	int ret = 0;
@@ -120,6 +135,17 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &pipe_contex->isp_node_handle;
 
+	if(vin_isp_is_online){ /*vin->isp: online mode*/
+		sensor_config->isp_attr->input_mode = PASSTHROUGH_MODE;
+	}else{ 				/* vin->isp: offline mode*/
+		sensor_config->isp_attr->input_mode = DDR_MODE;
+	}
+
+	if(isp_vse_is_online){
+		isp_ochn_attr->ddr_en = 0;
+	}else{
+		isp_ochn_attr->ddr_en = 1;
+	}
 	ret = hbn_vnode_open(HB_ISP, 0, AUTO_ALLOC_ID, isp_node_handle);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vnode_set_attr(*isp_node_handle, isp_attr);
@@ -129,13 +155,16 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, ichn_id, isp_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
-	alloc_attr.buffers_num = 3;
-	alloc_attr.is_contig = 1;
-	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
-						| HB_MEM_USAGE_CPU_WRITE_OFTEN
-						| HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, ochn_id, &alloc_attr);
-	ERR_CON_EQ(ret, 0);
+	if(!isp_vse_is_online){
+		hbn_buf_alloc_attr_t alloc_attr = {0};
+		alloc_attr.buffers_num = 3;
+		alloc_attr.is_contig = 1;
+		alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
+							| HB_MEM_USAGE_CPU_WRITE_OFTEN
+							| HB_MEM_USAGE_CACHED;
+		ret = hbn_vnode_set_ochn_buf_attr(*isp_node_handle, ochn_id, &alloc_attr);
+		ERR_CON_EQ(ret, 0);
+	}
 
 	return 0;
 }
@@ -221,11 +250,13 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 	int32_t ret = 0;
 
 	// 创建 pipeline 中的每个 node
-	ret = create_camera_node(pipe_contex, vp_pipeline_info->sensor_mode);
+	ret = create_camera_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
-	ret = create_vin_node(pipe_contex, vp_pipeline_info->active_mipi_host);
+	ret = create_vin_node(pipe_contex,
+			vp_pipeline_info->active_mipi_host,
+			vp_pipeline_info->vin_isp_is_online);
 	ERR_CON_EQ(ret, 0);
-	ret = create_isp_node(pipe_contex);
+	ret = create_isp_node(pipe_contex, vp_pipeline_info->vin_isp_is_online, vp_pipeline_info->isp_vse_is_online);
 	ERR_CON_EQ(ret, 0);
 	ret = create_vse_node(pipe_contex,
 		vp_pipeline_info->vse_bind_index, &(vp_pipeline_info->camera_config_info));
@@ -243,17 +274,34 @@ int vp_create_and_start_pipeline(pipe_contex_t *pipe_contex, vp_pipeline_info_t*
 	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vse_node_handle);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							pipe_contex->vin_node_handle,
-							1,
-							pipe_contex->isp_node_handle,
-							0);
+	if(vp_pipeline_info->vin_isp_is_online){
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+						pipe_contex->vin_node_handle,
+						1,
+						pipe_contex->isp_node_handle,
+						0);
+	}else{
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+						pipe_contex->vin_node_handle,
+						0,
+						pipe_contex->isp_node_handle,
+						0);
+	}
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							pipe_contex->isp_node_handle,
-							0,
-							pipe_contex->vse_node_handle,
-							0);
+
+	if(vp_pipeline_info->isp_vse_is_online){
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+						pipe_contex->isp_node_handle,
+						1,
+						pipe_contex->vse_node_handle,
+						0);
+	}else{
+		ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+						pipe_contex->isp_node_handle,
+						0,
+						pipe_contex->vse_node_handle,
+						0);
+	}
 	ERR_CON_EQ(ret, 0);
 
 	if(vp_pipeline_info->sensor_type != SENSOR_TYPE_NORMAL){

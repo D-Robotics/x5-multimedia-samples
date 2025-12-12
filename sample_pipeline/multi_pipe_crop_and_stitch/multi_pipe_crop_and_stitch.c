@@ -1730,7 +1730,8 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 		ret = pthread_create(&multi_pipe_stitch_info->output_thread, &attr, (void *)send_to_hdmi_display,
 							(void *)multi_pipe_stitch_info);
 	}else{
-		printf("Nothing output\n");
+		printf("\nError :output type is not configed, must specify param -o.\n");
+		return -1;
 	}
 	ERR_CON_EQ(ret, 0);
 

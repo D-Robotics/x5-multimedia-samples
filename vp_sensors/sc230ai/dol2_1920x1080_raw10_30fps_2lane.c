@@ -77,7 +77,7 @@ static vin_ichn_attr_t sc230ai_vin_ichn_attr = {
 };
 
 static vin_ochn_attr_t sc230ai_vin_ochn_attr = {
-	.ddr_en = 1,
+	.ddr_en = 0,
 	.ochn_attr_type = VIN_BASIC_ATTR,
 	.vin_basic_attr = {
 		.format = RAW10,
@@ -88,7 +88,7 @@ static vin_ochn_attr_t sc230ai_vin_ochn_attr = {
 };
 
 static isp_attr_t sc230ai_isp_attr = {
-	.input_mode = 1, // 0: online, 1: mcm, 类似offline
+	.input_mode = PASSTHROUGH_MODE , // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
 	.sensor_mode = ISP_DOL2_M,
 	.tile_mode = 0,
 	.crop = {

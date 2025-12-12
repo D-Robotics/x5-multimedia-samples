@@ -104,7 +104,7 @@ static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 	vin_node_attr->cim_attr.mipi_rx = 1;
 
 	/* 设置ISP工作在Offline模式 */
-	isp_attr->input_mode = 2; // 0: online, 1: mcm, 类似offline, 2: Offline
+	isp_attr->input_mode = DDR_MODE; // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
 
 	/* 设置ISP输出通道的数据写入到ddr，如此才能从isp中通过 hbn_vnode_getframe 得到frame */
 	isp_ochn_attr->ddr_en = 1;

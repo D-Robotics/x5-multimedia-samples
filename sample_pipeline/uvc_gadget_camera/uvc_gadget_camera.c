@@ -13,6 +13,7 @@
 #include <string.h>
 #include <pthread.h>
 
+#include "channel_param_parser.h"
 #include "mqueue.h"
 #include "vp_codec.h"
 #include "vp_pipeline.h"
@@ -36,6 +37,8 @@ typedef struct uvc_gadget_camera_contex_s
 	camera_config_info_t camera_config_info;
 	struct uvc_context *uvc_contex;
 	pipe_contex_t pipe_contex;
+	int vin_isp_is_online;
+	int isp_vse_is_online;
 
 	int vse_bind_codec_chn;
 	int codec_buffer_count;
@@ -57,19 +60,35 @@ static uvc_gadget_camera_contex_t g_uvc_gadget_camera_contex = {
 	.uvc_contex = NULL,
 	.codec_buffer_count = 5,
 	.vse_bind_codec_chn = 0,
-	.pipeline_thread_state = E_THREAD_STOPPED};
+	.vin_isp_is_online = 0,
+	.isp_vse_is_online = 0,
+	.pipeline_thread_state = E_THREAD_STOPPED
+};
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
-	{"mode", optional_argument, NULL, 'm'},
+	{"channel-type", optional_argument, NULL, 'c'},
+	{"play", required_argument, NULL, 'p'},
+	{"record", required_argument, NULL, 'r'},
+	{"help", no_argument, NULL, 'h'},
 	{NULL, 0, NULL, 0}};
 
-static void print_help()
-{
-	printf("Usage: get_isp_data [OPTIONS]\n");
+static void print_help(const char *argv0) {
+	printf("Usage: %s [OPTIONS]\n", argv0);
 	printf("Options:\n");
 	printf("  -s <sensor_index>      Specify sensor index\n");
-	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t\n");
+	printf("  -c <channel_type>		Specify channel type: vo and vf and io and if, default: vf:if\n");
+	printf("		Support both individual configuration and combined configuration.\n");
+	printf("		The individual configuration supports four types:\n");
+	printf("				1. vo: vin online isp\n");
+	printf("				2. vf: vin offline isp\n");
+	printf("				3. io: isp online vse\n");
+	printf("				4. if: isp offline vse\n");
+	printf("		The combination configuration supports four types:\n");
+	printf("				1. vo:io  vin online isp + isp online vse\n");
+	printf("				2. vo:if  vin online isp + isp offline vse\n");
+	printf("				3. vf:io  vin offline isp + isp online vse\n");
+	printf("				4. vf:if  vin offline isp + isp offline vse\n");
 	printf("  -p <play PCM file>     Specifies the audio playback file path\n");
 	printf("  -r <record PCM file>   Specify the audio recording file path\n");
 	printf("  -h                     Show this help message\n");
@@ -178,8 +197,9 @@ static int pipeline_process_start(uvc_gadget_camera_contex_t *uvc_gadget_camera_
 	vp_pipeline_info_t vp_pipeline_info = {
 		.active_mipi_host = pipe_contex->csi_config.index,
 		.vse_bind_index = uvc_gadget_camera_contex->vse_bind_codec_chn,
-		.sensor_mode = uvc_gadget_camera_contex->sensor_mode,
 		.sensor_type = uvc_gadget_camera_contex->sensor_config->sensor_type,
+		.vin_isp_is_online = uvc_gadget_camera_contex->vin_isp_is_online,
+		.isp_vse_is_online = uvc_gadget_camera_contex->isp_vse_is_online
 	};
 	vp_pipeline_info.camera_config_info = *camera_config_info;
 	ret = vp_create_and_start_pipeline(pipe_contex, &vp_pipeline_info);
@@ -358,18 +378,19 @@ int main(int argc, char *argv[])
 	int c = 0;
 	int ret = 0;
 	int index = -1;
-	int settle = -1;
 	int opt_index = 0;
-	int sensor_mode = 0;
 
-	while ((c = getopt_long(argc, argv, "s:m:p:r:h",
+	while ((c = getopt_long(argc, argv, "s:p:r:c:h",
 							long_options, &opt_index)) != -1){
 		switch (c){
 		case 's':
 			index = atoi(optarg);
 			break;
-		case 'm':
-			sensor_mode = atoi(optarg);
+		case 'c':
+			if (parse_channel_string(optarg) != 0) {
+				printf("Invalid channel type %s.\n", optarg);
+				return -1;
+			}
 			break;
 		case 'p':
 			g_uac_gadget_contex.uac_mask |= UAC_MICPHONE_MASK;
@@ -383,12 +404,10 @@ int main(int argc, char *argv[])
 			break;
 		case 'h':
 		default:
-			print_help();
+			print_help(argv[0]);
 			return 0;
 		}
 	}
-	g_uvc_gadget_camera_contex.sensor_mode = sensor_mode;
-	printf("index:%d settle=%d sensor_mode=%d\n", index, settle, sensor_mode);
 
 	if (index < vp_get_sensors_list_number() && index >= 0){
 		g_uvc_gadget_camera_contex.sensor_config = vp_sensor_config_list[index];
@@ -408,9 +427,22 @@ int main(int argc, char *argv[])
 		}
 	}else{
 		printf("Unsupport sensor index:%d\n", index);
-		print_help();
+		print_help(argv[0]);
 		return 0;
 	}
+
+	if((g_uvc_gadget_camera_contex.sensor_config->camera_config->sensor_mode == DOL2_M)
+		&& (g_uvc_gadget_camera_contex.vin_isp_is_online == 0)){
+		printf("\nError:%s's sensor_mode is DOL2_M, must work in online mode.\n\n",
+			g_uvc_gadget_camera_contex.sensor_config->sensor_name);
+		return -1;
+	}
+	printf("\n");
+	printf("Connection method from VIN to ISP: %s\n",
+		(g_uvc_gadget_camera_contex.vin_isp_is_online == 1) ? "vin online isp" : "vin offline isp");
+	printf("Connection method from VIN to ISP: %s.\n",
+		(g_uvc_gadget_camera_contex.isp_vse_is_online == 1) ? "isp online vse" : "isp offline vse");
+	printf("\n");
 
 	hb_mem_module_open();
 

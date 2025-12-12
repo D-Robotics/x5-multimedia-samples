@@ -119,7 +119,7 @@ static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 	vin_node_attr->cim_attr.mipi_rx = 1;
 
 	/* 设置ISP工作在Offline模式 */
-	isp_attr->input_mode = 2; // 0: online, 1: mcm, 类似offline, 2: Offline
+	isp_attr->input_mode = DDR_MODE; // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
 
 	/* 设置ISP输出通道的数据写入到ddr，如此才能从isp中通过 hbn_vnode_getframe 得到frame */
 	isp_ochn_attr->ddr_en = 1;
@@ -161,7 +161,6 @@ static int create_vin_node(pipe_contex_t *pipe_contex)
 	vin_ochn_attr_t *vin_ochn_attr = NULL;
 	hbn_vnode_handle_t *vin_node_handle = NULL;
 	vin_attr_ex_t vin_attr_ex;
-	hbn_buf_alloc_attr_t alloc_attr = {0};
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
 	uint32_t ichn_id = 0;
@@ -214,14 +213,26 @@ static int create_vin_node(pipe_contex_t *pipe_contex)
 			}
 		}
 	}
+	int vin_isp_is_online = (pipe_contex->sensor_config->isp_attr->input_mode != DDR_MODE) ? 1 : 0;
+	if(vin_isp_is_online){ /*vin->isp: online mode*/
+		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 1;
+		sensor_config->vin_ochn_attr->ddr_en = 0;
+	}else{ /* vin->isp: offline mode*/
+		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 0;
+		sensor_config->vin_ochn_attr->ddr_en = 1;
+	}
 
-	alloc_attr.buffers_num = 3;
-	alloc_attr.is_contig = 1;
-	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
-						| HB_MEM_USAGE_CPU_WRITE_OFTEN
-						| HB_MEM_USAGE_CACHED;
-	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
-
+	if(!vin_isp_is_online){
+		uint32_t ochn_id = 0;
+		hbn_buf_alloc_attr_t alloc_attr = {0};
+		memset(&alloc_attr, 0, sizeof(hbn_buf_alloc_attr_t));
+		alloc_attr.buffers_num = 3;
+		alloc_attr.is_contig = 1;
+		alloc_attr.flags =
+			HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
+		ERR_CON_EQ(ret, 0);
+	}
 	return 0;
 }
 
@@ -266,7 +277,16 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 
 int create_and_run_vin_isp_vflow(pipe_contex_t *pipe_contex) {
 	int32_t ret = 0;
-
+	uint32_t src_out_channel = 0;
+	uint32_t dst_input_channel = 0;
+	int vin_isp_is_online = (pipe_contex->sensor_config->isp_attr->input_mode != DDR_MODE) ? 1 : 0;
+	if(vin_isp_is_online){ /*vin->isp: online mode*/
+		src_out_channel = 1;
+		dst_input_channel = 0;
+	}else{ 				/* vin->isp: offline mode*/
+		src_out_channel = 0;
+		dst_input_channel = 0;
+	}
 	// 创建pipeline中的每个node
 	ret = create_camera_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
@@ -286,9 +306,9 @@ int create_and_run_vin_isp_vflow(pipe_contex_t *pipe_contex) {
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 							pipe_contex->vin_node_handle,
-							1, // online
+							src_out_channel,
 							pipe_contex->isp_node_handle,
-							0);
+							dst_input_channel);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
 							pipe_contex->vin_node_handle);
@@ -627,6 +647,18 @@ int main(int argc, char** argv) {
 		printf("Unsupport sensor index:%d\n", index);
 		print_help();
 		return 0;
+	}
+	if(vin_isp_contex.sensor_config->camera_config->sensor_mode == DOL2_M){
+		printf("\nError:%s's sensor_mode is DOL2_M (must work in online mode), this sample only supports offline mode\n\n",
+			vin_isp_contex.sensor_config->sensor_name);
+		return -1;
+	}
+
+	if(vin_isp_contex.sensor_config->isp_attr->input_mode != DDR_MODE){
+		printf("Error: this sample use multiple ISP instance, so the connection from Vin to ISP must be in offline mode.\n");
+		printf("	Please set isp_attr->input_mode = DDR_MODE in the sensor(%s) configuration file.\n\n",
+				vin_isp_contex.sensor_config->sensor_name);
+		return -1;
 	}
 
 	hb_mem_module_open();

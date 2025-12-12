@@ -44,7 +44,7 @@ static vin_node_attr_t vin_node_attr = {
 		.mipi_rx = 0,  // vcon 0
 		.vc_index = 0,
 		.ipi_channel = 1,
-		.cim_isp_flyby = 0,  // 0: offline ; 1: online, mcm
+		.cim_isp_flyby = 0,
 		.func = {
 			.enable_frame_id = 1,
 			.set_init_frame_id = 0,
@@ -117,7 +117,7 @@ static vin_ochn_attr_t vin_ochn_attr = {
 };
 
 static isp_attr_t isp_attr = {
-	.input_mode = 2, // 0: online, 1: mcm, 类似 offline; 2: offline
+	.input_mode = DDR_MODE, // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
 	.sensor_mode= ISP_NORMAL_M,
 	.crop = {
 		.x = 0,

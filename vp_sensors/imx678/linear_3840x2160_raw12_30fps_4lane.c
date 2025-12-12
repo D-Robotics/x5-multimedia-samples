@@ -66,7 +66,7 @@ static vin_node_attr_t imx678_vin_node_attr = {
 		.mipi_rx = 0,
 		.vc_index = 0,
 		.ipi_channel = 1,
-		.cim_isp_flyby = 1,
+		.cim_isp_flyby = 0,
 		.func = {
 			.enable_frame_id = 1,
 			.set_init_frame_id = 0,
@@ -90,7 +90,7 @@ static vin_ichn_attr_t imx678_vin_ichn_attr = {
 };
 
 static vin_ochn_attr_t imx678_vin_ochn_attr = {
-	.ddr_en = 0,
+	.ddr_en = 1,
 	.ochn_attr_type = VIN_BASIC_ATTR,
 	.vin_basic_attr = {
 		.format = RAW12,
@@ -99,7 +99,7 @@ static vin_ochn_attr_t imx678_vin_ochn_attr = {
 };
 
 static isp_attr_t imx678_isp_attr = {
-	.input_mode = 1, // 0: online, 1: mcm, 2: offline
+	.input_mode = DDR_MODE, // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
 	.sensor_mode= ISP_NORMAL_M,
 	.af_mode = 1,
 	.crop = {

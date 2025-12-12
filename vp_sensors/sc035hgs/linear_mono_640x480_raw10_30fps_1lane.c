@@ -43,7 +43,7 @@ static vin_node_attr_t sc035hgs_vin_node_attr = {
 		.mipi_rx = 0,
 		.vc_index = 0,
 		.ipi_channel = 1,
-		.cim_isp_flyby = 1,
+		.cim_isp_flyby = 0,
 		.func = {
 			.enable_frame_id = 1,
 			.set_init_frame_id = 1,
@@ -109,7 +109,7 @@ static vin_ichn_attr_t sc035hgs_vin_ichn_attr = {
 
 static vin_ochn_attr_t sc035hgs_vin_ochn_attr = {
 	// 使能数据输出至DDR
-	.ddr_en = 0,
+	.ddr_en = 1,
 	.ochn_attr_type = VIN_BASIC_ATTR,
 	.vin_basic_attr = {
 		.format = RAW10,
@@ -120,7 +120,7 @@ static vin_ochn_attr_t sc035hgs_vin_ochn_attr = {
 };
 
 static isp_attr_t sc035hgs_isp_attr = {
-	.input_mode = 0,
+	.input_mode = DDR_MODE, // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
 	.sensor_mode= ISP_NORMAL_M,
 	.crop = {
 		.x = 0,

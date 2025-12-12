@@ -118,7 +118,7 @@ static vin_ochn_attr_t sc230ai_vin_ochn_attr = {
 };
 
 static isp_attr_t sc230ai_isp_attr = {
-	.input_mode = 1, // 0: online, 2:offline
+	.input_mode = DDR_MODE, // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
 	.sensor_mode= ISP_NORMAL_M,
 	.crop = {
 		.x = 0,

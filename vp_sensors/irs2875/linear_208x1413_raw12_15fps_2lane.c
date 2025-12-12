@@ -53,7 +53,7 @@ static vin_node_attr_t irs2875_vin_node_attr = {
 		.vc_index = 0,
 		.ipi_channel = 1,
 		// SIF online/offline ISP
-		.cim_isp_flyby = 1,
+		.cim_isp_flyby = 0,
 		.func = {
 			// 帧id功能使能后会在raw图像开始位置添加帧id值
 			// ToF 数据的帧开始两个2字节不能被改写，所以这里不能使能 frame_id
@@ -92,7 +92,7 @@ static vin_ochn_attr_t irs2875_vin_ochn_attr = {
 };
 
 static isp_attr_t irs2875_isp_attr = {
-	.input_mode = 0,
+	.input_mode = DDR_MODE, // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
 	// 使用Linear模式
 	.sensor_mode= ISP_NORMAL_M,
 	.crop = {

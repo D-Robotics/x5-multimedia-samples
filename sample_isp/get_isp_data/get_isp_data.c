@@ -19,8 +19,6 @@
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
-	{"settle", optional_argument, NULL, 't'},
-	{"mode", optional_argument, NULL, 'm'},
 	{"channel-type", optional_argument, NULL, 'c'},
 	{NULL, 0, NULL, 0}
 };
@@ -35,9 +33,10 @@ static void print_help() {
 	printf("Usage: get_isp_data [OPTIONS]\n");
 	printf("Options:\n");
 	printf("  -s <sensor_index>      Specify sensor index\n");
-	printf("  -t <settle_value>      Specify settle time for debug\n");
-	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t\n");
-	printf("  -c <channel_type>      Specify channel type:io (isp online), if (isp offline)\n");
+	printf("  -c <channel_type>		Specify channel type: vo and vf\n");
+	printf("					1. vo: vin online isp\n");
+	printf("					2. vf: vin offline isp\n");
+	printf("					3. default is vf\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
 }
@@ -51,11 +50,9 @@ static void command_help() {
 	printf(" h	-- print help message\n");
 }
 
-static int settle = -1;
-static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static uint32_t link_port = 0;
 static uint32_t sensor_type = 0;
-static uint32_t online_mode_en = 0;
+static uint32_t vin_isp_is_online = 0;
 
 int main(int argc, char** argv) {
 	int ret = 0;
@@ -78,19 +75,13 @@ int main(int argc, char** argv) {
 				return 0;
 			}
 			break;
-		case 't':
-			settle = atoi(optarg);
-			break;
-		case 'm':
-			sensor_mode = atoi(optarg);
-			break;
 		case 'c':
-			if (strcmp(optarg, "io") == 0) {
-				online_mode_en = 1;  // 启用 online 模式
-			} else if (strcmp(optarg, "if") == 0) {
-				online_mode_en = 0;  // 启用 offline 模式
+			if (strcmp(optarg, "vo") == 0) {
+				vin_isp_is_online = 1;  // 启用 online 模式
+			} else if (strcmp(optarg, "vf") == 0) {
+				vin_isp_is_online = 0;  // 启用 offline 模式
 			}else {
-				online_mode_en = 0;  // 启用 offline 模式
+				printf("Invalid channel type %s.\n", optarg);
 			}
 			break;
 		case 'h':
@@ -131,6 +122,13 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	if((pipe_contex[0].sensor_config->camera_config->sensor_mode == DOL2_M)
+		&& (vin_isp_is_online == 0)){
+		printf("\nError:%s's sensor_mode is DOL2_M, must work in online mode.\n\n",
+			pipe_contex[0].sensor_config->sensor_name);
+		return -1;
+	}
+
 	hb_mem_module_open();
 
 	for (int i = 0; i < sensor_count; ++i) {
@@ -168,14 +166,6 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 
 	sensor_config = pipe_contex->sensor_config;
 	camera_config = sensor_config->camera_config;
-	/* Debug settle */
-	if (settle >= 0 && settle <= 127) {
-		camera_config->mipi_cfg->rx_attr.settle = settle;
-	}
-	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
-		camera_config->sensor_mode = sensor_mode;
-		sensor_config->vin_node_attr->lpwm_attr.enable = 1;
-	}
 	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 
@@ -237,10 +227,10 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
 
-	if(online_mode_en) /* use online mode*/
+	if(vin_isp_is_online) /* use online mode*/
 	{
 		sensor_config->vin_node_attr->cim_attr.cim_isp_flyby = 1;
-		sensor_config->vin_ochn_attr->ddr_en = 1;
+		sensor_config->vin_ochn_attr->ddr_en = 0;
 		printf("use online mode \n%s() cim_isp_flyby = %d , vin_ochn_ddr_en = %d\n",
 			__func__ ,
 			sensor_config->vin_node_attr->cim_attr.cim_isp_flyby ,
@@ -279,7 +269,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 			ERR_CON_EQ(ret, 0);
 		}
 	}
-	if(vin_ochn_attr->ddr_en)
+	if(!vin_isp_is_online)
 	{
 		memset(&alloc_attr, 0, sizeof(hbn_buf_alloc_attr_t));
 		alloc_attr.buffers_num = 6;
@@ -313,16 +303,16 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	isp_ochn_attr = sensor_config->isp_ochn_attr;
 	isp_node_handle = &pipe_contex->isp_node_handle;
 
-	if(online_mode_en) /* use online mode*/
+	if(vin_isp_is_online) /* use online mode*/
 	{
-		sensor_config->isp_attr->input_mode = 0;
+		sensor_config->isp_attr->input_mode = PASSTHROUGH_MODE;
 		printf("%s() isp_attr input_mode : %d\n",
 			__func__ ,
 			sensor_config->isp_attr->input_mode);
 	}
 	else /* default offline mode*/
 	{
-		sensor_config->isp_attr->input_mode = 2;
+		sensor_config->isp_attr->input_mode = DDR_MODE;
 		printf("%s() isp_attr input_mode : %d\n",
 			__func__ ,
 			sensor_config->isp_attr->input_mode);
@@ -354,7 +344,7 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 	uint32_t src_out_channel = 0;
 	uint32_t dst_input_channel = 0;
 
-	if(online_mode_en) /* use online mode*/
+	if(vin_isp_is_online) /* use online mode*/
 	{
 		src_out_channel = 1;
 		dst_input_channel = 0;

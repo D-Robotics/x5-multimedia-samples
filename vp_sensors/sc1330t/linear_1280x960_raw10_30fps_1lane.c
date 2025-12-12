@@ -44,7 +44,7 @@ static vin_node_attr_t vin_node_attr = {
 		.vc_index = 0,
 		.ipi_channel = 1,
 		// SIF online/offline ISP
-		.cim_isp_flyby = 1,
+		.cim_isp_flyby = 0,
 		.func = {
 			.enable_frame_id = 1,
 			.set_init_frame_id = 0,
@@ -70,7 +70,7 @@ static vin_ichn_attr_t vin_ichn_attr = {
 
 static vin_ochn_attr_t vin_ochn_attr = {
 	// 使能数据输出至DDR
-	.ddr_en = 0,
+	.ddr_en = 1,
 	.ochn_attr_type = VIN_BASIC_ATTR,
 	.vin_basic_attr = {
 		.format = RAW10,
@@ -81,7 +81,7 @@ static vin_ochn_attr_t vin_ochn_attr = {
 };
 
 static isp_attr_t isp_attr = {
-	.input_mode = 1, // 0: online, 1: mcm, 类似offline
+	.input_mode = DDR_MODE, // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
 	// 使用Linear模式
 	.sensor_mode= ISP_NORMAL_M,
 	.crop = {

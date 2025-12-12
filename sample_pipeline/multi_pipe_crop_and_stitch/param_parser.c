@@ -9,8 +9,12 @@ static int is_number(const char *str) {
 
 int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse, int *enable_isp_online){
 
-	printf("\n\n Show VSE info:\n");
+	if(param_config->sensor_config_count != 2){
+		printf("\n\nERROR: This example only supports 2-channel input, while the current configuration is for 4-channel.\n\n");
+		return -1;
+	}
 
+	printf("\n\n Show VSE info:\n");
 	//VSE 放大： 最大分辨率是 4K，放大倍数最大是 4 倍
 	int quarter_of_vse_max_resolution = 3840 *2160 / 4;
 	for(int i = 0; i < param_config->sensor_config_count; i++){
@@ -23,6 +27,14 @@ int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse,
 			printf("\n\nERROR:[%s] sensor mode is DOL2, not support this sample.\n\n", camera_name_tmp);
 			return -1;
 		}
+		//每路都必须是 Vin->ISP 离线模式
+		if(sensor_config->isp_attr->input_mode != DDR_MODE /*offline*/){
+			printf("Error: In the case of multiple paths, the connection from Vin to ISP must be in offline mode.\n");
+			printf("	Please set isp_attr->input_mode = DDR_MODE in the sensor(%s) configuration file.\n\n",
+					sensor_config->sensor_name);
+			return -1;
+		}
+
 		if(width_tmp * height_tmp < quarter_of_vse_max_resolution){
 			printf("\n\nERROR:[%s] width %d height %d is too small, after zooming in 4 times, the resolution cannot reach 4K.\n\n",
 					camera_name_tmp, width_tmp, height_tmp);
@@ -33,7 +45,9 @@ int check_camera_config(param_config_t *param_config, int *pipe_contex_need_vse,
 		}else{
 			pipe_contex_need_vse[i] = 1;
 		}
-		printf("\t [%d] need vse :%d\n", i, pipe_contex_need_vse[i]);
+		const char *vin_isp_mode_str = (sensor_config->isp_attr->input_mode != DDR_MODE) ? "online" : "offline";
+		printf("\t [%d] name:%s, vin %s isp, need vse :%d\n", i,
+			sensor_config->sensor_name, vin_isp_mode_str, pipe_contex_need_vse[i]);
 	}
 
 	*enable_isp_online = 1;
@@ -296,15 +310,10 @@ int param_process(int argc, char** argv, param_config_t* param_config){
 			return -1;
 		}
 	}
-#if 1
+
 	if(total_pipeline_num != 2){
-	printf("\n[%s] only support 2 cameras as input, current input %d cameras.\n\n",
-		argv[0], total_pipeline_num);
-#else
-	if((total_pipeline_num != 2) && (total_pipeline_num != 4)){
-		printf("\n[%s] only support 2 or 4 cameras as input, current input %d cameras.\n\n",
-		argv[0], total_pipeline_num);
-#endif
+		printf("\n[%s] only support 2 cameras as input, current input %d cameras.\n\n",
+			argv[0], total_pipeline_num);
 		print_help();
 		return -1;
 	}

@@ -144,6 +144,7 @@ vp_sensor_config_t sc132gs_hdr_1088x1280_raw10_30fps_2lane = {
 	.chip_id = 0x0132,
 	.sensor_i2c_addr_list = {0x30 , 0x32, 0x33},
 	.sensor_name = "sc132gs-hdr-2lane",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "hdr_1088x1280_raw10_30fps_2lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,

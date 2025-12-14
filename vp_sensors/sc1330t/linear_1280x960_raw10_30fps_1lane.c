@@ -109,6 +109,7 @@ vp_sensor_config_t sc1330t_linear_1280x960_raw10_30fps_1lane = {
 	.chip_id_reg = 0x3107,
 	.chip_id = 0xca18,
 	.sensor_name = "sc1330t",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_1280x960_raw10_30fps_1lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,

@@ -144,6 +144,7 @@ vp_sensor_config_t sc230ai_linear_1920x1080_raw10_10fps_1lane = {
 	.chip_id = 0xcb34,
 	.sensor_i2c_addr_list = {0x30, 0x32},
 	.sensor_name = "sc230ai-10fps",
+	.support_sensor_mode  = {NORMAL_M, SLAVE_M}, //默认初始化为0， 并且 enum sensor_mode_e中 没有选用0
 	.config_file = "linear_1920x1080_raw10_10fps_1lane.c",
 	.camera_config = &sc230ai_camera_config,
 	.vin_ichn_attr = &sc230ai_vin_ichn_attr,

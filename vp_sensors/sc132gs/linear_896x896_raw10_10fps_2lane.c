@@ -148,6 +148,7 @@ vp_sensor_config_t sc132gs_linear_896x896_raw10_10fps_2lane = {
 	.chip_id = 0x0132,
 	.sensor_i2c_addr_list = {0x30, 0x33},
 	.sensor_name = "sc132gs-896p",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_896x896_raw10_10fps_2lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,

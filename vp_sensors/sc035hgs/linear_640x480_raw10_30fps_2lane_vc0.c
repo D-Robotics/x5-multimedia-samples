@@ -144,6 +144,7 @@ vp_sensor_config_t sc035hgs_linear_640x480_raw10_30fps_2lane_vc0 = {
 	.chip_id_reg = 0x3107,
 	.chip_id = 0x0035,
 	.sensor_name = "sc035hgs-vc0",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_640x480_raw10_30fps_2lane_vc0.c",
 	.camera_config = &sc035hgs_camera_config,
 	.vin_ichn_attr = &sc035hgs_vin_ichn_attr,

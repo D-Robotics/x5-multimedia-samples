@@ -107,6 +107,7 @@ vp_sensor_config_t sc202cs_linear_1600x1200_raw10_30fps_1lane = {
 	.chip_id = 0xeb52,
 	.sensor_i2c_addr_list = {0x36},
 	.sensor_name = "sc202cs-1600x1200",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_1600x1200_raw10_30fps_1lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,

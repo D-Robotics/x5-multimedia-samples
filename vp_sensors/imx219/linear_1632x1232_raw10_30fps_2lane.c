@@ -111,6 +111,7 @@ vp_sensor_config_t imx219_linear_1632x1232_raw10_30fps_2lane = {
 	.chip_id = 0x0219,
 	.sensor_i2c_addr_list = {0x10},
 	.sensor_name = "imx219-1632x1232-30fps",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_1632x1232_raw10_30fps_2lane.c",
 	.camera_config = &imx219_camera_config,
 	.vin_ichn_attr = &imx219_vin_ichn_attr,

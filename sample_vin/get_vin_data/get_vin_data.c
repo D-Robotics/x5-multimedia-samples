@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <pthread.h>
+#include "sensor_json_param_parser.h"
 
 #include "common_utils.h"
 
@@ -20,14 +21,13 @@
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
-	{"settle", optional_argument, NULL, 't'},
 	{"mode", optional_argument, NULL, 'm'},
+	{"extern_param", optional_argument, NULL, 'e'},
 	{NULL, 0, NULL, 0}
 };
 
 static int create_and_run_vflow(pipe_contex_t *pipe_contex);
 static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count);
-static int lpwm_enable_chn(hbn_vnode_handle_t vin_node_handle, uint8_t enable, uint8_t chn);
 static void check_frame_rate(pipe_contex_t *pipe_contex, int sensor_count);
 
 int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
@@ -38,9 +38,11 @@ static void print_help() {
 	printf("Usage: get_vin_data [OPTIONS]\n");
 	printf("Options:\n");
 	printf("  -s <sensor_index>      Specify sensor index\n");
-	printf("  -t <settle_value>      Specify settle time for debug\n");
-	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t\n");
-	printf("  -f                     Check frame rate and compare with configured fps\n");
+	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t, support 'm' and 's'\n");
+	printf("  		m: Master\n");
+	printf("  		s: Slave\n");
+	printf("  		The default value is determined by the configuration in vp_sensor\n");
+	printf("  -e <extern_param>	     Specify extension parameters through a JSON file\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
 }
@@ -50,18 +52,15 @@ static void command_help() {
 	printf("***************  Command Lists  ***************\n");
 	printf(" g	-- get single frame \n");
 	printf(" l	-- get a set frames \n");
-	printf(" x      -- only enable lpwm, support sc035hgs sensor \n");
-	printf(" y      -- only disable lpwm, support sc035hgs sensor \n");
 	printf(" f	-- check frame rate and compare with configured fps \n");
 	printf(" q	-- quit  \n");
 	printf(" h	-- print help message\n");
 }
 
-static int settle = -1;
-static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
+static uint16_t date_type = 0;
 static uint32_t link_port = 0;
 static uint32_t sensor_type = 0;
-static uint16_t date_type;
+static uint32_t sensor_mode = INVALID_MOD;
 
 int main(int argc, char** argv) {
 	int ret = 0;
@@ -72,7 +71,8 @@ int main(int argc, char** argv) {
 	int sensor_indexes[MAX_SENSORS] = {-1};
 	int sensor_count = 0;
 
-	while((c = getopt_long(argc, argv, "s:t:m:h",
+	char json_param_file[128] = {0};
+	while((c = getopt_long(argc, argv, "s:e:m:h",
 							long_options, &opt_index)) != -1) {
 		switch (c)
 		{
@@ -84,11 +84,19 @@ int main(int argc, char** argv) {
 				return 0;
 			}
 			break;
-		case 't':
-			settle = atoi(optarg);
+		case 'e':
+			strcpy(json_param_file, optarg);
+			printf("input json param file is %s\n", json_param_file);
 			break;
 		case 'm':
-			sensor_mode = atoi(optarg);
+			if (strcmp(optarg, "m") == 0) {
+				sensor_mode = NORMAL_M;
+			} else if (strcmp(optarg, "s") == 0) {
+				sensor_mode = SLAVE_M;
+			}else {
+				printf("Invalid sensor mode %s.\n", optarg);
+				return -1;
+			}
 			break;
 		case 'h':
 		default:
@@ -129,6 +137,44 @@ int main(int argc, char** argv) {
 		}
 	}
 
+	//检测 sensor_mode
+	if(sensor_mode != INVALID_MOD){
+		for (int i = 0; i < sensor_count; ++i) {
+			int is_found_from_support_list = 0;
+			for (int j = 0; j < SENSOR_MODE_SUPPORT_COUNT; j++){
+				if(sensor_mode == pipe_contex[i].sensor_config->support_sensor_mode[j]){
+					is_found_from_support_list = 1;
+				}
+			}
+			int default_sensor_mode = pipe_contex[i].sensor_config->camera_config->sensor_mode;
+			if((is_found_from_support_list == 0) && (sensor_mode != default_sensor_mode)){
+				printf("\nError: index %d  sensor_name(%s) not support input mode: %s\n\n",
+						i, vp_sensor_config_list[index]->sensor_name, sensor_mode_to_str(sensor_mode));
+				return -1;
+			}else{
+				if(i == 0){
+					printf("\n\n");
+				}
+				printf("Index %d sensor_name(%s) specify sensor mode to %s\n",
+					i, vp_sensor_config_list[index]->sensor_name, sensor_mode_to_str(sensor_mode));
+			}
+		}
+	}else{
+		printf("Not config sensor mode, so usr default mode.");
+	}
+	printf("\n\n");
+
+	//[For Debug]点亮sensor过程中可能需要对某些参数频繁改动：可以选择通过 json 文件更新部分的 Sensor 配置参数
+	if(strlen(json_param_file) > 0){
+		printf("Attention:Update the sensor configuration using the parameters described in the JSON file: [%s]\n",
+				json_param_file);
+		for (int i = 0; i < sensor_count; ++i) {
+			ret = sensor_param_parse_from_file(json_param_file, pipe_contex[i].sensor_config);
+			if(ret != 0){
+				return -1;
+			}
+		}
+	}
 	hb_mem_module_open();
 	for (int i = 0; i < sensor_count; ++i) {
 		ret = create_and_run_vflow(&pipe_contex[i]);
@@ -162,13 +208,13 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 	sensor_config = pipe_contex->sensor_config;
 	camera_config = sensor_config->camera_config;
 
-	/* Debug settle */
-	if (settle >= 0 && settle <= 127) {
-		camera_config->mipi_cfg->rx_attr.settle = settle;
-	}
 	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
 		camera_config->sensor_mode = sensor_mode;
-		sensor_config->vin_node_attr->lpwm_attr.enable = 1;
+		if(sensor_mode == SLAVE_M){
+			sensor_config->vin_node_attr->lpwm_attr.enable = 1;
+		}else{
+			sensor_config->vin_node_attr->lpwm_attr.enable = 0;
+		}
 	}
 	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
@@ -367,39 +413,6 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 	// 释放帧数据
 	hbn_vnode_releaseframe(vin_node_handle, ochn_id, &out_img);
 }
-
-static int lpwm_enable_chn(hbn_vnode_handle_t vin_node_handle, uint8_t enable, uint8_t chn)
-{
-	vin_attr_ex_t vin_attr_ex = {0};
-	uint64_t vin_attr_ex_mask = 0;
-	uint32_t ret = 0;
-
-	printf("%s enable = %d, chn = %d \n", __func__, enable, chn);
-
-	vin_attr_ex.vin_attr_ex_mask = 0x10; //bit4 for lpwm
-	vin_attr_ex.dynamic_fps_attr.lpwm_chn = chn;
-
-	if (enable == 0)
-		vin_attr_ex.dynamic_fps_attr.enable = LPWM_ONLY_DISABLE;
-	else if (enable == 1)
-		vin_attr_ex.dynamic_fps_attr.enable = LPWM_ONLY_ENABLE;
-
-	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
-	if (vin_attr_ex_mask) {
-		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
-			if ((vin_attr_ex_mask & (1 << i)) == 0)
-				continue;
-
-			vin_attr_ex.ex_attr_type = i;
-			/*we need to set hbn_vnode_set_attr_ex in a loop*/
-			ret = hbn_vnode_set_attr_ex(vin_node_handle, &vin_attr_ex);
-			ERR_CON_EQ(ret, 0);
-		}
-	}
-
-	return ret;
-}
-
 static void check_frame_rate(pipe_contex_t *pipe_contex, int sensor_count)
 {
 	int ret;
@@ -504,8 +517,6 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 	char option = 'a';
 	hbn_vnode_handle_t vin_node_handle;
 	int running = 1;
-	const char *sensor_name;
-
 	command_help();
 	printf("\nCommand: ");
 
@@ -526,32 +537,6 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 					for (i = 0; i < sensor_count; i++) {
 						vin_node_handle = pipe_contex[i].vin_node_handle;
 						vin_dump_func(vin_node_handle);
-					}
-				}
-				break;
-			case 'x':
-				for (i = 0; i < sensor_count; i ++) {
-					sensor_name = pipe_contex[i].sensor_config->sensor_name;
-					if (sensor_name != NULL && (strcmp(sensor_name, "sc035hgs") == 0 ||
-									strcmp(sensor_name, "sc035hgs-vc0") == 0 ||
-									strcmp(sensor_name, "sc035hgs-vc1") == 0)) {
-						vin_node_handle = pipe_contex[i].vin_node_handle;
-						(void)lpwm_enable_chn(vin_node_handle, 1, 0);
-					} else {
-						printf("only support rx0 sc035hgs.\n");
-					}
-				}
-				break;
-			case 'y':
-				for (i = 0; i < sensor_count; i ++) {
-					sensor_name = pipe_contex[i].sensor_config->sensor_name;
-					if (sensor_name != NULL && (strcmp(sensor_name, "sc035hgs") == 0 ||
-									strcmp(sensor_name, "sc035hgs-vc0") == 0 ||
-									strcmp(sensor_name, "sc035hgs-vc1") == 0)) {
-						vin_node_handle = pipe_contex[i].vin_node_handle;
-						(void)lpwm_enable_chn(vin_node_handle, 0, 0);
-					} else {
-						printf("only support rx0 sc035hgs.\n");
 					}
 				}
 				break;

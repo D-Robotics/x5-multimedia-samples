@@ -70,6 +70,7 @@ PLATFORM_SAMPLES_DEPLOY_DIR = ${APP_DEPLOY_DIR}/platform_samples
 ifeq ($(BOARD_BUILD),0)
 INCS += -I . \
 	-I ${HR_BUILD_OUTPUT_DIR}/build/hbre_deps/include/ \
+	-I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/ \
 	-I ${PLATFORM_SAMPLES_DIR}/include/ \
 	-I ${PLATFORM_SAMPLES_DIR}/utils/ \
 	-I ${PLATFORM_SAMPLES_DIR}/vp_sensors

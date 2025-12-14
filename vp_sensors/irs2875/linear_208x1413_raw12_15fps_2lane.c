@@ -120,6 +120,7 @@ vp_sensor_config_t irs2875_linear_208x1413_raw12_15fps_2lane = {
 	.chip_id_reg = 0xA0A4,
 	.chip_id = 0x2875,
 	.sensor_name = "irs2875-tof",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_208x1413_raw12_15fps_2lane.c",
 	.camera_config = &irs2875_camera_config,
 	.vin_ichn_attr = &irs2875_vin_ichn_attr,

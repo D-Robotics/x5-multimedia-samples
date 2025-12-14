@@ -19,6 +19,7 @@
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
+	{"mode", optional_argument, NULL, 'm'},
 	{"channel-type", optional_argument, NULL, 'c'},
 	{NULL, 0, NULL, 0}
 };
@@ -33,6 +34,10 @@ static void print_help() {
 	printf("Usage: get_isp_data [OPTIONS]\n");
 	printf("Options:\n");
 	printf("  -s <sensor_index>      Specify sensor index\n");
+	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t, support 'm' and 's'\n");
+	printf("  		m: Master\n");
+	printf("  		s: Slave\n");
+	printf("  		The default value is determined by the configuration in vp_sensor.\n");
 	printf("  -c <channel_type>		Specify channel type: vo and vf\n");
 	printf("					1. vo: vin online isp\n");
 	printf("					2. vf: vin offline isp\n");
@@ -53,6 +58,7 @@ static void command_help() {
 static uint32_t link_port = 0;
 static uint32_t sensor_type = 0;
 static uint32_t vin_isp_is_online = 0;
+static uint32_t sensor_mode = INVALID_MOD;
 
 int main(int argc, char** argv) {
 	int ret = 0;
@@ -63,7 +69,7 @@ int main(int argc, char** argv) {
 	int sensor_indexes[MAX_SENSORS] = {-1};
 	int sensor_count = 0;
 
-	while((c = getopt_long(argc, argv, "s:t:m:c:h",
+	while((c = getopt_long(argc, argv, "s:m:c:h",
 							long_options, &opt_index)) != -1) {
 		switch (c)
 		{
@@ -73,6 +79,16 @@ int main(int argc, char** argv) {
 			} else {
 				printf("Maximum number of sensors exceeded\n");
 				return 0;
+			}
+			break;
+		case 'm':
+			if (strcmp(optarg, "m") == 0) {
+				sensor_mode = NORMAL_M;
+			} else if (strcmp(optarg, "s") == 0) {
+				sensor_mode = SLAVE_M;
+			}else {
+				printf("Invalid sensor mode %s.\n", optarg);
+				return -1;
 			}
 			break;
 		case 'c':
@@ -122,13 +138,45 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	if((pipe_contex[0].sensor_config->camera_config->sensor_mode == DOL2_M)
-		&& (vin_isp_is_online == 0)){
-		printf("\nError:%s's sensor_mode is DOL2_M, must work in online mode.\n\n",
-			pipe_contex[0].sensor_config->sensor_name);
+	if(((vin_isp_is_online == 1)) &&(sensor_count >= 2)){
+		printf("Error: In multi sensor(%d) case, the connection method from VIN to ISP must be designated as offline.\n", sensor_count);
 		return -1;
 	}
+	for (int  i = 0; i < sensor_count; i++){
+		if((pipe_contex[i].sensor_config->camera_config->sensor_mode == DOL2_M)
+			&& (vin_isp_is_online == 0)){
+			printf("\nError:Index(%d) %s's sensor_mode is DOL2_M, must work in online mode.\n\n",
+				i, pipe_contex[i].sensor_config->sensor_name);
+			return -1;
+		}
+	}
 
+	//检测 sensor_mode
+	if(sensor_mode != INVALID_MOD){
+		for (int i = 0; i < sensor_count; ++i) {
+			int is_found_from_support_list = 0;
+			for (int j = 0; j < SENSOR_MODE_SUPPORT_COUNT; j++){
+				if(sensor_mode == pipe_contex[i].sensor_config->support_sensor_mode[j]){
+					is_found_from_support_list = 1;
+				}
+			}
+			int default_sensor_mode = pipe_contex[i].sensor_config->camera_config->sensor_mode;
+			if((is_found_from_support_list == 0) && (sensor_mode != default_sensor_mode)){
+				printf("\nError: index %d  sensor_name(%s) not support input mode: %s\n\n",
+						i, vp_sensor_config_list[index]->sensor_name, sensor_mode_to_str(sensor_mode));
+				return -1;
+			}else{
+				if(i == 0){
+					printf("\n\n");
+				}
+				printf("Index %d sensor_name(%s) specify sensor mode to %s\n",
+					i, vp_sensor_config_list[index]->sensor_name, sensor_mode_to_str(sensor_mode));
+			}
+		}
+	}else{
+		printf("Not config sensor mode, so usr default mode.");
+	}
+	printf("\n\n");
 	hb_mem_module_open();
 
 	for (int i = 0; i < sensor_count; ++i) {
@@ -166,6 +214,15 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 
 	sensor_config = pipe_contex->sensor_config;
 	camera_config = sensor_config->camera_config;
+
+	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
+		camera_config->sensor_mode = sensor_mode;
+		if(sensor_mode == SLAVE_M){
+			sensor_config->vin_node_attr->lpwm_attr.enable = 1;
+		}else{
+			sensor_config->vin_node_attr->lpwm_attr.enable = 0;
+		}
+	}
 	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 

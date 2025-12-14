@@ -61,7 +61,7 @@ typedef struct pipe_contex_s {
 	vp_csi_config_t csi_config;
 	hb_mem_common_buf_t bin_buf;
 } pipe_contex_t;
-
+char* sensor_mode_to_str(enum sensor_mode_e mode);
 int32_t read_yuv420_file(const char *filename, char *addr0, char *addr1, uint32_t y_size);
 int32_t read_yuvv_nv12_file(const char *filename, char *addr0, char *addr1, uint32_t y_size);
 int32_t dump_image_to_file(char *filename, uint8_t *src_buffer, uint32_t size);
@@ -85,4 +85,3 @@ int read_nv12_image_to_normal_memory(const char *file_path, uint8_t*virt_addr, i
 #endif	/* __cplusplus */
 
 #endif
-

@@ -97,6 +97,7 @@ vp_sensor_config_t ar0820std_linear_3840x2160_yuv422_30fps_4lane = {
 	.chip_id = 0xcb34,
 	.sensor_i2c_addr_list = {0x11},
 	.sensor_name = "ar0820std-30fps",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_3840x2160_yuv422_30fps_4lane.c",
 	.camera_config = &ar0820std_camera_config,
 	.vin_ichn_attr = &ar0820std_vin_ichn_attr,

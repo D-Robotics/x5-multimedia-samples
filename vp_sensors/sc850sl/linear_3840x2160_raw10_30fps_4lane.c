@@ -142,6 +142,7 @@ vp_sensor_config_t sc850sl_linear_3840x2160_raw10_30fps_4lane = {
 	.chip_id = 0x9d1e,
 	.sensor_i2c_addr_list = {0x30},
 	.sensor_name = "sc850sl-30fps",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_3840x2160_raw10_30fps_4lane.c",
 	.camera_config = &sc850sl_camera_config,
 	.vin_ichn_attr = &sc850sl_vin_ichn_attr,

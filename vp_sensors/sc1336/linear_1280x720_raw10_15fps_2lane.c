@@ -110,6 +110,7 @@ vp_sensor_config_t sc1336_linear_1280x720_raw10_15fps_2lane = {
 	.chip_id_reg = 0x3107,
 	.chip_id = 0xca3f,
 	.sensor_name = "sc1336",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_1280x720_raw10_15fps_2lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,

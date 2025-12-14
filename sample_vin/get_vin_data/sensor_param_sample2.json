@@ -1,0 +1,12 @@
+{
+	"settle": 1,
+	"lpwm_attr": {
+		"lpwm_chn_attr": [
+			{
+				"trigger_source": 0,
+				"period": 100000,
+				"offset": 10
+			}
+		]
+	}
+}

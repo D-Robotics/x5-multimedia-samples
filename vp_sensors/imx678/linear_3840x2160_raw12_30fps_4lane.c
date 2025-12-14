@@ -128,6 +128,7 @@ vp_sensor_config_t imx678_linear_3840x2160_raw12_30fps_4lane = {
 	.chip_id = 0x32,
 	.sensor_i2c_addr_list = {0x1A},
 	.sensor_name = "imx678-30fps-4lane",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_3840x2160_raw12_30fps_4lane.c",
 	.camera_config = &imx678_camera_config,
 	.vin_ichn_attr = &imx678_vin_ichn_attr,

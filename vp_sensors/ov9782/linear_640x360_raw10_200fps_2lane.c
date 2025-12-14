@@ -117,6 +117,7 @@ vp_sensor_config_t ov9782_linear_640x360_raw10_200fps_2lane = {
 	.chip_id = 0x9281,
 	.sensor_i2c_addr_list = {0x60},
 	.sensor_name = "ov9782-200fps-2lane",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_640x360_raw10_200fps_2lane.c",
 	.camera_config = &ov9782_camera_config,
 	.vin_ichn_attr = &ov9782_vin_ichn_attr,

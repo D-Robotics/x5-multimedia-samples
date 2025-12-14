@@ -146,6 +146,7 @@ vp_sensor_config_t sc230ai_linear_1920x1080_raw10_30fps_1lane = {
 	.chip_id = 0xcb34,
 	.sensor_i2c_addr_list = {0x30, 0x32},
 	.sensor_name = "sc230ai-30fps",
+	.support_sensor_mode  = {NORMAL_M, SLAVE_M},
 	.config_file = "linear_1920x1080_raw10_30fps_1lane.c",
 	.camera_config = &sc230ai_camera_config,
 	.vin_ichn_attr = &sc230ai_vin_ichn_attr,

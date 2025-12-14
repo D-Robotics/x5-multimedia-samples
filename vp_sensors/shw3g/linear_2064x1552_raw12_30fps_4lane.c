@@ -155,6 +155,7 @@ vp_sensor_config_t shw3g_linear_2064x1552_raw12_30fps_4lane = {
 	.sensor_type = SENSOR_TYPE_GMSL_RAW,
 	.sensor_i2c_addr_list = {0x36},
 	.sensor_name = "shw3g-30fps",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_2064x1552_raw12_30fps_4lane.c",
 	.camera_config = &shw3g_camera_config,
 	.vin_ichn_attr = &shw3g_vin_ichn_attr,

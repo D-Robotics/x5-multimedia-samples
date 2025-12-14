@@ -120,6 +120,7 @@ vp_sensor_config_t irs2381c_linear_224x1903_raw12_5fps_2lane = {
 	.chip_id_reg = 0xA0A4,
 	.chip_id = 0x2381,
 	.sensor_name = "irs2381c-tof",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_224x1903_raw12_5fps_2lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,

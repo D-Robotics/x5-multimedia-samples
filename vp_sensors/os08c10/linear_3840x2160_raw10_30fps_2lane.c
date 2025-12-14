@@ -110,6 +110,7 @@ vp_sensor_config_t os08c10_linear_3480x2160_raw12_30fps_2lane = {
 	.chip_id = 0x53,
 	.sensor_i2c_addr_list = {0x21},
 	.sensor_name = "os08c10-30fps-2lane",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_3840x2160_raw12_30fps_2lane.c",
 	.camera_config = &os08c10_camera_config,
 	.vin_ichn_attr = &os08c10_vin_ichn_attr,

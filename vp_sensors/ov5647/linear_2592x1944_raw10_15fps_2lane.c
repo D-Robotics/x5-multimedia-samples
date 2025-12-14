@@ -110,6 +110,7 @@ vp_sensor_config_t ov5647_linear_2592x1944_raw10_15fps_2lane = {
 	.chip_id_reg = 0x300A,
 	.chip_id = 0x5647,
 	.sensor_name = "ov5647-2592x1944-15fps",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_2592x1944_raw10_15fps_2lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,

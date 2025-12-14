@@ -110,6 +110,7 @@ vp_sensor_config_t ov5647_linear_1920x1080_raw10_30fps_2lane = {
 	.chip_id_reg = 0x300A,
 	.chip_id = 0x5647,
 	.sensor_name = "ov5647-1920x1080-30fps",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_1920x1080_raw10_30fps_2lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,

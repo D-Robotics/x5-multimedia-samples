@@ -37,6 +37,8 @@
 #define SIF_MCM_ISP      	1
 #define SIF_OFFLINE_ISP     2
 
+#define SENSOR_MODE_SUPPORT_COUNT 8
+
 #define ALIGN_UP(a, size) (((a) + (size)-1u) & (~((size)-1u)))
 
 typedef struct {
@@ -97,6 +99,7 @@ typedef struct vp_sensor_config_s {
 	mipi_config_t *mipi_cfg_attr;
 	n2d_config_t *gpu2d_scale_crop_attr;
 	uint16_t sensor_type;
+	uint32_t support_sensor_mode[SENSOR_MODE_SUPPORT_COUNT];
 } vp_sensor_config_t;
 
 extern vp_sensor_config_t *vp_sensor_config_list[];

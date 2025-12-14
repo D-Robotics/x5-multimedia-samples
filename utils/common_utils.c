@@ -1,7 +1,7 @@
 /***************************************************************************
- *                      COPYRIGHT NOTICE
- *             Copyright(C) 2024, D-Robotics Co., Ltd.
- *                     All rights reserved.
+ *					  COPYRIGHT NOTICE
+ *			 Copyright(C) 2024, D-Robotics Co., Ltd.
+ *					 All rights reserved.
  ***************************************************************************/
 
 #include "hb_mem_mgr.h"
@@ -168,67 +168,67 @@ int32_t alloc_graphic_buffer(hbn_vnode_image_t *img, uint32_t width, uint32_t he
 }
 int read_nv12_image_to_common_buffer(const char *file_path, hb_mem_common_buf_t *src_buf, int width, int height)
 {
-    FILE *file = fopen(file_path, "rb");
-    if (!file)
-    {
-        fprintf(stderr, "Failed to open file: %s\n", file_path);
-        return -1;
-    }
+	FILE *file = fopen(file_path, "rb");
+	if (!file)
+	{
+		fprintf(stderr, "Failed to open file: %s\n", file_path);
+		return -1;
+	}
 
-    size_t read_size = fread(src_buf->virt_addr, 1, width * height * 1.5, file);
-    fclose(file);
+	size_t read_size = fread(src_buf->virt_addr, 1, width * height * 1.5, file);
+	fclose(file);
 
-    if (read_size != width * height * 1.5)
-    {
-        fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
-        return -1;
-    }
+	if (read_size != width * height * 1.5)
+	{
+		fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
+		return -1;
+	}
 
-    return 0;
+	return 0;
 }
 
 
 
 int read_nv12_image_to_graphic_buffer(const char *file_path, hb_mem_graphic_buf_t *src_buf, int width, int height)
 {
-    FILE *file = fopen(file_path, "rb");
-    if (!file)
-    {
-        fprintf(stderr, "Failed to open file: %s\n", file_path);
-        return -1;
-    }
+	FILE *file = fopen(file_path, "rb");
+	if (!file)
+	{
+		fprintf(stderr, "Failed to open file: %s\n", file_path);
+		return -1;
+	}
 
-    size_t read_size = fread(src_buf->virt_addr[0], 1, width * height * 1.5, file);
-    fclose(file);
+	size_t read_size = fread(src_buf->virt_addr[0], 1, width * height * 1.5, file);
+	fclose(file);
 
-    if (read_size != width * height * 1.5)
-    {
-        fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
-        return -1;
-    }
+	if (read_size != width * height * 1.5)
+	{
+		fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
+		return -1;
+	}
 
-    return 0;
+	return 0;
 }
 
 int read_nv12_image_to_normal_memory(const char *file_path, uint8_t*virt_addr, int width, int height)
 {
-    FILE *file = fopen(file_path, "rb");
-    if (!file)
-    {
-        fprintf(stderr, "Failed to open file: %s\n", file_path);
-        return -1;
-    }
+	FILE *file = fopen(file_path, "rb");
+	if (!file)
+	{
+		fprintf(stderr, "Failed to open file: %s\n", file_path);
+		return -1;
+	}
 
-    size_t read_size = fread(virt_addr, 1, width * height * 1.5, file);
-    fclose(file);
+	size_t read_size = fread(virt_addr, 1, width * height * 1.5, file);
+	fclose(file);
 
-    if (read_size != width * height * 1.5)
-    {
-        fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
-        return -1;
-    }
+	if (read_size != width * height * 1.5)
+	{
+		fprintf(stderr, "Failed to read the entire NV12 image from file: %s\n", file_path);
+		return -1;
+	}
 
-    return 0;
+	return 0;
 }
 
 int32_t read_yuvv_nv12_file(const char *filename, char *addr0, char *addr1, uint32_t y_size)
@@ -336,5 +336,27 @@ void configure_vse_max_resolution(int32_t channel, uint32_t input_width, uint32_
 		*output_height = max_height;
 	} else {
 		*output_height = input_height;
+	}
+}
+char* sensor_mode_to_str(enum sensor_mode_e mode) {
+	switch (mode) {
+		case NORMAL_M:
+			return "NORMAL_M";
+		case DOL2_M:
+			return "DOL2_M";
+		case DOL3_M:
+			return "DOL3_M";
+		case DOL4_M:
+			return "DOL4_M";
+		case PWL_M:
+			return "PWL_M";
+		case SLAVE_M:
+			return "SLAVE_M";
+		case MONO_M:
+			return "MONO_M";
+		case INVALID_MOD:
+			return "INVALID_MOD";
+		default:
+			return "UNKNOWN_MODE"; // 处理超出枚举范围的无效值
 	}
 }

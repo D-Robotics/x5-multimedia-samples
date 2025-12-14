@@ -145,6 +145,7 @@ vp_sensor_config_t ox05b1s_linear_2592x1944_raw10_30fps_4lane = {
 	.sensor_i2c_addr_list = { 0x36, 0x30, 0x33},
 	.sensor_type = SENSOR_TYPE_NORMAL,
 	.sensor_name = "ox05b1s",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_2592x1944_raw10_30fps_4lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,

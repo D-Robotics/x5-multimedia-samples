@@ -145,6 +145,7 @@ vp_sensor_config_t sc235hai_linear_1920x1080_raw10_30fps_2lane = {
 	.chip_id = 0xcb6a,
 	.sensor_i2c_addr_list = {0x30, 0x32},
 	.sensor_name = "sc235hai-30fps",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_1920x1080_raw10_30fps_2lane.c",
 	.camera_config = &sc235hai_camera_config,
 	.vin_ichn_attr = &sc235hai_vin_ichn_attr,

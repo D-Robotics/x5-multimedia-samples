@@ -106,6 +106,7 @@ vp_sensor_config_t f37_linear_1920x1080_raw10_30fps_1lane = {
 	.chip_id_reg = 0x0a0b,
 	.chip_id = 0x0f37,
 	.sensor_name = "f37",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_1920x1080_raw10_30fps_1lane.c",
 	.camera_config = &camera_config,
 	.vin_ichn_attr = &vin_ichn_attr,

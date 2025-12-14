@@ -115,6 +115,7 @@ vp_sensor_config_t imx415_linear_3480x2160_raw10_30fps_2lane = {
 	.chip_id = 0x03,
 	.sensor_i2c_addr_list = {0x1A},
 	.sensor_name = "imx415-30fps-2lane",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_3840x2160_raw10_30fps_2lane.c",
 	.camera_config = &imx415_camera_config,
 	.vin_ichn_attr = &imx415_vin_ichn_attr,

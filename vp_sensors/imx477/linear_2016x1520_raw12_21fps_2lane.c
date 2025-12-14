@@ -111,6 +111,7 @@ vp_sensor_config_t imx477_linear_2016x1520_raw12_21fps_2lane = {
 	.chip_id = 0x0477,
 	.sensor_i2c_addr_list = {0x1A},
 	.sensor_name = "imx477-2016x1520-21fps",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_2016x1520_raw12_21fps_2lane.c",
 	.camera_config = &imx477_camera_config,
 	.vin_ichn_attr = &imx477_vin_ichn_attr,

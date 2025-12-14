@@ -117,6 +117,7 @@ vp_sensor_config_t ov50h40_linear_4096x3072_raw10_30fps_4lane = {
 	.chip_id = 0x6c,
 	.sensor_i2c_addr_list = {0x21},
 	.sensor_name = "ov50h40-30fps-4lane",
+	.support_sensor_mode  = {NORMAL_M},
 	.config_file = "linear_4096x3072_raw10_30fps_4lane.c",
 	.camera_config = &ov50h40_camera_config,
 	.vin_ichn_attr = &ov50h40_vin_ichn_attr,

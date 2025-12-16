@@ -52,6 +52,12 @@ key_info_t hard_capability_key[] = {
 	MAKE_KEY_INFO(solution_hard_capability_t, KEY_TYPE_STRING, display_dev_list, NULL),
 	MAKE_END_INFO()};
 
+key_info_t solution_display_dev_key[] = {
+	MAKE_KEY_INFO(solution_display_dev_t, KEY_TYPE_S32, is_valid, NULL),
+	MAKE_KEY_INFO(solution_display_dev_t, KEY_TYPE_STRING, type, NULL),
+	MAKE_KEY_INFO(solution_display_dev_t, KEY_TYPE_STRING, resolution_list, NULL),
+	MAKE_END_INFO()};
+
 static key_info_t cfg_cam_vpp_key[] = {
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, is_valid, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, is_enable, NULL),
@@ -64,10 +70,19 @@ static key_info_t cfg_cam_vpp_key[] = {
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, gdc_status, NULL),
 	MAKE_END_INFO()};
 
+static key_info_t cfg_display_vpp_key[] = {
+	MAKE_KEY_INFO(solution_cfg_display_t, KEY_TYPE_S32, is_valid, NULL),
+	MAKE_KEY_INFO(solution_cfg_display_t, KEY_TYPE_S32, is_enable, NULL),
+	MAKE_KEY_INFO(solution_cfg_display_t, KEY_TYPE_STRING, resolution, NULL),
+	MAKE_KEY_INFO(solution_cfg_display_t, KEY_TYPE_S32, data_source, NULL),
+	MAKE_KEY_INFO(solution_cfg_display_t, KEY_TYPE_S32, display_index, NULL),
+	MAKE_END_INFO()};
+
 static key_info_t cfg_cam_key[] = {
 	MAKE_KEY_INFO(solution_cfg_cam_t, KEY_TYPE_S32, pipeline_count, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_t, KEY_TYPE_S32, max_pipeline_count, NULL),
 	MAKE_ARRAY_INFO(solution_cfg_cam_t, KEY_TYPE_ARRAY, cam_vpp, cfg_cam_vpp_key, STL_MAX_VPP_CAM_NUM, KEY_TYPE_OBJECT),
+	MAKE_ARRAY_INFO(solution_cfg_cam_t, KEY_TYPE_ARRAY, display_vpp, cfg_display_vpp_key, STL_MAX_VPP_DISPLAY_NUM, KEY_TYPE_OBJECT),
 	MAKE_END_INFO()};
 
 static key_info_t cfg_box_vpp_key[] = {
@@ -93,10 +108,10 @@ static key_info_t cfg_box_key[] = {
 static key_info_t solution_cfg_key[] = {
 	MAKE_KEY_INFO(solution_cfg_t, KEY_TYPE_STRING, version, NULL),
 	MAKE_KEY_INFO(solution_cfg_t, KEY_TYPE_OBJECT, hardware_capability, hard_capability_key),
+	MAKE_ARRAY_INFO(solution_cfg_t, KEY_TYPE_ARRAY, display_devs, solution_display_dev_key, STL_MAX_VPP_DISPLAY_NUM, KEY_TYPE_OBJECT),
 	MAKE_KEY_INFO(solution_cfg_t, KEY_TYPE_STRING, solution_name, NULL),
 	MAKE_KEY_INFO(solution_cfg_t, KEY_TYPE_OBJECT, cam_solution, cfg_cam_key),
 	MAKE_KEY_INFO(solution_cfg_t, KEY_TYPE_OBJECT, box_solution, cfg_box_key),
-	MAKE_KEY_INFO(solution_cfg_t, KEY_TYPE_STRING, display_dev, NULL),
 	MAKE_END_INFO()};
 
 // 打印 solution_cfg_t 结构体的所有值
@@ -165,55 +180,6 @@ void print_solution_cfg(const solution_cfg_t *config)
 		printf("    Encode Bitrate: %d\n", config->box_solution.box_vpp[i].encode_bitrate);
 		printf("    Model: %s\n", config->box_solution.box_vpp[i].model);
 	}
-	printf("Display Device: %s\n", config->display_dev);
-}
-
-static cJSON *open_json_file(char *filename)
-{
-	FILE *f;
-	long len;
-	char *data;
-	cJSON *json;
-
-	f = fopen(filename, "rb");
-	if (NULL == f)
-		return NULL;
-	fseek(f, 0, SEEK_END);
-	len = ftell(f);
-	fseek(f, 0, SEEK_SET);
-	data = (char *)malloc(len + 1);
-	fread(data, 1, len, f);
-	fclose(f);
-
-	data[len] = '\0';
-	json = cJSON_Parse(data);
-	if (!json)
-	{
-		printf("Error before: [%s]\n", cJSON_GetErrorPtr());
-		free(data);
-		return NULL;
-	}
-
-	free(data);
-	return json;
-}
-
-static int32_t write_json_file(char *filename, char *out)
-{
-	FILE *fp = NULL;
-
-	fp = fopen(filename, "a+");
-	if (fp == NULL)
-	{
-		fprintf(stderr, "open file failed\n");
-		return -1;
-	}
-	fprintf(fp, "%s", out);
-
-	if (fp != NULL)
-		fclose(fp);
-
-	return 0;
 }
 //不包含 "\0"
 static int get_first_camera_name_from_camera_list(const char *sensor_list, size_t size){
@@ -323,13 +289,204 @@ int32_t solution_cfg_update_camera_config(){
 
 	return 0;
 }
+
+int parser_display_param(char *param_str, int *width, int *height, float *fps, int *is_interval) {
+
+	if (param_str == NULL || width == NULL || height == NULL || fps == NULL || is_interval == NULL) {
+		return -1;
+	}
+	int w, h;
+	float f;
+	int ret;
+	// 2. 先匹配含隔行标识i的格式：%di:%d*%f
+	ret = sscanf(param_str, "%di:%d*%f", &w, &h, &f);
+	if (ret == 3) {
+		*is_interval = 1; // 隔行模式
+	} else {
+		// 3. 匹配不含i的格式：%d:%d*%f
+		ret = sscanf(param_str, "%d:%d*%f", &w, &h, &f);
+		if (ret == 3) {
+			*is_interval = 0;
+		} else {
+			return -2; // 格式不匹配
+		}
+	}
+	if (w <= 0 || h <= 0 || f <= 0.0f) {
+		return -3; // 参数无效
+	}
+	*width = w;
+	*height = h;
+	*fps = f;
+
+	return 0;
+}
+int32_t solution_cam_display_param_get(solution_cfg_t *solution_cfg, solution_display_param_info_t *param_info){
+	int ret = 0;
+	param_info->valid_count = 0;
+
+	solution_display_dev_t dev_display_current[STL_MAX_VPP_DISPLAY_NUM] = {0};
+	vp_get_display_info(dev_display_current, STL_MAX_VPP_DISPLAY_NUM);
+
+	// printf("INFO: solution_cam_display_param_get: valid %d valid %d\n",
+	// 		solution_cfg->display_devs[0].is_valid, solution_cfg->cam_solution.display_vpp[0].is_valid);
+
+	for (int i = 0; i < STL_MAX_VPP_DISPLAY_NUM; i++){
+		solution_cfg_display_t *cfg_display = &solution_cfg->cam_solution.display_vpp[i];
+		int pipeline_id = cfg_display->data_source;
+		solution_display_dev_t* display_dev = &solution_cfg->display_devs[i];
+
+		if((cfg_display->is_valid == 0) || (cfg_display->is_enable == 0)){
+			continue;
+		}
+
+		if((pipeline_id < 0) || (pipeline_id >= VP_MAX_VCON_NUM)){
+			printf("ERROR: solution_cam_display_param_get: revive error data_source :csi_%d\n", pipeline_id);
+			continue;
+		}
+		printf("INFO: solution_cam_display_param_get: csi_%d\n", pipeline_id);
+
+		//display param
+		int hdmi_width = -1, hdmi_height = -1, is_interval = -1;
+		float hdmi_fps = -1;
+		ret = parser_display_param(cfg_display->resolution, &hdmi_width, &hdmi_height, &hdmi_fps, &is_interval);
+		if(ret != 0){
+			printf("ERROR: [csi_%d] parse display param [{%s}] error\n", pipeline_id, cfg_display->resolution);
+			// return -1;
+		}
+
+		//sensor param
+		solution_cfg_cam_vpp_t *cam_vpp = &g_solution_config.cam_solution.cam_vpp[pipeline_id];
+		int sensor_width = -1, sensor_height = -1, sensor_fps = -1;
+		ret = vp_get_sensor_info_by_name(cam_vpp->sensor, &sensor_width, &sensor_height, &sensor_fps);
+		if(ret != 0){
+			printf("ERROR: [csi_%d] get sensor info failed for sensor %s\n", pipeline_id, cam_vpp->sensor);
+			// return -1;
+		}
+		param_info->params[i].pipeline_id = pipeline_id;
+		strcpy(param_info->params[i].sensor_name, cam_vpp->sensor);
+		param_info->params[i].sensor.width = sensor_width;
+		param_info->params[i].sensor.height = sensor_height;
+		param_info->params[i].sensor.fps = sensor_fps;
+
+		param_info->params[i].display.width = hdmi_width;
+		param_info->params[i].display.height = hdmi_height;
+		param_info->params[i].display.fps = (int)(hdmi_fps + 0.5);
+
+		strcpy(param_info->params->display_dev_from_config.type, display_dev->type);
+		strcpy(param_info->params->display_dev_from_config.resolution_list, display_dev->resolution_list);
+
+		if(dev_display_current[i].is_valid){
+			param_info->params[i].display_cur_is_connected = 1;
+			strcpy(param_info->params->display_dev_current.type, dev_display_current[i].type);
+			strcpy(param_info->params->display_dev_current.resolution_list, dev_display_current[i].resolution_list);
+
+		}else{
+			param_info->params[i].display_cur_is_connected = 0;
+		}
+		param_info->valid_count++;
+
+		printf("[%d] csi_%d hdmi %d*%d  sensor %d*%d %s\n",i, pipeline_id, hdmi_width, hdmi_height, sensor_width, sensor_height, cam_vpp->sensor);
+	}
+	return 0;
+}
+int32_t solution_cfg_update_display_config(){
+	int ret = 0;
+	solution_display_dev_t dev_display_tmp[STL_MAX_VPP_DISPLAY_NUM] = {0};
+	vp_get_display_info(dev_display_tmp, STL_MAX_VPP_DISPLAY_NUM);
+
+	for (int i = 0; i < STL_MAX_VPP_DISPLAY_NUM; i++){
+		solution_cfg_display_t *cfg_display = &g_solution_config.cam_solution.display_vpp[i];
+		solution_display_dev_t *dev_display_saved = &g_solution_config.display_devs[i];
+		solution_display_dev_t *dev_display_current = &dev_display_tmp[i];
+		//情况1, 保存的Display配置：有效， 实际：无效
+		if((dev_display_saved->is_valid) && (dev_display_current->is_valid == 0)){
+			printf("[disaplay cfg update] config file is connected, but current is not connected, so reset to invalid.\n");
+			cfg_display->is_valid = 0;
+			cfg_display->is_enable = 0;
+			strcpy(cfg_display->resolution, "null");
+			cfg_display->data_source = -1;
+			cfg_display->display_index = -1;
+
+		//情况2，保存的Display配置：有效， 实际：有效
+		}else if((dev_display_saved->is_valid) && (dev_display_current->is_valid == 1)){
+			printf("[disaplay cfg update] config file is connected, and current is connected too.\n");
+			if(cfg_display->is_enable){
+				if (strstr(dev_display_saved->resolution_list, cfg_display->resolution) != NULL) {
+					int hdmi_width, hdmi_height, is_interval;
+					float hdmi_fps;
+					int change_to_invalid = 0;
+					if((cfg_display->data_source < 0) || (cfg_display->data_source >= VP_MAX_VCON_NUM)){
+						printf("[disaplay cfg update] data source is error %d, so reset to disable.\n", cfg_display->data_source);
+						change_to_invalid = 1;
+					}else{
+						solution_cfg_cam_vpp_t *cam_vpp = &g_solution_config.cam_solution.cam_vpp[cfg_display->data_source];
+						ret = parser_display_param(cfg_display->resolution, &hdmi_width, &hdmi_height, &hdmi_fps, &is_interval);
+						if(ret != 0){
+							printf("[disaplay cfg update] resolution parse error, so reset to disable. [%s]\n", cfg_display->resolution);
+							change_to_invalid = 1;
+						}else{
+							if((cam_vpp->is_valid == 0) || cam_vpp->is_enable == 0){
+								printf("[disaplay cfg update] data source is not enable, so reset to disable.\n");
+								change_to_invalid = 1;
+							}else{
+								int sensor_width, sensor_height, sensor_fps;
+								ret = vp_get_sensor_info_by_name(cam_vpp->sensor, &sensor_width, &sensor_height, &sensor_fps);
+								if(ret != 0){
+									printf("[disaplay cfg update] %s's info get failed, so reset to disable.\n", cam_vpp->sensor);
+									change_to_invalid = 1;
+								}else{
+									if((sensor_width != hdmi_width) || (sensor_height != hdmi_height)){
+										printf("[disaplay cfg update] sensor %s and display is not match, so reset to disable. %d*%d != %d*%d\n",
+											cam_vpp->sensor, sensor_width, sensor_height, hdmi_width, hdmi_height);
+										change_to_invalid = 1;
+									}
+								}
+							}
+						}
+					}
+					//分辨率解析失败 或者 sensor 与 HDMI不匹配
+					if(change_to_invalid){
+						cfg_display->is_enable = 0;
+						strcpy(cfg_display->resolution, "null");
+						cfg_display->data_source = -1;
+						cfg_display->display_index = -1;
+					}
+				}else{
+					cfg_display->is_enable = 0;
+					strcpy(cfg_display->resolution, "null");
+					cfg_display->data_source = -1;
+					cfg_display->display_index = -1;
+				}
+			}else{
+				printf("[disaplay cfg update] display's resolution is change, so change to diable %s to %s.\n",
+					dev_display_saved->resolution_list, cfg_display->resolution);
+				strcpy(cfg_display->resolution, "null");
+				cfg_display->data_source = -1;
+				cfg_display->display_index = -1;
+			}
+		//情况3，保存的Display配置：无效， 实际：有效
+		}else if((dev_display_saved->is_valid == 0) && (dev_display_current->is_valid == 1)){
+			printf("[disaplay cfg update] config file is not connected, but current is not connected, so reset to valid.\n");
+			cfg_display->is_valid = 1;
+			cfg_display->is_enable = 0;
+			strcpy(cfg_display->resolution, "null");
+			cfg_display->data_source = -1;
+			cfg_display->display_index = -1;
+		//情况4，保存的Display配置：无效， 实际：无效
+		}else{
+			printf("[disaplay cfg update] config file and current all is not connect, so do nothing.\n");
+			//do nothing
+		}
+		memcpy(dev_display_saved, dev_display_current, sizeof(solution_display_dev_t));
+	}
+	return 0;
+}
 int32_t solution_cfg_load_default_config()
 {
 	//只清除静态的配置(运行时获取的参数比如能力列表 不清除)
 	memset(&g_solution_config.solution_name, 0, sizeof(g_solution_config.solution_name));
 	memset(&g_solution_config.cam_solution, 0, sizeof(g_solution_config.cam_solution));
 	memset(&g_solution_config.box_solution, 0, sizeof(g_solution_config.box_solution));
-	memset(&g_solution_config.display_dev, 0, sizeof(g_solution_config.display_dev));
 	memset(&g_solution_config.hardware_capability.model_list, 0, sizeof(g_solution_config.hardware_capability.model_list));
 
 	strcpy(g_solution_config.hardware_capability.codec_type_list, "H264/H265");
@@ -354,6 +511,8 @@ int32_t solution_cfg_load_default_config()
 	}
 	strcpy(g_solution_config.hardware_capability.display_dev_list, "hdmi");
 
+	vp_get_display_info(g_solution_config.display_devs, STL_MAX_VPP_DISPLAY_NUM);
+
 	// 默认应用方案
 	strcpy(g_solution_config.solution_name, "box_solution");
 
@@ -363,6 +522,18 @@ int32_t solution_cfg_load_default_config()
 	const csi_list_info_t *csi_list_info = &g_solution_config.hardware_capability.csi_list_info;
 	g_solution_config.cam_solution.pipeline_count = csi_list_info->valid_count;
 	g_solution_config.cam_solution.max_pipeline_count = STL_MAX_VPP_CAM_NUM;
+
+	//for display
+	for (int i = 0; i < STL_MAX_VPP_DISPLAY_NUM; i++){
+		solution_cfg_display_t *cfg_display = &g_solution_config.cam_solution.display_vpp[i];
+		solution_display_dev_t *dev_display = &g_solution_config.display_devs[i];
+		cfg_display->is_valid = dev_display->is_valid;
+
+		cfg_display->is_enable = 0;
+		strcpy(cfg_display->resolution, "null");
+		cfg_display->data_source = -1;
+		cfg_display->display_index = -1;
+	}
 	for(int i = 0; i < csi_list_info->max_count; i++){
 		solution_cfg_cam_vpp_t* cam_vpp = &g_solution_config.cam_solution.cam_vpp[i];
 		cam_vpp->mclk_is_not_configed = csi_list_info->csi_info[i].mclk_is_not_configed;
@@ -425,8 +596,6 @@ int32_t solution_cfg_load_default_config()
 	g_solution_config.box_solution.box_vpp[0].encode_bitrate = 8192;
 	strcpy(g_solution_config.box_solution.box_vpp[0].model, "yolov5s");
 
-	strcpy(g_solution_config.display_dev, "hdmi");
-
 	bpu_wrap_get_model_list(g_solution_config.hardware_capability.model_list);
 
 	// 保存到配置文件中
@@ -443,7 +612,6 @@ int32_t solution_cfg_load()
 		"sunrise camera version: v%s, build time:%s %s", VERSION, __DATE__, __TIME__);
 	// 获取芯片型号、接入的sensor型号、支持的算法模型清单
 	vp_get_hard_capability(&g_solution_config);
-
 	if (is_file_exist(SOLUTION_CONFIG_FILE) != 0)
 	{
 		printf("config file %s not exist\n", SOLUTION_CONFIG_FILE);
@@ -484,6 +652,8 @@ int32_t solution_cfg_load()
 					SC_LOGI("update camera info.");
 					g_solution_config.hardware_capability.csi_list_info = csi_info_tmp;
 					solution_cfg_update_camera_config();
+					SC_LOGI("update hdmi info.");
+					solution_cfg_update_display_config();
 				}
 				print_solution_cfg(&g_solution_config);
 

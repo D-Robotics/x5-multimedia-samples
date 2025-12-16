@@ -20,6 +20,7 @@
 
 #include "vp_vin.h"
 #include "vp_wrap.h"
+#include "vp_display.h"
 
 #include "vp_sensors.h"
 
@@ -139,9 +140,58 @@ int32_t vp_get_hard_capability(solution_cfg_t *solution_config)
 	solution_hard_capability_t *capability = &solution_config->hardware_capability;
 
 	vp_get_chip_type(capability->chip_type);
-	SC_LOGI("chip_type: %s", capability->chip_type);
 	vp_sensor_detect_structed(&capability->csi_list_info);
 	return 0;
+}
+static void get_connector_info_cb(void *handle, int width, int height, float fps, int is_interleave) {
+	solution_display_dev_t *display_dev = (solution_display_dev_t*)handle;
+	if (display_dev == NULL) {
+		return;
+	}
+	// printf("add resolution %d %d %f is_interleave:%d\n", width, height, fps, is_interleave);
+
+	//忽略 隔行的
+	if(is_interleave){
+		return;
+	}
+	char temp_buf[64] = {0};
+	if (is_interleave) {
+		snprintf(temp_buf, sizeof(temp_buf), "%d:%di*%.2f", width, height, fps);
+	} else {
+		snprintf(temp_buf, sizeof(temp_buf), "%d:%d*%.2f", width, height, fps);
+	}
+
+	size_t current_len = strlen(display_dev->resolution_list);
+	if (current_len > 0) {
+		if (current_len + 1 < sizeof(display_dev->resolution_list)) {
+			strcat(display_dev->resolution_list, "/");
+			current_len += 1;
+		} else {
+			return;
+		}
+	}
+
+	if (current_len + strlen(temp_buf) < sizeof(display_dev->resolution_list)) {
+		strcat(display_dev->resolution_list, temp_buf);
+	} else {
+		fprintf(stderr, "resolution_list buffer overflow!\n");
+	}
+}
+
+void vp_get_display_info(solution_display_dev_t *display_dev_list, int count){
+	int ret = 0;
+
+	for (int i = 0; i < count; i++){
+		solution_display_dev_t *display_dev = &display_dev_list[i];
+		ret = vp_display_get_connector_info(display_dev, get_connector_info_cb);
+		if(ret != 0){
+			display_dev->is_valid = 0;
+			continue;
+		}
+		// printf("found hdmi\n");
+		display_dev->is_valid = 1;
+		strcpy(display_dev->type, "HDMI");
+	}
 }
 
 void vp_print_debug_infos(void)

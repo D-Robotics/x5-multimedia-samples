@@ -75,6 +75,9 @@ int32_t vp_display_set_frame(vp_drm_context_t *drm_ctx,
 	hbn_vnode_image_t *image_frame);
 
 int32_t vp_display_check_hdmi_is_connected();
+
+typedef void (*get_connector_info_cb_t)(void *handle, int width, int height, float fps, int is_interleave);
+int vp_display_get_connector_info(void *handle, get_connector_info_cb_t cb);
 #ifdef __cplusplus
 }
 #endif /* extern "C" */

@@ -49,4 +49,31 @@ typedef struct {
 
 void solution_check_decode_param_is_match(solution_decode_param_info_t* decode_param,
 	solution_decode_param_check_info_t *check_result);
+
+typedef struct {
+	int width;
+	int height;
+	int fps;
+}display_base_info_t;
+typedef struct {
+	char type[32]; //hdmi/dsi"
+	char resolution_list[1024]; //1920:1080i*60/1920:1080*30
+}display_dev_base_info_t;
+
+typedef struct {
+	int pipeline_id;
+	char sensor_name[128];
+	display_base_info_t sensor;
+	display_base_info_t display;
+	display_dev_base_info_t display_dev_from_config;
+	int display_cur_is_connected;
+	display_dev_base_info_t display_dev_current;
+}solution_display_param_single_t;
+typedef struct {
+	int valid_count;
+	solution_display_param_single_t params[SOLUTION_MAX_DISPLAY_COUNT];
+}solution_display_param_info_t;
+
+void solution_check_display_param_is_match(solution_display_param_info_t* decode_param,
+	solution_display_param_check_info_t *check_result);
 #endif

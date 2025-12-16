@@ -181,6 +181,7 @@ static int drm_setup_kms(vp_drm_context_t *ctx)
 
 	if (!mode)
 	{
+		perror("not found sutiable mode\n");
 #if 1
 		drmModeFreeCrtc(crtc);
 		drmModeFreeConnector(connector);
@@ -692,4 +693,33 @@ int32_t vp_display_set_frame(vp_drm_context_t *drm_ctx,
 	drmModeAtomicFree(req);
 
 	return ret;
+}
+
+#define IS_MODE_INTERLACED(mode) ((mode)->flags & DRM_MODE_FLAG_INTERLACE)
+int vp_display_get_connector_info(void *handle, get_connector_info_cb_t cb)
+{
+	int drm_fd = drmOpen("vs-drm", NULL);
+	if (drm_fd < 0) {
+		perror("drmOpen failed");
+		return -1;
+	}
+
+	drmModeConnectorPtr connector = find_connector(drm_fd);
+	if (!connector) {
+		printf("[Display] not found connector\n");
+		close(drm_fd);
+		return -2;
+	}
+
+	for (int i = 0; i < connector->count_modes; i++) {
+		drmModeModeInfo *mode = &connector->modes[i];
+		if(cb != NULL){
+			int is_interleave = IS_MODE_INTERLACED(mode) ? 1 : 0;
+			cb(handle, mode->hdisplay, mode->vdisplay, __mode_vrefresh(mode), is_interleave);
+		}
+	}
+
+	drmModeFreeConnector(connector);
+	close(drm_fd);
+	return 0;
 }

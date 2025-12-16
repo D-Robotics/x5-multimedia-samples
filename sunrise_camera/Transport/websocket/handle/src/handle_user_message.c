@@ -154,7 +154,63 @@ void handle_error_respose_msg(char *ws_msg, int ws_msg_len, T_SDK_CHECK_INFO *ch
 		}
 		offset += snprintf(ws_msg + offset, ws_msg_len - offset, "]");
 		snprintf(ws_msg + offset, ws_msg_len - offset, ",\"solution_configs\": %s}", config_str);
-	}else{
+	}else if(check_info->display_param_check_info.not_match_count != 0){
+		int offset = 0;
+		offset = snprintf(ws_msg, ws_msg_len, "{\"kind\":1,\"app_status\": \"配置失败: 显示参数配置错误, 点击确定恢复配置 \",");
+		if (offset >= ws_msg_len) {
+			return;
+		}
+		offset += snprintf(ws_msg + offset, ws_msg_len - offset, "\"detailed\": [");
+		if (offset >= ws_msg_len) {
+			return;
+		}
+		for (int i = 0; i < check_info->display_param_check_info.not_match_count; i++) {
+			T_SDK_DISPLAY_PARAM_CHECK_SINGLE_INFO *display_param_info = &check_info->display_param_check_info.display_params[i];
+			if(display_param_info->error_type == SdkSentinelDisplayErrorType){
+				continue;
+			}
+
+			// 根据error_type生成不同的错误提示
+			switch (display_param_info->error_type) {
+				case SdkDisplayIsDisconnect:// 显示器断开错误
+					offset += snprintf(ws_msg + offset, ws_msg_len - offset,
+									   "\"第%d路 显示器已断开连接\"", i);
+					break;
+				case SdkDisplayIsChange:// 显示器更换错误（配置类型与当前类型不一致）
+					offset += snprintf(ws_msg + offset, ws_msg_len - offset,
+									   "\"第%d路 显示器不匹配: 配置为%s [%s], 当前为%s [%s]\"",
+									   i,
+									   display_param_info->config_type,
+									   display_param_info->config_display_resolution_list,
+									   display_param_info->current_type,
+									display_param_info->current_display_resolution_list);
+					break;
+				case SdkDisplayParamIsNotMatch:// 显示参数与Sensor参数不匹配
+					offset += snprintf(ws_msg + offset, ws_msg_len - offset,
+									   "\"第%d路 显示参数不匹配: Sensor(%dx%d@%dfps), Display(%dx%d@%dfps), Sensor is from CSI_%d\"",
+									   i,
+									   display_param_info->sensor_width, display_param_info->sensor_height, display_param_info->sensor_fps,
+									   display_param_info->display_width, display_param_info->display_height, display_param_info->display_fps,
+									display_param_info->pipeline_id);
+					break;
+				case SdkSentinelDisplayErrorType:
+				default:
+					break;
+			}
+			if (i < check_info->display_param_check_info.not_match_count - 1) {
+				offset += snprintf(ws_msg + offset, ws_msg_len - offset, ",");
+			}
+			if (offset >= ws_msg_len) {
+				return;
+			}
+		}
+		offset += snprintf(ws_msg + offset, ws_msg_len - offset, "]");
+		if (offset >= ws_msg_len) {
+			return;
+		}
+		snprintf(ws_msg + offset, ws_msg_len - offset, ",\"solution_configs\": %s}", config_str);
+	}
+	else{
 		SC_LOGE("should not run here.");
 		exit(-1);
 	}
@@ -206,15 +262,22 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			check_info.ion_lack = 0;
 			check_info.vpu_lack = 0.0;
 			check_info.decode_param_check_info.not_match_count = 0;
+			check_info.display_param_check_info.not_match_count = 0;
 			SDK_Cmd_Impl(SDK_CMD_VPP_CHECK_SOLUTION_CONFIG, (void *)&check_info);
 
-			if((check_info.ion_lack != 0) || (check_info.vpu_lack != 0.0) ||
-				(check_info.decode_param_check_info.not_match_count != 0)){
+			SC_LOGW("sizeof(T_SDK_CHECK_INFO): %d check_info.display_param_check_info.not_match_count:%d\n", 
+					sizeof(T_SDK_CHECK_INFO), check_info.display_param_check_info.not_match_count);
+			if((check_info.ion_lack != 0) ||
+				(check_info.vpu_lack != 0.0) ||
+				(check_info.decode_param_check_info.not_match_count != 0) ||
+				(check_info.display_param_check_info.not_match_count != 0)){
 				// 2. 不更新配置结构体（上传错误信息）
 				check_param_is_error = 1;
 				SC_LOGW("solution param check failed: [ion_lack:%d] [vpu_lack:%f]\
-					[decode param error count %d], so ignore this config.",
-					check_info.ion_lack, check_info.vpu_lack, check_info.decode_param_check_info.not_match_count);
+					[decode param error count %d] [display param error count %d], so ignore this config.",
+					check_info.ion_lack, check_info.vpu_lack,
+					check_info.decode_param_check_info.not_match_count,
+					check_info.display_param_check_info.not_match_count);
 			}else{
 				// 2. 更新配置结构体
 				SC_LOGI("================= SET VPP SOLUTION ====================");

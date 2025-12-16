@@ -120,11 +120,30 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&shw3g_linear_2064x1552_raw12_30fps_4lane_vc1,
 	&sc235hai_linear_1920x1080_raw10_30fps_2lane,
 };
-
 uint32_t vp_get_sensors_list_number() {
 	return sizeof(vp_sensor_config_list) / sizeof(vp_sensor_config_list[0]);
 }
 
+int vp_get_sensor_info_by_name(const char *sensor_name, int *width , int *height, int *fps){
+
+	int found_index = -1;
+	uint32_t sensor_count = vp_get_sensors_list_number();
+	for (int i = 0; i < sensor_count; i++){
+		vp_sensor_config_t* sensor_config = vp_sensor_config_list[i];
+		if(strcmp(sensor_config->sensor_name, sensor_name) == 0){
+			found_index = i;
+			break;
+		}
+	}
+	if(found_index == -1){
+		return -1;
+	}
+	*width = vp_sensor_config_list[found_index]->camera_config->width;
+	*height = vp_sensor_config_list[found_index]->camera_config->height;
+	*fps = vp_sensor_config_list[found_index]->camera_config->fps;
+
+	return 0;
+}
 void vp_show_sensors_list() {
 	int num = 0;
 
@@ -151,9 +170,9 @@ void vp_show_sensors_list_vse_limit(uint32_t width_limit, uint32_t height_limit)
 		}
 
 		if((sensor_config->camera_config->width > width_limit &&
-		   sensor_config->camera_config->height < height_limit) ||
-		   (sensor_config->camera_config->width < width_limit &&
-		   sensor_config->camera_config->height > height_limit)) {
+			sensor_config->camera_config->height < height_limit) ||
+			(sensor_config->camera_config->width < width_limit &&
+			sensor_config->camera_config->height > height_limit)) {
 			continue;
 		}
 		printf("index: %d  sensor_name: %-16s \tconfig_file:%s\n",
@@ -771,13 +790,13 @@ static int compare_gpio_enable_bit(const void *a, const void *b)
 static void sort_vp_sensor_config_by_gpio_bit(vp_sensor_config_t **ordered_list)
 {
 	int vp_sensor_config_count = vp_get_sensors_list_number();
-		
+
 	if (!ordered_list || vp_sensor_config_count <= 1)
 		return;
 	qsort(ordered_list,				  // 待排序数组
-		  vp_sensor_config_count,		// 元素个数
-		  sizeof(vp_sensor_config_t *),  // 每个元素的大小
-		  compare_gpio_enable_bit);	  // 比较函数
+			vp_sensor_config_count,		// 元素个数
+			sizeof(vp_sensor_config_t *),	// 每个元素的大小
+			compare_gpio_enable_bit);		// 比较函数
 }
 static uint64_t get_timestamp_ms()
 {

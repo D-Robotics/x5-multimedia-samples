@@ -179,3 +179,85 @@ void solution_check_decode_param_is_match(solution_decode_param_info_t* decode_p
 		check_result->not_match_count++;
 	}
 }
+
+
+static int is_string_not_match(const char *str1, const char *str2) {
+	// 若任一字符串为空，或内容不一致，返回1；否则返回0
+	if (str1 == NULL || str2 == NULL) {
+		return 1;
+	}
+	return strcmp(str1, str2) != 0 ? 1 : 0;
+}
+static int is_param_not_match(display_base_info_t *sensor, display_base_info_t *display) {
+	return (sensor->width != display->width) ||
+		   (sensor->height != display->height) ||
+		   (sensor->fps != display->fps);
+}
+void solution_check_display_param_is_match(solution_display_param_info_t* display_param,
+										   solution_display_param_check_info_t *check_result) {
+	// 入参合法性校验
+	if (display_param == NULL || check_result == NULL) {
+		return;
+	}
+
+	// 初始化检测结果：清空计数和数组（避免脏数据）
+	check_result->not_match_count = 0;
+	memset(check_result->dispaly_info, 0, sizeof(check_result->dispaly_info));
+
+	// 遍历所有有效流水线参数
+	for (int i = 0; i < display_param->valid_count; i++) {
+		// 跳过超出最大显示计数的情况，避免数组越界
+		if (check_result->not_match_count >= SOLUTION_MAX_DISPLAY_COUNT) {
+			break;
+		}
+
+		solution_display_param_single_t *single_param = &display_param->params[i];
+		solution_display_param_check_single_t *check_single = &check_result->dispaly_info[check_result->not_match_count];
+		int has_error = 0;
+
+		// 初始化检测结果的流水线ID（关联错误到具体流水线）
+		check_single->pipeline_id = single_param->pipeline_id;
+		check_single->error_type = SentinelDisplayErrorType;
+
+		// 1. 检测1：显示器是否断开（display_cur_is_connected为0表示断开）
+		if (single_param->display_cur_is_connected == 0) {
+			check_single->error_type = DisplayIsDisconnect;
+			has_error = 1;
+		}
+		// 2. 检测2：显示器是否更换（配置的type与当前的type不一致）
+		else if (is_string_not_match(single_param->display_dev_from_config.type, single_param->display_dev_current.type)||
+			(is_string_not_match(single_param->display_dev_from_config.resolution_list, single_param->display_dev_current.resolution_list))) {
+			check_single->error_type = DisplayIsChange;
+			// 拷贝当前和配置的分辨率列表（用于排查问题）
+			strncpy(check_single->current_type, single_param->display_dev_current.type, sizeof(check_single->current_type) - 1);
+			strncpy(check_single->config_type, single_param->display_dev_from_config.type, sizeof(check_single->config_type) - 1);
+
+			strncpy(check_single->current_display_resolution_list, single_param->display_dev_current.resolution_list, sizeof(check_single->current_display_resolution_list) - 1);
+			strncpy(check_single->config_display_resolution_list, single_param->display_dev_from_config.resolution_list, sizeof(check_single->config_display_resolution_list) - 1);
+			has_error = 1;
+		}
+		// 3. 检测3：显示器参数与Sensor参数是否匹配
+		else {
+			// 3.1 对比Sensor和Display的宽、高、帧率
+			if (is_param_not_match(&single_param->sensor, &single_param->display)) {
+				check_single->error_type = DisplayParamIsNotMatch;
+				// 记录不匹配的具体参数
+				check_single->sensor_width = single_param->sensor.width;
+				check_single->sensor_height = single_param->sensor.height;
+				check_single->sensor_fps = single_param->sensor.fps;
+				check_single->display_width = single_param->display.width;
+				check_single->display_height = single_param->display.height;
+				check_single->display_fps = single_param->display.fps;
+				// 拷贝分辨率列表（用于排查分辨率不匹配问题）
+				strncpy(check_single->current_display_resolution_list, single_param->display_dev_current.resolution_list, sizeof(check_single->current_display_resolution_list) - 1);
+				strncpy(check_single->config_display_resolution_list, single_param->display_dev_from_config.resolution_list, sizeof(check_single->config_display_resolution_list) - 1);
+				has_error = 1;
+			}
+		}
+
+		// 若存在错误，计数+1
+		if (has_error) {
+			check_result->not_match_count++;
+		}
+	}
+}

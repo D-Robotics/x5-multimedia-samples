@@ -75,15 +75,38 @@ const configFieldInfoTable = {
 		chinese_name: "编码帧率",
 		type: "int",
 		value: 30 // Placeholder for encode_frame_rate value
-	}
+	},
+	
+	"display_status": {
+		chinese_name: "使能显示",
+		type: "int",
+		value: 30 // Placeholder for encode_frame_rate value
+	},
+	"display_type": {
+		chinese_name: "显示器类型",
+		type: "text",
+		value: "null" // Placeholder for encode_frame_rate value
+	},
+	"display_resolution": {
+		chinese_name: "显示器分辨率",
+		type: "stringlist",
+		options: "display_resolution_list",
+		value_is_index: false
+	},
+	"display_data_source":{
+		chinese_name: "Camera接口",
+		type: "stringlist",
+		options: "CSI_X",
+		value_is_index: false
+	},
 };
 class ConfigManager {
-    constructor() {
-        this.serverConfig = {};
+	constructor() {
+		this.serverConfig = {};
 		this.userCallbacks = {}; // 存储用户定义的回调函数
 		this.configFieldInfoTable = configFieldInfoTable;
 		this.isConfigVisibility= 0;
-    }
+	}
 
 	init(callbacks = {}){
 		this.userCallbacks = callbacks;
@@ -128,11 +151,11 @@ class ConfigManager {
 	}
 
 	/*										API接口							 */
-    /**
-     * 动态构造 HTML
-     * @param {Object} config 服务器返回的配置
-     */
-    buildHTMLFromConfig(isFourceUpdateWindow) {
+	/**
+	 * 动态构造 HTML
+	 * @param {Object} config 服务器返回的配置
+	 */
+	buildHTMLFromConfig(isFourceUpdateWindow) {
 		const { solution_name } = this.serverConfig;
 
 		const container = document.getElementById('solutionConfig');
@@ -143,7 +166,8 @@ class ConfigManager {
 		if (solution_name === 'cam_solution') {
 			let solution = this.serverConfig["cam_solution"]
 			let hardware_capability = this.serverConfig["hardware_capability"];
-			html += this.generateCamSolutionHtml(solution, hardware_capability);
+			let display_dev_list = this.serverConfig["display_devs"];
+			html += this.generateCamSolutionHtml(solution, hardware_capability, display_dev_list);
 			container.innerHTML = html;
 			this.bindCamSolutionEvents(solution);
 		} else if (solution_name === 'box_solution') {
@@ -269,30 +293,142 @@ class ConfigManager {
 	}
 	buildSelectAppSolutionEvents(){
 		const camSolutionInfo = document.getElementById('info-cam');
-        if (camSolutionInfo) {
-            camSolutionInfo.addEventListener('click', (e) => {
-                window.open("cam_solution_info.html", "_blank");
-            });
-        }
+		if (camSolutionInfo) {
+			camSolutionInfo.addEventListener('click', (e) => {
+				window.open("cam_solution_info.html", "_blank");
+			});
+		}
 		const boxSolutionInfo = document.getElementById('info-box');
-        if (boxSolutionInfo) {
-            boxSolutionInfo.addEventListener('click', (e) => {
-                window.open("box_solution_info.html", "_blank");
-            });
-        }
+		if (boxSolutionInfo) {
+			boxSolutionInfo.addEventListener('click', (e) => {
+				window.open("box_solution_info.html", "_blank");
+			});
+		}
 
 		const camSolutionElement = document.getElementById('cam_solution');
-        if (camSolutionElement) {
-            camSolutionElement.addEventListener('click', () => this._handleSolutionChange('cam_solution', 'image/camera-slt.jpg'));
-        }
+		if (camSolutionElement) {
+			camSolutionElement.addEventListener('click', () => this._handleSolutionChange('cam_solution', 'image/camera-slt.jpg'));
+		}
 
 		const boxSolutionElement = document.getElementById('box_solution');
-        if (boxSolutionElement) {
-            boxSolutionElement.addEventListener('click', () => this._handleSolutionChange('box_solution', 'image/box-slt.jpg'));
-        }
+		if (boxSolutionElement) {
+			boxSolutionElement.addEventListener('click', () => this._handleSolutionChange('box_solution', 'image/box-slt.jpg'));
+		}
 	}
-	// ==================== [3. 智能摄像机]               ====================
-	generateCamSolutionHtml(cam_solution, hardware_capability) {
+	// ==================== [3. 智能摄像机]			   ====================
+	_generateDisplayModuleHtml(cam_solution, display_dev_list, cam_vpp_list) {
+		const display_vpp_list = cam_solution.display_vpp || [];
+		let displayHtml = '';
+		displayHtml += `<div style="margin-top: 20px;"><ul>`; 
+		displayHtml += `<li style="display: inline-block;"><strong>显示器接口:</strong><ul>`; 
+
+		// 遍历display_dev_list（数组），生成每个显示器参数
+		display_dev_list.forEach((display_dev, devIndex) => {
+			const display_vpp = display_vpp_list[devIndex] || {
+				is_valid: 0,
+				is_enable: 0,
+				resolution: "null",
+				data_source: -1,
+				display_index: -1
+			};
+			const { is_valid: display_is_valid = 0, is_enable: display_is_enable = 0, resolution: display_resolution = "null" } = display_vpp;
+			const { type: display_type = "null", resolution_list = "" } = display_dev || {};
+
+			// 选项1：使能显示器
+			const displayStatusField = this.configFieldInfoTable['display_status'];
+			const displayStatusLabel = displayStatusField ? `${displayStatusField.chinese_name}（status）` : 'display_status';
+			displayHtml += `<li><span>${displayStatusLabel}</span>：`; 
+			if (display_is_valid === 0) {
+				displayHtml += `<input type="text" id="display_${devIndex}_status" value="invalid" readonly class="form-control-sm">`;
+			} else {
+				displayHtml += `<select id="display_${devIndex}_status" class="form-control-sm">`;
+				displayHtml += `<option value="1" ${display_is_enable ? 'selected' : ''}>open</option>`;
+				displayHtml += `<option value="0" ${!display_is_enable ? 'selected' : ''}>close</option>`;
+				displayHtml += `</select>`;
+			}
+			displayHtml += `</li>`;
+
+			// 选项2：显示器类型
+			const displayTypeField = this.configFieldInfoTable['display_type'];
+			const displayTypeLabel = displayTypeField ? `${displayTypeField.chinese_name}（type）` : 'display_type';
+			displayHtml += `<li><span>${displayTypeLabel}</span>：`;
+			if (display_is_valid === 0) {
+				displayHtml += `<input type="text" id="display_${devIndex}_type" value="null" readonly class="form-control-sm">`;
+			} else {
+				displayHtml += `<input type="text" id="display_${devIndex}_type" value="${display_type}" readonly class="form-control-sm">`;
+			}
+			displayHtml += `</li>`;
+
+			// 选项3：显示器分辨率
+			const displayResField = this.configFieldInfoTable['display_resolution'];
+			const displayResLabel = displayResField ? `${displayResField.chinese_name}（resolution）` : 'display_resolution';
+			displayHtml += `<li><span>${displayResLabel}</span>：`;
+			if (display_is_valid === 0) {
+				displayHtml += `<input type="text" id="display_${devIndex}_res" value="null" readonly class="form-control-sm">`;
+			} else {
+				const resolutionOptions = resolution_list.split('/').filter(item => item);
+				const defaultResolution = display_is_enable ? (display_resolution === "null" ? resolutionOptions[0] : display_resolution) : resolutionOptions[0];
+				displayHtml += `<select id="display_${devIndex}_res" class="form-control-sm">`;
+				resolutionOptions.forEach(option => {
+					displayHtml += `<option value="${option}" ${defaultResolution === option ? 'selected' : ''}>${option}</option>`;
+				});
+				displayHtml += `</select>`;
+			}
+			displayHtml += `</li>`;
+
+			// 选项4：Camera接口
+			const dataSourceField = this.configFieldInfoTable['display_data_source'];
+			const dataSourceLabel = dataSourceField ? `${dataSourceField.chinese_name}（data_source）` : 'display_data_source';
+			displayHtml += `<li><span>${dataSourceLabel}</span>：`;
+			if (display_is_valid === 0) {
+				displayHtml += `<input type="text" id="display_${devIndex}_source" value="null" readonly class="form-control-sm">`;
+			} else {
+				const validCamVppList = cam_vpp_list.filter(cam => cam.is_enable === 1 && cam.is_valid === 1);
+				if (validCamVppList.length === 0) {
+					displayHtml += `<input type="text" id="display_${devIndex}_source" value="无可用数据源" readonly class="form-control-sm">`;
+				} else{
+					let dataSourceCSI = '';
+					if (display_vpp.data_source >= 0) { // 有效data_source（-1为无效）
+						dataSourceCSI = `CSI_${display_vpp.data_source}`;
+					}
+					const defaultCSI = `CSI_${validCamVppList[0]?.csi_index || 0}`;
+
+					// 获取页面上已存在的下拉框的当前选中值（仅作为兜底）
+					const selectId = `display_${devIndex}_source`;
+					const existingSelect = document.getElementById(selectId);
+					const existingCSI = existingSelect ? existingSelect.value.trim() : '';
+
+					// 最终选中值优先级：data_sourceCSI > existingCSI > defaultCSI
+					let currentSelectedCSI = defaultCSI;
+					if (dataSourceCSI) { // 优先使用data_source的值
+						currentSelectedCSI = dataSourceCSI;
+					} else if (existingCSI) { // 其次使用页面已有值
+						currentSelectedCSI = existingCSI;
+					}
+
+					// 生成下拉框标签
+					displayHtml += `<select id="${selectId}" class="form-control-sm">`;
+					
+					// 遍历有效CSI列表，生成选项（根据最终选中值匹配）
+					validCamVppList.forEach(cam => {
+						const csiOption = `CSI_${cam.csi_index}`;
+						const isSelected = csiOption === currentSelectedCSI;
+
+						displayHtml += `<option value="${csiOption}" ${isSelected ? 'selected' : ''}>${csiOption}</option>`;
+					});
+					
+					// 闭合下拉框标签
+					displayHtml += `</select>`;
+				}
+			}
+			displayHtml += `</li>`;
+		});
+		displayHtml += `</ul></li></ul></div>`;
+
+		return displayHtml;
+	}
+
+	generateCamSolutionHtml(cam_solution, hardware_capability, display_dev_list) {
 		let html = `<div><strong>智能摄像机</strong><ul>`;
 
 		// 3.1 使能Camera接口: 遍历所有的配置，添加 有效的CSI_X 对应的html
@@ -359,168 +495,169 @@ class ConfigManager {
 			html += `</ul></li>`;
 		}
 		html += `</ul></div>`;
+		html += this._generateDisplayModuleHtml(cam_solution, display_dev_list, cam_vpp_list);
 
 		return html;
 	}
 	bindCamSolutionEvents(cam_solution) {
-        const cam_vpp_list = cam_solution.cam_vpp;
+		const cam_vpp_list = cam_solution.cam_vpp;
 
-        for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
-            const cam_vpp = cam_vpp_list[i];
-            if (cam_vpp.is_valid === 0) continue;
+		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
+			const cam_vpp = cam_vpp_list[i];
+			if (cam_vpp.is_valid === 0) continue;
 
-            document.getElementById(`checkbox${i}`).addEventListener("change", this._createCheckboxChangeHandler(i));
-        }
+			document.getElementById(`checkbox${i}`).addEventListener("change", this._createCheckboxChangeHandler(i));
+		}
 
-        // for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
-        //     const cam_vpp = cam_vpp_list[i];
-        //     if (cam_vpp.is_enable === 0) continue;
+		// for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
+		//	 const cam_vpp = cam_vpp_list[i];
+		//	 if (cam_vpp.is_enable === 0) continue;
 
-        //     const uniqueId = `item_${i}_encode_type`;
-        //     document.getElementById(uniqueId).addEventListener("change", this._encodeTypeCamSolutionChangeHandler(i));
-        // }
-    }
-	// ==================== [4. 智能分析盒]               ====================
+		//	 const uniqueId = `item_${i}_encode_type`;
+		//	 document.getElementById(uniqueId).addEventListener("change", this._encodeTypeCamSolutionChangeHandler(i));
+		// }
+	}
+	// ==================== [4. 智能分析盒]			   ====================
 	generateBoxSolutionHtml(box_solution) {
 		//4.1 智能分析盒：视频通道路数
-        let html = `<div><strong>智能分析盒</strong><ul>`;
-        const field = this.configFieldInfoTable["pipeline_count"];
-        const label = field ? `${field.chinese_name}（pipeline_count）` : "pipeline_count";
-        html += `<div"><span>${label}</span>：<select id="item_box_pipeline_count" class="form-control-sm">`;
-        for (let option = 1; option <= box_solution[field.options]; option++) {
-            html += `<option value="${option}" ${box_solution["pipeline_count"] === option ? 'selected' : ''}>${option}</option>`;
-        }
-        html += `</select></div>`;
+		let html = `<div><strong>智能分析盒</strong><ul>`;
+		const field = this.configFieldInfoTable["pipeline_count"];
+		const label = field ? `${field.chinese_name}（pipeline_count）` : "pipeline_count";
+		html += `<div"><span>${label}</span>：<select id="item_box_pipeline_count" class="form-control-sm">`;
+		for (let option = 1; option <= box_solution[field.options]; option++) {
+			html += `<option value="${option}" ${box_solution["pipeline_count"] === option ? 'selected' : ''}>${option}</option>`;
+		}
+		html += `</select></div>`;
 
 		// 4.2 第 x 路配置
-        for (let i = 0; i < box_solution["pipeline_count"]; i++) {
-            html += `<li style="display: inline-block;"><strong>第 ${i + 1} 路配置：</strong><ul>`;
-            for (const itemKey in box_solution["box_vpp"][i]) {
-                const uniqueId = `item_${i}_${itemKey}`;
-                html += this._renderLabelName(this.serverConfig, itemKey, uniqueId, box_solution["box_vpp"][i]);
-            }
-            html += `</ul></li>`;
-        }
-        html += `</ul></div>`;
+		for (let i = 0; i < box_solution["pipeline_count"]; i++) {
+			html += `<li style="display: inline-block;"><strong>第 ${i + 1} 路配置：</strong><ul>`;
+			for (const itemKey in box_solution["box_vpp"][i]) {
+				const uniqueId = `item_${i}_${itemKey}`;
+				html += this._renderLabelName(this.serverConfig, itemKey, uniqueId, box_solution["box_vpp"][i]);
+			}
+			html += `</ul></li>`;
+		}
+		html += `</ul></div>`;
 
-        return html;
-    }
+		return html;
+	}
 
 	bindBoxSolutionEvents(box_solution) {
-        document.getElementById("item_box_pipeline_count").addEventListener("change", () => {
-            const selectedPipelineCount = parseInt(document.getElementById("item_box_pipeline_count").value);
-            this.serverConfig["box_solution"]["pipeline_count"] = selectedPipelineCount;
-            this.buildHTMLFromConfig(false);
-        });
+		document.getElementById("item_box_pipeline_count").addEventListener("change", () => {
+			const selectedPipelineCount = parseInt(document.getElementById("item_box_pipeline_count").value);
+			this.serverConfig["box_solution"]["pipeline_count"] = selectedPipelineCount;
+			this.buildHTMLFromConfig(false);
+		});
 		//意义：点击选项后，最左侧的当前方案配置栏 会在提交前更新
-        // for (let i = 0; i < box_solution.pipeline_count; i++) {
-        //     const uniqueId = `item_${i}_encode_type`;
-        //     document.getElementById(uniqueId).addEventListener("change", this._encodeTypeBoxSolutionChangeHandler(i));
-        // }
-    }
-	// ==================== [5. 当前方案配置]               ====================
+		// for (let i = 0; i < box_solution.pipeline_count; i++) {
+		//	 const uniqueId = `item_${i}_encode_type`;
+		//	 document.getElementById(uniqueId).addEventListener("change", this._encodeTypeBoxSolutionChangeHandler(i));
+		// }
+	}
+	// ==================== [5. 当前方案配置]			   ====================
 	generateConfigureDescribeHTML(solution){
 		const solution_status = document.getElementById("solution_status");
-        if (!solution_status) {
-            console.error("状态显示元素未找到！");
-            return;
-        }
+		if (!solution_status) {
+			console.error("状态显示元素未找到！");
+			return;
+		}
 
-        const solution_name = solution["solution_name"];
-        let html = "<h4>当前方案配置：</h4>";
+		const solution_name = solution["solution_name"];
+		let html = "<h4>当前方案配置：</h4>";
 
-        if (solution_name === 'cam_solution') {
-            html += this.generateCamSolutionConfigureDescribeHTML(solution["cam_solution"]);
-        } else if (solution_name === 'box_solution') {
-            html += this.generateBoxSolutionConfigureDescribeHTML(solution["box_solution"]);
-        }
-        solution_status.innerHTML = html;
-        solution_status.classList.add('left-align');
+		if (solution_name === 'cam_solution') {
+			html += this.generateCamSolutionConfigureDescribeHTML(solution["cam_solution"]);
+		} else if (solution_name === 'box_solution') {
+			html += this.generateBoxSolutionConfigureDescribeHTML(solution["box_solution"]);
+		}
+		solution_status.innerHTML = html;
+		solution_status.classList.add('left-align');
 	}
 	bindConfigureDescribeEvent() {
-        const imageElement = document.getElementById("solution_image");
-        if (!imageElement) return;
+		const imageElement = document.getElementById("solution_image");
+		if (!imageElement) return;
 
-        imageElement.addEventListener("click", () => this._showImageModal(imageElement.src));
-    }
+		imageElement.addEventListener("click", () => this._showImageModal(imageElement.src));
+	}
 
 	generateCamSolutionConfigureDescribeHTML(cam_solution) {
-        const pipeline_count = cam_solution["pipeline_count"];
-        const max_pipeline_count = cam_solution["max_pipeline_count"];
+		const pipeline_count = cam_solution["pipeline_count"];
+		const max_pipeline_count = cam_solution["max_pipeline_count"];
 
-        let enable_count = 0;
-        for (let i = 0; i < max_pipeline_count; i++) {
-            if (cam_solution["cam_vpp"][i]["is_enable"] !== 0) {
-                enable_count++;
-            }
-        }
+		let enable_count = 0;
+		for (let i = 0; i < max_pipeline_count; i++) {
+			if (cam_solution["cam_vpp"][i]["is_enable"] !== 0) {
+				enable_count++;
+			}
+		}
 
-        let html = "<strong>智能摄像机：</strong></br>";
-        html += `- 接入 ${pipeline_count} 路Sensor</br>`;
-        html += `- 启用 ${enable_count} 路Sensor</br>`;
-        html += "<strong>启用的Sensor型号和算法模型：</strong></br>";
+		let html = "<strong>智能摄像机：</strong></br>";
+		html += `- 接入 ${pipeline_count} 路Sensor</br>`;
+		html += `- 启用 ${enable_count} 路Sensor</br>`;
+		html += "<strong>启用的Sensor型号和算法模型：</strong></br>";
 
-        let valid_index = 0;
-        for (let i = 0; i < max_pipeline_count; i++) {
-            const cam_vpp = cam_solution["cam_vpp"][i];
-            if (cam_vpp["is_enable"] === 0) continue;
+		let valid_index = 0;
+		for (let i = 0; i < max_pipeline_count; i++) {
+			const cam_vpp = cam_solution["cam_vpp"][i];
+			if (cam_vpp["is_enable"] === 0) continue;
 
-            const sensor_model = cam_vpp["sensor"];
-            const algorithm_model = cam_vpp["model"];
+			const sensor_model = cam_vpp["sensor"];
+			const algorithm_model = cam_vpp["model"];
 			const encode_type = this._getStringDecodeType(cam_vpp["encode_type"]);
-            html += `- 第 ${valid_index + 1} 路:`;
-            html += `<ul>`;
-            html += `<li>Sensor型号：${sensor_model}</li>`;
+			html += `- 第 ${valid_index + 1} 路:`;
+			html += `<ul>`;
+			html += `<li>Sensor型号：${sensor_model}</li>`;
 			html += `<li>编码类型：${encode_type.toUpperCase()}</li>`;
-            html += `<li>算法：${algorithm_model}</li>`;
-            html += `</ul>`;
-            valid_index++;
-        }
+			html += `<li>算法：${algorithm_model}</li>`;
+			html += `</ul>`;
+			valid_index++;
+		}
 
-        html += "<strong>方案框图（点击放大）</strong></br>";
-        html += `<img id="solution_image" src="image/camera-slt.jpg" style="display: block;max-width:100%; max-height:100%" />`;
+		html += "<strong>方案框图（点击放大）</strong></br>";
+		html += `<img id="solution_image" src="image/camera-slt.jpg" style="display: block;max-width:100%; max-height:100%" />`;
 
-        return html;
-    }
+		return html;
+	}
 
-    /**
-     * 生成智能分析盒方案的状态文本
-     * @returns {string} - 状态文本
-     */
-    generateBoxSolutionConfigureDescribeHTML(box_solution) {
-        const pipeline_count = box_solution["pipeline_count"];
+	/**
+	 * 生成智能分析盒方案的状态文本
+	 * @returns {string} - 状态文本
+	 */
+	generateBoxSolutionConfigureDescribeHTML(box_solution) {
+		const pipeline_count = box_solution["pipeline_count"];
 
-        let status_txt = "<strong>智能分析盒：</strong></br>";
-        status_txt += `- 启用 ${pipeline_count} 路视频</br>`;
-        status_txt += "<strong>编解码和算法模型：</strong></br>";
+		let status_txt = "<strong>智能分析盒：</strong></br>";
+		status_txt += `- 启用 ${pipeline_count} 路视频</br>`;
+		status_txt += "<strong>编解码和算法模型：</strong></br>";
 
-        for (let i = 0; i < pipeline_count; i++) {
-            const box_vpp = box_solution["box_vpp"][i];
-            const decode_resolution = this._formatResolution(box_vpp, "decode");
-            const encode_resolution = this._formatResolution(box_vpp, "encode");
-            const algorithm_model = box_vpp["model"];
+		for (let i = 0; i < pipeline_count; i++) {
+			const box_vpp = box_solution["box_vpp"][i];
+			const decode_resolution = this._formatResolution(box_vpp, "decode");
+			const encode_resolution = this._formatResolution(box_vpp, "encode");
+			const algorithm_model = box_vpp["model"];
 
-            status_txt += `- 第 ${i + 1} 路:`;
-            status_txt += `<ul>`;
-            status_txt += `<li>解码：${decode_resolution}</li>`;
-            status_txt += `<li>编码：${encode_resolution}</li>`;
-            status_txt += `<li>算法：${algorithm_model}</li>`;
-            status_txt += `</ul>`;
+			status_txt += `- 第 ${i + 1} 路:`;
+			status_txt += `<ul>`;
+			status_txt += `<li>解码：${decode_resolution}</li>`;
+			status_txt += `<li>编码：${encode_resolution}</li>`;
+			status_txt += `<li>算法：${algorithm_model}</li>`;
+			status_txt += `</ul>`;
 
-        }
+		}
 
-        status_txt += "<strong>方案框图（点击放大）</strong></br>";
-        status_txt += `<img id="solution_image" src="image/box-slt.jpg" style="display: block;max-width:100%; max-height:100%" />`;
+		status_txt += "<strong>方案框图（点击放大）</strong></br>";
+		status_txt += `<img id="solution_image" src="image/box-slt.jpg" style="display: block;max-width:100%; max-height:100%" />`;
 
-        return status_txt;
-    }
+		return status_txt;
+	}
 
 	/*										API接口							 */
-    /**
-     * 更新服务器配置，基于 HTML 控件的值
-     * @returns {Object} 更新后的配置
-     */
-    updateConfigFromHTML() {
+	/**
+	 * 更新服务器配置，基于 HTML 控件的值
+	 * @returns {Object} 更新后的配置
+	 */
+	updateConfigFromHTML() {
 		const solutionName = document.querySelector('input[name="solution"]:checked').value;
 		this.serverConfig["solution_name"] = solutionName;
 		if (solutionName === 'cam_solution') {
@@ -597,8 +734,75 @@ class ConfigManager {
 				}
 			}
 		}
+		this.updateDisplayVpp(cam_solution);
 	}
+		
+	updateDisplayVpp(cam_solution) {
+		const display_vpp_list = cam_solution.display_vpp || [];
+		const displayDevCount = display_vpp_list.length;
 
+		for (let devIndex = 0; devIndex < displayDevCount; devIndex++) {
+			const display_vpp = display_vpp_list[devIndex] || {
+				is_valid: 1,
+				is_enable: 0,
+				resolution: "null",
+				data_source: -1,
+				display_index: -1
+			};
+			if (display_vpp.is_valid === 0) {
+				continue;
+			}
+
+			// 2. 更新：使能显示器（display_status）
+			const statusId = `display_${devIndex}_status`;
+			const statusElement = document.getElementById(statusId);
+			if (statusElement) {
+				if (statusElement.tagName === "SELECT") {
+					display_vpp.is_enable = parseInt(statusElement.value);
+				} else if (statusElement.tagName === "INPUT") {
+					display_vpp.is_enable = statusElement.value === "open" ? 1 : 0;
+				}
+			}
+
+			// 3. 更新：显示器分辨率（display_resolution）
+			const resId = `display_${devIndex}_res`;
+			const resElement = document.getElementById(resId);
+			if (resElement) {
+				if (resElement.tagName === "SELECT") {
+					display_vpp.resolution = resElement.value.trim();
+				} else if (resElement.tagName === "INPUT") {
+					display_vpp.resolution = resElement.value.trim();
+				}
+			}
+
+			// 4. 更新：Camera接口（data_source）- 核心：CSI_X转为数字X
+			const sourceId = `display_${devIndex}_source`;
+			const sourceElement = document.getElementById(sourceId);
+			if (sourceElement) {
+				let sourceValue = "";
+				if (sourceElement.tagName === "SELECT") {
+					sourceValue = sourceElement.value.trim();
+				} else if (sourceElement.tagName === "INPUT") {
+					sourceValue = sourceElement.value.trim();
+				}
+				// 处理CSI_0 → 0，CSI1 → 1，CSI_123 → 123等格式
+				const csiMatch = sourceValue.match(/CSI[_]?(\d+)/);
+				if (csiMatch && csiMatch[1]) {
+					// 提取数字部分并转为整数
+					display_vpp.data_source = parseInt(csiMatch[1]);
+				} else {
+					// 无匹配时设为-1（默认值）
+					display_vpp.data_source = -1;
+				}
+			}
+			cam_solution.display_vpp[devIndex] = display_vpp;
+		}
+
+		// 若display_vpp原本为空，初始化后赋值
+		if (!cam_solution.display_vpp) {
+			cam_solution.display_vpp = display_vpp_list;
+		}
+	}
 	updateBoxSolution(box_solution){
 		// 更新 pipeline_count
 		const pipelineCountSelect = document.getElementById("item_box_pipeline_count");
@@ -654,163 +858,163 @@ class ConfigManager {
 
 	/* ------------------------ 工具函数  ------------------------------ */
 	_createCheckboxChangeHandler(checkboxNumber) {
-        return (event) => {
-            const cam_solution = this.serverConfig["cam_solution"];
-            const cam_vpp_list = cam_solution.cam_vpp;
-            const cam_vpp = cam_vpp_list[checkboxNumber];
+		return (event) => {
+			const cam_solution = this.serverConfig["cam_solution"];
+			const cam_vpp_list = cam_solution.cam_vpp;
+			const cam_vpp = cam_vpp_list[checkboxNumber];
 
-            if (cam_vpp.is_valid === 0) {
-                console.error("CSI_" + cam_vpp.csi_index + " 无效，但尝试设置复选框。");
-                return;
-            }
+			if (cam_vpp.is_valid === 0) {
+				console.error("CSI_" + cam_vpp.csi_index + " 无效，但尝试设置复选框。");
+				return;
+			}
 
-            cam_vpp.is_enable = event.target.checked ? 1 : 0;
-            this.buildHTMLFromConfig(false); // 重新渲染
-        };
-    }
+			cam_vpp.is_enable = event.target.checked ? 1 : 0;
+			this.buildHTMLFromConfig(false); // 重新渲染
+		};
+	}
 	_encodeTypeCamSolutionChangeHandler(channel_number) {
-        return (event) => {
-            const cam_solution = this.serverConfig["cam_solution"];
-            const cam_vpp = cam_solution.cam_vpp[channel_number];
+		return (event) => {
+			const cam_solution = this.serverConfig["cam_solution"];
+			const cam_vpp = cam_solution.cam_vpp[channel_number];
 
-            if (cam_vpp.is_enable === 0) {
-                console.error("CSI_" + cam_vpp.csi_index + " 未启用，但尝试设置编码类型。");
-                return;
-            }
+			if (cam_vpp.is_enable === 0) {
+				console.error("CSI_" + cam_vpp.csi_index + " 未启用，但尝试设置编码类型。");
+				return;
+			}
 
-            const selectedEncodeType = event.target.options[event.target.selectedIndex].text;
-            const encode_type_int = this._getIntDecodeType(selectedEncodeType);
-            if (encode_type_int === -1) {
-                console.error("CSI_" + cam_vpp.csi_index + " 收到不支持的编码类型: " + selectedEncodeType);
-                return;
-            }
+			const selectedEncodeType = event.target.options[event.target.selectedIndex].text;
+			const encode_type_int = this._getIntDecodeType(selectedEncodeType);
+			if (encode_type_int === -1) {
+				console.error("CSI_" + cam_vpp.csi_index + " 收到不支持的编码类型: " + selectedEncodeType);
+				return;
+			}
 
-            cam_vpp.encode_type = encode_type_int;
+			cam_vpp.encode_type = encode_type_int;
 			this.buildHTMLFromConfig(false);
 		};
 	}
 
 	_encodeTypeBoxSolutionChangeHandler(channel_number) {
-        return (event) => {
-            const box_solution = this.serverConfig["box_solution"];
-            const box_vpp_list = box_solution.box_vpp;
-            const box_vpp = box_vpp_list[channel_number];
+		return (event) => {
+			const box_solution = this.serverConfig["box_solution"];
+			const box_vpp_list = box_solution.box_vpp;
+			const box_vpp = box_vpp_list[channel_number];
 
-            // 获取选中的编码类型
-            const selectedEncodeType = event.target.options[event.target.selectedIndex].text;
-            const encode_type_int = this._getIntDecodeType(selectedEncodeType);
+			// 获取选中的编码类型
+			const selectedEncodeType = event.target.options[event.target.selectedIndex].text;
+			const encode_type_int = this._getIntDecodeType(selectedEncodeType);
 
-            // 检查编码类型是否有效
-            if (encode_type_int === -1) {
-                console.error(`通道 ${channel_number} 收到不支持的编码类型: ${selectedEncodeType}`);
-                return;
-            }
+			// 检查编码类型是否有效
+			if (encode_type_int === -1) {
+				console.error(`通道 ${channel_number} 收到不支持的编码类型: ${selectedEncodeType}`);
+				return;
+			}
 
-            // 更新配置中的编码类型
-            box_vpp["encode_type"] = encode_type_int;
+			// 更新配置中的编码类型
+			box_vpp["encode_type"] = encode_type_int;
 
-            // 重新渲染页面
-            this.buildHTMLFromConfig(false);
-        };
-    }
+			// 重新渲染页面
+			this.buildHTMLFromConfig(false);
+		};
+	}
 
 	/**
-     * 渲染标签名称和对应的输入控件
-     * @param {string} itemKey - 配置项键名
-     * @param {string} uniqueId - 控件的唯一 ID
-     * @param {object} vpp_config - 配置项的值
-     * @returns {string} - 生成的 HTML
-     */
-    _renderLabelName(solutions_config, itemKey, uniqueId, vpp_config) {
-        const field = this.configFieldInfoTable[itemKey];
-        const label = field ? `${field.chinese_name}（${itemKey}）` : itemKey;
-        let html = `<li><span>${label}</span>：`;
+	 * 渲染标签名称和对应的输入控件
+	 * @param {string} itemKey - 配置项键名
+	 * @param {string} uniqueId - 控件的唯一 ID
+	 * @param {object} vpp_config - 配置项的值
+	 * @returns {string} - 生成的 HTML
+	 */
+	_renderLabelName(solutions_config, itemKey, uniqueId, vpp_config) {
+		const field = this.configFieldInfoTable[itemKey];
+		const label = field ? `${field.chinese_name}（${itemKey}）` : itemKey;
+		let html = `<li><span>${label}</span>：`;
 
-        if (field) {
-            switch (field.type) {
-                case 'stringlist':
-                    html += this._generateSelectOptions(solutions_config, field, uniqueId, vpp_config[itemKey]);
-                    break;
-                case 'intarray':
-                    html += this._generateBitrateOptions(solutions_config, field, uniqueId, vpp_config[itemKey]);
-                    break;
-                case 'text':
-                    html += `<input type="text" id="${uniqueId}" value="${vpp_config[itemKey] || field.value}">`;
-                    break;
-                case 'int':
-                    html += `<input type="number" id="${uniqueId}" value="${vpp_config[itemKey] || field.value}" step="1">`;
-                    break;
-                default:
-                    html += `<input type="text" id="${uniqueId}" value="${vpp_config[itemKey]}">`;
-            }
-        } else {
+		if (field) {
+			switch (field.type) {
+				case 'stringlist':
+					html += this._generateSelectOptions(solutions_config, field, uniqueId, vpp_config[itemKey]);
+					break;
+				case 'intarray':
+					html += this._generateBitrateOptions(solutions_config, field, uniqueId, vpp_config[itemKey]);
+					break;
+				case 'text':
+					html += `<input type="text" id="${uniqueId}" value="${vpp_config[itemKey] || field.value}">`;
+					break;
+				case 'int':
+					html += `<input type="number" id="${uniqueId}" value="${vpp_config[itemKey] || field.value}" step="1">`;
+					break;
+				default:
+					html += `<input type="text" id="${uniqueId}" value="${vpp_config[itemKey]}">`;
+			}
+		} else {
 			console.log("uniqueId:" + uniqueId + " " + "itemKey: " + itemKey );
-            html += `<input type="text" id="${uniqueId}" value="${vpp_config[itemKey]}">`;
-        }
+			html += `<input type="text" id="${uniqueId}" value="${vpp_config[itemKey]}">`;
+		}
 
-        html += `</li>`;
-        return html;
-    }
+		html += `</li>`;
+		return html;
+	}
 
-    /**
-     * 生成下拉列表选项
-     * @param {object} field - 配置字段信息
-     * @param {string} uniqueId - 控件的唯一 ID
-     * @param {string|number} selectedValue - 当前选中的值
-     * @returns {string} - 生成的 HTML
-     */
-    _generateSelectOptions(solutions_config, field, uniqueId, selectedValue) {
+	/**
+	 * 生成下拉列表选项
+	 * @param {object} field - 配置字段信息
+	 * @param {string} uniqueId - 控件的唯一 ID
+	 * @param {string|number} selectedValue - 当前选中的值
+	 * @returns {string} - 生成的 HTML
+	 */
+	_generateSelectOptions(solutions_config, field, uniqueId, selectedValue) {
 		const hardware_capability = solutions_config["hardware_capability"];
-        const options = hardware_capability[field.options].split('/');
-        let html = `<select id="${uniqueId}" class="form-control-sm">`;
+		const options = hardware_capability[field.options].split('/');
+		let html = `<select id="${uniqueId}" class="form-control-sm">`;
 
-        if (Array.isArray(options)) {
-            if (field.value_is_index) {
-                // 如果值是索引
-                const index = Math.min(selectedValue, options.length - 1);
-                if (selectedValue >= options.length) {
-                    console.error(`itemKey: ${itemKey} 在 hardware_capability: ${field.options} 中的索引 ${selectedValue} 超出范围，最大为 ${options.length - 1}`);
-                }
-                options.forEach((option, i) => {
-                    html += `<option value="${option}" ${i === index ? 'selected' : ''}>${option}</option>`;
-                });
-            } else {
-                // 如果值是字符串
-                options.forEach(option => {
-                    html += `<option value="${option}" ${option === selectedValue ? 'selected' : ''}>${option}</option>`;
-                });
-            }
-        } else {
-            console.error(`itemKey: ${itemKey} 在 hardware_capability: ${field.options} 中的值不是数组`);
+		if (Array.isArray(options)) {
+			if (field.value_is_index) {
+				// 如果值是索引
+				const index = Math.min(selectedValue, options.length - 1);
+				if (selectedValue >= options.length) {
+					console.error(`itemKey: ${itemKey} 在 hardware_capability: ${field.options} 中的索引 ${selectedValue} 超出范围，最大为 ${options.length - 1}`);
+				}
+				options.forEach((option, i) => {
+					html += `<option value="${option}" ${i === index ? 'selected' : ''}>${option}</option>`;
+				});
+			} else {
+				// 如果值是字符串
+				options.forEach(option => {
+					html += `<option value="${option}" ${option === selectedValue ? 'selected' : ''}>${option}</option>`;
+				});
+			}
+		} else {
+			console.error(`itemKey: ${itemKey} 在 hardware_capability: ${field.options} 中的值不是数组`);
 			const selected_value = hardware_capability[field.options]
 			html += `<option value="${selected_value}" selected>${selected_value}</option>`;
-        }
+		}
 
-        html += `</select>`;
-        return html;
-    }
+		html += `</select>`;
+		return html;
+	}
 
-    /**
-     * 生成码率下拉列表选项
-     * @param {object} field - 配置字段信息
-     * @param {string} uniqueId - 控件的唯一 ID
-     * @param {number} selectedValue - 当前选中的值
-     * @returns {string} - 生成的 HTML
-     */
-    _generateBitrateOptions(solutions_config, field, uniqueId, selectedValue) {
+	/**
+	 * 生成码率下拉列表选项
+	 * @param {object} field - 配置字段信息
+	 * @param {string} uniqueId - 控件的唯一 ID
+	 * @param {number} selectedValue - 当前选中的值
+	 * @returns {string} - 生成的 HTML
+	 */
+	_generateBitrateOptions(solutions_config, field, uniqueId, selectedValue) {
 		const hardware_capability = solutions_config["hardware_capability"];
-        const options = hardware_capability[field.options];
-        let html = `<select id="${uniqueId}" class="form-control-sm">`;
+		const options = hardware_capability[field.options];
+		let html = `<select id="${uniqueId}" class="form-control-sm">`;
 
-        options.forEach(option => {
-            if (option > 0) {
-                html += `<option value="${option}" ${option === selectedValue ? 'selected' : ''}>${option}Kbps</option>`;
-            }
-        });
+		options.forEach(option => {
+			if (option > 0) {
+				html += `<option value="${option}" ${option === selectedValue ? 'selected' : ''}>${option}Kbps</option>`;
+			}
+		});
 
-        html += `</select>`;
-        return html;
-    }
+		html += `</select>`;
+		return html;
+	}
 
 	_getStringDecodeType(encode_type) {
 		const codecMap = {
@@ -835,62 +1039,62 @@ class ConfigManager {
 		return decodeType;
 	}
 	_formatResolution(vpp, type) {
-        const width = vpp[`${type}_width`];
-        const height = vpp[`${type}_height`];
-        const frame_rate = vpp[`${type}_frame_rate`];
-        return `${width}x${height}@${frame_rate}fps`;
-    }
-    _showImageModal(imageSrc) {
-        const modal = document.createElement("div");
-        modal.style.position = "fixed";
-        modal.style.top = "0";
-        modal.style.left = "0";
-        modal.style.width = "100%";
-        modal.style.height = "100%";
-        modal.style.backgroundColor = "rgba(0,0,0,0.7)";
-        modal.style.zIndex = "1000";
-        modal.style.display = "flex";
-        modal.style.alignItems = "flex-start";
-        modal.style.justifyContent = "center";
+		const width = vpp[`${type}_width`];
+		const height = vpp[`${type}_height`];
+		const frame_rate = vpp[`${type}_frame_rate`];
+		return `${width}x${height}@${frame_rate}fps`;
+	}
+	_showImageModal(imageSrc) {
+		const modal = document.createElement("div");
+		modal.style.position = "fixed";
+		modal.style.top = "0";
+		modal.style.left = "0";
+		modal.style.width = "100%";
+		modal.style.height = "100%";
+		modal.style.backgroundColor = "rgba(0,0,0,0.7)";
+		modal.style.zIndex = "1000";
+		modal.style.display = "flex";
+		modal.style.alignItems = "flex-start";
+		modal.style.justifyContent = "center";
 
-        const enlargedImage = document.createElement("img");
-        enlargedImage.src = imageSrc;
-        enlargedImage.style.maxWidth = "90%";
-        enlargedImage.style.maxHeight = "90%";
+		const enlargedImage = document.createElement("img");
+		enlargedImage.src = imageSrc;
+		enlargedImage.style.maxWidth = "90%";
+		enlargedImage.style.maxHeight = "90%";
 
-        const closeButton = document.createElement("button");
-        closeButton.textContent = "关闭";
-        closeButton.style.marginLeft = "10px";
-        closeButton.style.padding = "5px 10px";
-        closeButton.style.border = "none";
-        closeButton.style.backgroundColor = "#ffffff";
-        closeButton.style.cursor = "pointer";
-        closeButton.addEventListener("click", () => modal.remove());
+		const closeButton = document.createElement("button");
+		closeButton.textContent = "关闭";
+		closeButton.style.marginLeft = "10px";
+		closeButton.style.padding = "5px 10px";
+		closeButton.style.border = "none";
+		closeButton.style.backgroundColor = "#ffffff";
+		closeButton.style.cursor = "pointer";
+		closeButton.addEventListener("click", () => modal.remove());
 
-        modal.appendChild(enlargedImage);
-        modal.appendChild(closeButton);
-        document.body.appendChild(modal);
-    }
+		modal.appendChild(enlargedImage);
+		modal.appendChild(closeButton);
+		document.body.appendChild(modal);
+	}
 
-    /**
-     * 处理解决方案切换
-     * @param {string} selectedSolution - 选中的解决方案名称
-     * @param {string} imageSrc - 方案对应的图片路径
-     */
-    _handleSolutionChange(selectedSolution, imageSrc) {
-        // 更新选中的解决方案名称
-        this.serverConfig["solution_name"] = selectedSolution;
+	/**
+	 * 处理解决方案切换
+	 * @param {string} selectedSolution - 选中的解决方案名称
+	 * @param {string} imageSrc - 方案对应的图片路径
+	 */
+	_handleSolutionChange(selectedSolution, imageSrc) {
+		// 更新选中的解决方案名称
+		this.serverConfig["solution_name"] = selectedSolution;
 
-        // 更新方案图片
-        const solution_image = document.getElementById("solution_image");
-        if (solution_image) {
-            solution_image.style.display = "block";
-            solution_image.setAttribute("src", imageSrc);
-        }
+		// 更新方案图片
+		const solution_image = document.getElementById("solution_image");
+		if (solution_image) {
+			solution_image.style.display = "block";
+			solution_image.setAttribute("src", imageSrc);
+		}
 
-        // 重新渲染页面
-        this.buildHTMLFromConfig(false);
-    };
+		// 重新渲染页面
+		this.buildHTMLFromConfig(false);
+	};
 
 	_streamCount() {
 		let stream_count = 0;

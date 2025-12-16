@@ -26,6 +26,7 @@ void *vp_allocate_image_frame(ImageFrame *image_frame);
 void vp_free_image_frame(ImageFrame *image_frame);
 
 int32_t vp_get_hard_capability(solution_cfg_t *solution_config);
+void vp_get_display_info(solution_display_dev_t *display_dev_list, int count);
 
 void vp_print_debug_infos(void);
 

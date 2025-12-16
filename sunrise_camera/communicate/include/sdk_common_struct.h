@@ -227,7 +227,7 @@ typedef struct{
 	int			cvbr;		// 码率控制方式 定码率 变码率
 	int			minqp;
 	int			maxqp;
-	int         suggest_buffer_region_size;
+	int		 suggest_buffer_region_size;
 	int 		suggest_buffer_item_count;
 
 }T_SDK_VENC_INFO;
@@ -256,7 +256,7 @@ typedef enum
 typedef struct
 {
 	E_SDK_GPIO_TYPE un_type;
-	unsigned int    un_value;
+	unsigned int	un_value;
 }T_SDK_GPIO;
 
 
@@ -561,7 +561,7 @@ typedef struct
 	char 		 sta_ssid[32];
 	char		 sta_passwd[32];
 
-	char         ap_ssid[32];
+	char		 ap_ssid[32];
 	char 		 ap_passwd[32];
 
 	E_SDK_NET_MODE  mode;
@@ -626,7 +626,7 @@ typedef struct
 	unsigned char  c_timezone_flag; 		//是否支持同步时区
 	unsigned char  c_night_vison_flag;		//是否支持夜视
 	unsigned char  c_ethernet_flag; 		//是否带网卡0:wifi 1有线2wifi加有线
-	unsigned char  c_smart_connect_flag;	/* 是否支持smart扫描	0	代表不支持，		1、代表7601smart        		2、代表8188smart	3、代表ap6212 9、不支持二维码扫描 10、只支持二维码扫描
+	unsigned char  c_smart_connect_flag;	/* 是否支持smart扫描	0	代表不支持，		1、代表7601smart				2、代表8188smart	3、代表ap6212 9、不支持二维码扫描 10、只支持二维码扫描
 												11代表二维码扫描+7601smart 12、代表二维码扫描+8188smart 13、代表二维码扫描+ap6212smart 14、代表AP添加 15、代表AP添加+8188smart*/
 	unsigned char  c_motion_detection_flag; //是否支持移动侦测
 	unsigned char  c_record_duration_flag;	// 是否有设置录像录像时长
@@ -741,12 +741,44 @@ typedef struct{
 	T_SDK_DECODE_PARAM_CHECK_SINGLE_INFO decode_params[32];
 }T_SDK_DECODE_PARAM_CHECK_INFO;
 
+typedef enum {
+	SdkDisplayIsDisconnect = 0,
+	SdkDisplayIsChange,
+	SdkDisplayParamIsNotMatch,
+	SdkSentinelDisplayErrorType,
+}T_SDK_DISPLAY_PARAM_ERROR_TYPE;
+
+typedef struct {
+	int pipeline_id;
+	int sensor_width;
+	int sensor_height;
+	int sensor_fps;
+
+	int display_width;
+	int display_height;
+	int display_fps;
+	char current_type[32];
+	char current_display_resolution_list[1024];
+
+	char config_type[32];
+	char config_display_resolution_list[1024];
+	T_SDK_DISPLAY_PARAM_ERROR_TYPE error_type; // 若需要SDK层独立枚举，可重新定义
+} T_SDK_DISPLAY_PARAM_CHECK_SINGLE_INFO;
+
+// SDK层显示参数校验集合结构体（对应solution_display_param_check_info_t）
+#define SDK_MAX_DISPLAY_COUNT (2)
+typedef struct {
+	int not_match_count;
+	T_SDK_DISPLAY_PARAM_CHECK_SINGLE_INFO display_params[SDK_MAX_DISPLAY_COUNT];
+} T_SDK_DISPLAY_PARAM_CHECK_INFO;
+
 typedef struct
 {
 	char *param;
 	int ion_lack;
 	float vpu_lack;
 	T_SDK_DECODE_PARAM_CHECK_INFO decode_param_check_info;
+	T_SDK_DISPLAY_PARAM_CHECK_INFO display_param_check_info;
 }T_SDK_CHECK_INFO;
 
 #define SDK_JSON_PARAM_MAX_LEN 1024

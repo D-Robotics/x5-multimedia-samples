@@ -558,12 +558,6 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 	int vpp_camera_index = 0;
 	int hdmi_display_channel = -1;
 	int pipeline_count =solution_cfg->cam_solution.pipeline_count;
-	int hdmi_is_connected = vp_display_check_hdmi_is_connected();
-	if(hdmi_is_connected){
-		SC_LOGI("hdmi is connected");
-	}else{
-		SC_LOGI("hdmi is not connected");
-	}
 
 	// 根据camera solution的配置设置vin、vse、venc、bpu模块的使能和参数
 	for (i = 0; i <solution_cfg->cam_solution.max_pipeline_count; i++) {
@@ -724,11 +718,21 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 		strcpy(p_vpp_camera->vp_vflow_contex.gdc_info.sensor_name, sensor_name);
 		p_vpp_camera->vp_vflow_contex.gdc_info.status = solution_cfg->cam_solution.cam_vpp[i].gdc_status;
 
-		if((hdmi_is_connected) && (hdmi_display_channel == -1)){
-
-			p_vpp_camera->drm_context = &g_drm_context;
-			hdmi_display_channel = p_vpp_camera->pipline_id;
-			SC_LOGI("channel %d enable hdmi display", hdmi_display_channel);
+		//display
+		solution_cfg_display_t *cfg_display = &solution_cfg->cam_solution.display_vpp[0];
+		if((cfg_display->is_valid) && (cfg_display->is_enable)){
+			//hdmi_display_channel = -1: 未初始化 
+			if((hdmi_display_channel == -1) && (p_vpp_camera->pipline_id == cfg_display->data_source)){
+				SC_LOGI("[%d] enable hdmi, so check hdmi.\n", cfg_display->data_source);
+				int hdmi_is_connected = vp_display_check_hdmi_is_connected();
+				if(hdmi_is_connected){
+					p_vpp_camera->drm_context = &g_drm_context;
+					hdmi_display_channel = p_vpp_camera->pipline_id;
+					SC_LOGI("[%d] enable hdmi", hdmi_display_channel);
+				}else{
+					SC_LOGE("[%d] enable hdmi, but hdmi is not connected.\n", cfg_display->data_source);
+				}
+			}
 		}
 
 		//for codec

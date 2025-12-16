@@ -3,8 +3,10 @@
 
 #define STL_MAX_VPP_CAM_NUM 4
 #define STL_MAX_VPP_BOX_NUM 6
+#define STL_MAX_VPP_DISPLAY_NUM 1
 #include "vp_sensors.h"
 #include "vp_common.h"
+#include "solution_check.h"
 
 typedef struct {
 	char chip_type[16];
@@ -30,9 +32,18 @@ typedef struct {
 } solution_cfg_cam_vpp_t;
 
 typedef struct {
+	int32_t is_valid;
+	int32_t is_enable;
+	char resolution[32];
+	int data_source;
+	int display_index;
+}solution_cfg_display_t;
+
+typedef struct {
 	int32_t pipeline_count; // 使能多少路camera
 	int32_t max_pipeline_count;
 	solution_cfg_cam_vpp_t cam_vpp[STL_MAX_VPP_CAM_NUM];
+	solution_cfg_display_t display_vpp[STL_MAX_VPP_DISPLAY_NUM];
 } solution_cfg_cam_t;
 
 // 示例代码的编解码配置，为了直观的呈现效果，先解码在编码推流
@@ -55,15 +66,23 @@ typedef struct {
 	int32_t pipeline_count; // 使能多少路视频编解码
 	int32_t max_pipeline_count;
 	solution_cfg_box_vpp_t box_vpp[STL_MAX_VPP_BOX_NUM];
+
+	//todo: add solution_cfg_display_t
 } solution_cfg_box_t;
 
 typedef struct {
+	int is_valid;
+	char type[32]; //hdmi/dsi"
+	char resolution_list[1024]; //1920:1080i*60/1920:1080*30
+}solution_display_dev_t;
+typedef struct {
 	char version[128];
 	solution_hard_capability_t hardware_capability;
+	solution_display_dev_t display_devs[STL_MAX_VPP_DISPLAY_NUM];
+
 	char solution_name[32];
 	solution_cfg_cam_t cam_solution;
 	solution_cfg_box_t box_solution;
-	char display_dev[16]; // 显示设备，支持hdmi和lcd
 } solution_cfg_t;
 
 int32_t solution_cfg_load_default_config();
@@ -73,6 +92,8 @@ char* solution_cfg_obj2string();
 void solution_cfg_string2obj(char *in);
 int32_t solution_cfg_update_camera_config();
 void solution_cfg_string2obj_width_param(char *in, solution_cfg_t *solution_cfg);
+int32_t solution_cam_display_param_get(solution_cfg_t *solution_cfg, solution_display_param_info_t *param_info);
+int32_t solution_cfg_update_display_config();
 
 extern int32_t g_solution_cfg_is_load;
 extern solution_cfg_t g_solution_config;

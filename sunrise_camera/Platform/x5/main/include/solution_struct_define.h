@@ -2,6 +2,8 @@
 #define SOLUTION_STRUCT_DEFINE_H
 
 #include <time.h>
+#define SOLUTION_MAX_DISPLAY_COUNT (2)
+
 #define SOLUTION_MAX_PIPELINE_COUNT (32)
 
 typedef enum
@@ -304,11 +306,40 @@ typedef struct{
 	solution_decode_param_check_single_t codec_info[SOLUTION_MAX_PIPELINE_COUNT];
 }solution_decode_param_check_info_t;
 
+typedef enum {
+	DisplayIsDisconnect = 0,
+	DisplayIsChange,
+	DisplayParamIsNotMatch,
+	SentinelDisplayErrorType,
+}solution_display_param_error_type_t;
+typedef struct{
+	int pipeline_id;
+	int sensor_width;
+	int sensor_height;
+	int sensor_fps;
+
+	int display_width;
+	int display_height;
+	int display_fps;
+	char current_type[32];
+	char current_display_resolution_list[1024];
+
+	char config_type[32];
+	char config_display_resolution_list[1024];
+	solution_display_param_error_type_t error_type;
+}solution_display_param_check_single_t;
+
+typedef struct {
+	int not_match_count;
+	solution_display_param_check_single_t dispaly_info[SOLUTION_MAX_DISPLAY_COUNT];
+}solution_display_param_check_info_t;
+
 typedef struct{
 	char *param;
 	int ion_lack;
 	float vpu_lack; //单位: 1080P30
 	solution_decode_param_check_info_t decode_param_check_info;
+	solution_display_param_check_info_t display_param_check_info;
 }solution_check_info_t;
 ////////////////////////////////////////////////////////////////////
 

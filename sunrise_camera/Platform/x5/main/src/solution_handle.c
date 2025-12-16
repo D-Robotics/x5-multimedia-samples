@@ -177,6 +177,7 @@ int solution_handle_stop(void)
 
 int solution_handle_get_config(char *out_str)
 {
+	solution_cfg_update_display_config();
 	char *config_str = solution_cfg_obj2string();
 	strcpy(out_str, config_str);
 	free(config_str);
@@ -201,7 +202,7 @@ int solution_handle_check_config(solution_check_info_t *check_info){
 
 	} else {
 		SC_LOGE("Solution(%s) not implemented, Please look forward to it!", solution_cfg.solution_name);
-			return -1;
+		return -1;
 	}
 	//检查ION内存是否足够
 	check_info->ion_lack = solution_check_ion_is_enough(&solution_ion_param_info); //for ion
@@ -213,6 +214,19 @@ int solution_handle_check_config(solution_check_info_t *check_info){
 		solution_decode_param_info_t solution_decode_param_info;
 		vpp_box_decode_param_get(&solution_cfg, &solution_decode_param_info);
 		solution_check_decode_param_is_match(&solution_decode_param_info, &check_info->decode_param_check_info);
+	}
+
+	//检查显示器参数是否匹配
+	if (strcmp(solution_cfg.solution_name, "cam_solution") == 0){
+		solution_display_param_info_t solution_display_param_info;
+		int ret = solution_cam_display_param_get(&solution_cfg, &solution_display_param_info);
+		if(ret != 0){
+			SC_LOGE("solution_cam_display_param_get failed!");
+			return -1;
+		}
+		solution_check_display_param_is_match(&solution_display_param_info, &check_info->display_param_check_info);
+		// printf("solution_check_display_param_is_match: %d sizeof(solution_check_info_t):%ld\n",
+		// 		check_info->display_param_check_info.not_match_count, sizeof(solution_check_info_t));
 	}
 	return 0;
 }

@@ -878,8 +878,11 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 					for (int k = 0; k < 8; ++k) {
 						if (vcon_props_array[i].gpio_oth[k] != 0) {
 							if ((vp_sensor_config_ptr->camera_config->gpio_enable_bit & (1 << k)) != 0) {
-								enable_sensor_pin(vcon_props_array[i].gpio_oth[k],
-									(1 - vp_sensor_config_ptr->camera_config->gpio_level_bit));
+								// 检查 gpio_level_bit 的第 k 位来决定初始电平
+								// bit = 0: 先输出低电平，sleep 30ms，再输出高电平
+								// bit = 1: 先输出高电平，sleep 30ms，再输出低电平
+								int initial_level = (vp_sensor_config_ptr->camera_config->gpio_level_bit & (1 << k)) ? 0 : 1;
+								enable_sensor_pin(vcon_props_array[i].gpio_oth[k], initial_level);
 							}
 						}
 					}
@@ -973,10 +976,12 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
 			for (j = 0; j < 8; ++j) {
 				if (vcon_props_array[i].gpio_oth[j] != 0) {
-					if (sensor_config->camera_config->gpio_enable_bit != 0) {
-						// gpio_level should be from sensor config and sensor spec
-						enable_sensor_pin(vcon_props_array[i].gpio_oth[j],
-							(1 - sensor_config->camera_config->gpio_level_bit));
+					if ((sensor_config->camera_config->gpio_enable_bit & (1 << j)) != 0) {
+						// 检查 gpio_level_bit 的第 j 位来决定初始电平
+						// bit = 0: 先输出低电平，sleep 30ms，再输出高电平
+						// bit = 1: 先输出高电平，sleep 30ms，再输出低电平
+						int initial_level = (sensor_config->camera_config->gpio_level_bit & (1 << j)) ? 0 : 1;
+						enable_sensor_pin(vcon_props_array[i].gpio_oth[j], initial_level);
 					}
 				}
 			}
@@ -1038,10 +1043,12 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
 			for (j = 0; j < 8; ++j) {
 				if (vcon_props_array[i].gpio_oth[j] != 0) {
-					if (sensor_config->camera_config->gpio_enable_bit != 0) {
-						// gpio_level should be from sensor config and sensor spec
-						enable_sensor_pin(vcon_props_array[i].gpio_oth[j],
-							(1 - sensor_config->camera_config->gpio_level_bit));
+					if ((sensor_config->camera_config->gpio_enable_bit & (1 << j)) != 0) {
+						// 检查 gpio_level_bit 的第 j 位来决定初始电平
+						// bit = 0: 先输出低电平，sleep 30ms，再输出高电平
+						// bit = 1: 先输出高电平，sleep 30ms，再输出低电平
+						int initial_level = (sensor_config->camera_config->gpio_level_bit & (1 << j)) ? 0 : 1;
+						enable_sensor_pin(vcon_props_array[i].gpio_oth[j], initial_level);
 					}
 				}
 			}

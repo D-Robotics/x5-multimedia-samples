@@ -338,7 +338,7 @@ static drmModeConnector* find_connector(int fd)
 static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t height)
 {
 	memset(drm_ctx, 0, sizeof(vp_drm_context_t));
-	drm_ctx->crtc_id = 63; //31
+	drm_ctx->crtc_id = 31; //63
 	drm_ctx->connector_id = 75;
 	drm_ctx->width = width;
 	drm_ctx->height = height;
@@ -347,7 +347,7 @@ static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t he
 
 	for (int i = 0; i < drm_ctx->plane_count; i++)
 	{
-		drm_ctx->planes[i].plane_id = 64; //33
+		drm_ctx->planes[i].plane_id = 33; //64
 		drm_ctx->planes[i].src_w = width;
 		drm_ctx->planes[i].src_h = height;
 		drm_ctx->planes[i].crtc_x = 0;

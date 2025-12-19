@@ -21,8 +21,6 @@ extern vp_sensor_config_t dummy_sensor_config;
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
-	{"settle", optional_argument, NULL, 't'},
-	{"mode", optional_argument, NULL, 'm'},
 	{NULL, 0, NULL, 0}
 };
 
@@ -30,8 +28,6 @@ static void print_help() {
 	printf("Usage: %s [OPTIONS]\n", get_program_name());
 	printf("Options:\n");
 	printf("  -s <sensor_index>      Specify sensor index\n");
-	printf("  -t <settle_value>      Specify settle time for debug\n");
-	printf("  -m <sensor_mode>       Specify sensor mode of camera_config_t\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
 }
@@ -45,9 +41,6 @@ static void command_help() {
 	printf(" q	-- quit  \n");
 	printf(" h	-- print help message\n");
 }
-
-static int settle = -1;
-static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 
 static int fixed_dummy_sensor_config(pipe_contex_t *vin_isp_contex,
 	vp_sensor_config_t *dummy_sensor_config)
@@ -136,16 +129,6 @@ static int create_camera_node(pipe_contex_t *pipe_contex) {
 	sensor_config = pipe_contex->sensor_config;
 	camera_config = sensor_config->camera_config;
 
-	if (strcmp("dummy", camera_config->name) != 0) {
-		/* Debug settle */
-		if (settle >= 0 && settle <= 127) {
-			camera_config->mipi_cfg->rx_attr.settle = settle;
-		}
-		if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
-			camera_config->sensor_mode = sensor_mode;
-			sensor_config->vin_node_attr->lpwm_attr.enable = 1;
-		}
-	}
 	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 
@@ -618,12 +601,6 @@ int main(int argc, char** argv) {
 		{
 		case 's':
 			index = atoi(optarg);
-			break;
-		case 't':
-			settle = atoi(optarg);
-			break;
-		case 'm':
-			sensor_mode = atoi(optarg);
 			break;
 		case 'h':
 		default:

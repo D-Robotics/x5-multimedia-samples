@@ -9,4 +9,5 @@ sample_vin/get_vin_data/get_vin_data
 sample_vse/sample_vse
 sample_codec/sample_codec
 tuning_tool/out
+sample_isp/get_isp_rgb_ir/get_isp_rgb_ir
 

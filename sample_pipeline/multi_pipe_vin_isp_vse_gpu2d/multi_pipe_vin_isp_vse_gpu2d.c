@@ -49,17 +49,18 @@ typedef struct {
 	pipeline_info_t *pipeline_info[MAX_PIPE_NUM]; // 使用数组存储指针
 } thread_args_t;
 
-static   n2d_buffer_t tmpbuffer = {0};
-static   n2d_buffer_t dst_rotation = {0};
-static   n2d_buffer_t src_buffer = {0};
+static n2d_buffer_t tmpbuffer[MAX_PIPE_NUM] = {0};
+static n2d_buffer_t dst_cropped[MAX_PIPE_NUM] = {0};
+static n2d_buffer_t dst_rotation[MAX_PIPE_NUM] = {0};
+static n2d_buffer_t src_buffer[MAX_PIPE_NUM] = {0};
 
 static int32_t total_pipeline_num = 0;
 static int32_t verbose_flag = 0;
 static int32_t used_mipi_host = 0;
 
 static int32_t running = 0;
-static uint32_t n2d_input_width = 0;
-static uint32_t n2d_input_height = 0;
+static uint32_t n2d_input_width[MAX_PIPE_NUM] = {0};
+static uint32_t n2d_input_height[MAX_PIPE_NUM] = {0};
 static uint32_t yuv_debug_enabled = 0;
 static uint32_t sensor_type = 0;
 static uint32_t link_port[MAX_PIPE_NUM] = {};
@@ -290,12 +291,11 @@ static int create_vin_node(pipe_contex_t *pipe_contex, int active_mipi_host, int
 
 	link_port[index] = vin_node_attr->cim_attr.vc_index;
 	printf("mipi rx = %d,active_mipi_host = %d \n\r" , hw_id,active_mipi_host);
-	if(pipe_contex->csi_config.mclk_is_not_configed){
+	if (pipe_contex->csi_config.mclk_is_not_configed) {
 		// 设备树中没有配置 mclk：使用外部晶振
 		printf("csi%d ignore mclk ex attr, because not config mclk.\n",
 				pipe_contex->csi_config.index);
-	}
-	else{
+	} else {
 		vin_attr_ex.vin_attr_ex_mask = 0x80;	//bit7 for mclk
 		vin_attr_ex.mclk_ex_attr.mclk_freq = 24000000; // 24MHz
 		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
@@ -384,7 +384,7 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	return 0;
 }
 
-static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
+static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index, int index) {
 	int ret = 0;
 	hbn_vnode_handle_t *vse_node_handle = &pipe_contex->vse_node_handle;
 	isp_ichn_attr_t isp_ichn_attr = {0};
@@ -423,8 +423,8 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	vse_ochn_attr[vse_bind_index].target_w = output_width;
 	vse_ochn_attr[vse_bind_index].target_h = output_height;
 
-	n2d_input_width = vse_ochn_attr[vse_bind_index].target_w;
-	n2d_input_height = vse_ochn_attr[vse_bind_index].target_h;
+	n2d_input_width[index] = vse_ochn_attr[vse_bind_index].target_w;
+	n2d_input_height[index] = vse_ochn_attr[vse_bind_index].target_h;
 
 	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, vse_node_handle);
 	ERR_CON_EQ(ret, 0);
@@ -449,7 +449,7 @@ static int create_vse_node(pipe_contex_t *pipe_contex, int vse_bind_index) {
 	return 0;
 }
 
-n2d_error_t rotation_sample(n2d_buffer_t *src, n2d_buffer_t *dst, n2d_orientation_t orientation)
+n2d_error_t rotation_sample(n2d_buffer_t *dst, n2d_buffer_t *src, n2d_orientation_t orientation)
 {
 	n2d_error_t error = N2D_SUCCESS;
 	src->orientation = N2D_0;
@@ -485,10 +485,10 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex,
 	int vin_isp_is_online = (pipe_contex->sensor_config->isp_attr->input_mode != DDR_MODE) ? 1 : 0;
 	uint32_t src_out_channel = 0;
 	uint32_t dst_input_channel = 0;
-	if(vin_isp_is_online){ /*vin->isp: online mode*/
+	if (vin_isp_is_online) { 		/* vin->isp: online mode */
 		src_out_channel = 1;
 		dst_input_channel = 0;
-	}else{ 				/* vin->isp: offline mode*/
+	} else { 				/* vin->isp: offline mode */
 		src_out_channel = 0;
 		dst_input_channel = 0;
 	}
@@ -500,45 +500,106 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex,
 	ERR_CON_EQ(ret, 0);
 	ret = create_isp_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
-	ret = create_vse_node(pipe_contex, vse_bind_index);
+	ret = create_vse_node(pipe_contex, vse_bind_index, index);
 	ERR_CON_EQ(ret, 0);
 
 	// 创建 HBN flow
 	ret = hbn_vflow_create(&pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
-							pipe_contex->vin_node_handle);
+	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd, pipe_contex->vin_node_handle);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
-							pipe_contex->isp_node_handle);
+	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd, pipe_contex->isp_node_handle);
 	ERR_CON_EQ(ret, 0);
-	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd,
-							pipe_contex->vse_node_handle);
+	ret = hbn_vflow_add_vnode(pipe_contex->vflow_fd, pipe_contex->vse_node_handle);
 	ERR_CON_EQ(ret, 0);
 
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							pipe_contex->vin_node_handle,
-							src_out_channel,
-							pipe_contex->isp_node_handle,
-							dst_input_channel);
+				   pipe_contex->vin_node_handle,
+				   src_out_channel,
+				   pipe_contex->isp_node_handle,
+				   dst_input_channel);
 	ERR_CON_EQ(ret, 0);
 
 	//多路实例：isp 固定 online 到 vse
 	ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
-							pipe_contex->isp_node_handle,
-							1,
-							pipe_contex->vse_node_handle,
-							0);
+				   pipe_contex->isp_node_handle,
+				   1,
+				   pipe_contex->vse_node_handle,
+				   0);
 	ERR_CON_EQ(ret, 0);
 
 	if(sensor_type != SENSOR_TYPE_NORMAL)
 	return 0;
 
-	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd,
-							pipe_contex->vin_node_handle);
+	ret = hbn_camera_attach_to_vin(pipe_contex->cam_fd, pipe_contex->vin_node_handle);
 	ERR_CON_EQ(ret, 0);
 	ret = hbn_vflow_start(pipe_contex->vflow_fd);
 	ERR_CON_EQ(ret, 0);
+
+	return 0;
+}
+
+/**
+ * 裁剪 ARGB 图像，去除多余像素
+ *
+ * @param dst_data      指向新的 ARGB 图像像素数据的指针（每像素 4 字节）
+ * @param src_data      指向原始 ARGB 图像像素数据的指针（每像素 4 字节）
+ * @param src_width     原始图像宽度（像素）
+ * @param src_height    原始图像高度（像素）
+ * @param left_strip    左侧要去除的像素数（例如 48）
+ * @param bottom_strip  底部要去除的像素数（例如 32）
+ *
+ * @return              成功 or 失败
+ */
+static int crop_argb_image(
+	unsigned char* dst_data,
+	const unsigned char* src_data,
+	int src_width,
+	int src_height,
+	int left_strip,
+	int bottom_strip)
+{
+	printf("src_width=%d src_height=%d left_strip=%d bottom_strip=%d \n",
+		src_width, src_height, left_strip, bottom_strip);
+
+	if (dst_data == NULL || src_data == NULL) {
+		printf("Error: dst_data/src_data is NULL\n");
+		return -1;
+	}
+	if (src_width <= 0 || src_height <= 0 || left_strip < 0 || bottom_strip < 0) {
+		printf("Error: invalid input size\n");
+		return -1;
+	}
+	if (left_strip >= src_width || bottom_strip >= src_height) {
+		printf("Error: strip exceeds image size\n");
+		return -1;
+	}
+
+	size_t new_width = (size_t)src_width - left_strip;
+	size_t new_height = (size_t)src_height - bottom_strip;
+	if (new_width == 0 || new_height == 0) {
+		printf("Error: cropped size is zero\n");
+		return -1;
+	}
+
+	const size_t pixel_size = 4;
+	const size_t src_row_bytes = (size_t)src_width * pixel_size;
+	const size_t new_row_bytes = new_width * pixel_size;
+
+	size_t max_src_offset = (new_height - 1) * src_row_bytes + (size_t)(left_strip + new_width) * pixel_size;
+	size_t src_total_size = (size_t)src_width * src_height * pixel_size;
+	if (max_src_offset > src_total_size) {
+		printf("Error: src memory out of bound (offset=%zu, total=%zu)\n", max_src_offset, src_total_size);
+		return -1;
+	}
+
+	// 逐行拷贝
+	for (size_t y = 0; y < new_height; y++) {
+		const unsigned char* src_row = src_data + (y * src_row_bytes) + (size_t)left_strip * pixel_size;
+		unsigned char* dst_row = dst_data + (y * new_row_bytes);
+
+		memcpy(dst_row, src_row, new_row_bytes);
+	}
 
 	return 0;
 }
@@ -547,7 +608,6 @@ void *encode_vse_chn_data(void *context)
 {
 	int ret = 0;
 	uint32_t count = 0;
-	char dst_file[128];
 
 	thread_args_t *args = (thread_args_t *)context;
 	pipeline_info_t *current_pipeline[total_pipeline_num];
@@ -556,7 +616,7 @@ void *encode_vse_chn_data(void *context)
 	}
 
 	hbn_vnode_image_t vse_chn_frame = {0};
-	hbn_vnode_image_t aligned_img = {0};
+	hbn_vnode_image_t aligned_img[MAX_PIPE_NUM] = {0};
 	bool need_align_copy = false;
 
 	n2d_error_t error = n2d_open();
@@ -568,29 +628,47 @@ void *encode_vse_chn_data(void *context)
 	N2D_ON_ERROR(n2d_switch_device(N2D_DEVICE_0));
 	N2D_ON_ERROR(n2d_switch_core(N2D_CORE_0));
 
-	uint32_t aligned_w = gcmALIGN(n2d_input_width, 64);
-	uint32_t aligned_h = n2d_input_height;
+	for (int index = 0; index < total_pipeline_num; index++) {
+		printf("index:%d w:%d h:%d\n", index, n2d_input_width[index], n2d_input_height[index]);
+		uint32_t aligned_w = gcmALIGN(n2d_input_width[index], 64);
+		uint32_t aligned_h = gcmALIGN(n2d_input_height[index], 64);
+		N2D_ON_ERROR(n2d_util_allocate_buffer(aligned_w, aligned_h, N2D_ARGB8888,
+			N2D_0, N2D_LINEAR, N2D_TSC_DISABLE, &tmpbuffer[index]));    // 转换为bmp后的buffer
+		N2D_ON_ERROR(n2d_util_allocate_buffer(aligned_h, aligned_w, N2D_ARGB8888,
+			N2D_0, N2D_LINEAR, N2D_TSC_DISABLE, &dst_rotation[index])); // 旋转90°后的buffer
+		N2D_ON_ERROR(n2d_util_allocate_buffer(n2d_input_height[index], n2d_input_width[index], N2D_ARGB8888,
+			N2D_0, N2D_LINEAR, N2D_TSC_DISABLE, &dst_cropped[index]));  // 裁剪后的buffer
 
-	N2D_ON_ERROR(n2d_util_allocate_buffer(aligned_w, aligned_h, N2D_ABGR8888,
-		N2D_0, N2D_LINEAR, N2D_TSC_DISABLE, &tmpbuffer));
-	N2D_ON_ERROR(n2d_util_allocate_buffer(aligned_w, aligned_h, N2D_BGRA8888,
-		N2D_0, N2D_LINEAR, N2D_TSC_DISABLE, &dst_rotation));
+		// ARGB8888格式buffer的stride是: ALIGN_UP(width, 32) * 4
+		// 考虑到裁剪后保存为bmp图片时用到stride, 这里stride配置为图片的实际值
+		dst_cropped[index].stride = dst_cropped[index].width * 4;
+
+		if (aligned_img[index].buffer.virt_addr[0] == NULL) { // yuv图片, 横竖64像素对齐
+			if (alloc_graphic_buffer(&aligned_img[index], ALIGN_UP(n2d_input_width[index], 64),
+				ALIGN_UP(n2d_input_height[index], 64), 1, MEM_PIX_FMT_NV12) < 0) {
+				printf("Failed to alloc 64B-aligned temp buffer!\n");
+			}
+		}
+
+		printf("index:%d input_w:%d, input_h:%d, aligned_w:%d, aligned_h:%d\n",
+			index, n2d_input_width[index], n2d_input_height[index], aligned_w, aligned_h);
+	}
 
 	printf("************ n2d read start *********\n");
 
 	while (running) {
 		for (int index = 0; index < total_pipeline_num; index++) {
-			ret = hbn_vnode_getframe(current_pipeline[index]->pipe_contexts.isp_node_handle,
+			ret = hbn_vnode_getframe(current_pipeline[index]->pipe_contexts.vse_node_handle,
 				args->pipeline_info[index]->gpu2d_channel, 2000, &vse_chn_frame);
+
 			if (ret != 0) {
 				printf("sensor_%s_hbn_vnode_getframe failed, error=%d\n",
 					current_pipeline[index]->output_file, ret);
 				continue;
 			}
-			if(yuv_debug_enabled) {
-
+			if (yuv_debug_enabled) {
 				char dst_file[128];
-				int len = snprintf(dst_file, sizeof(dst_file), "./%s_width:%d_height:%d_stride%d_frameid%d.yuv", \
+				int len = snprintf(dst_file, sizeof(dst_file), "./%s_width_%d_height_%d_stride%d_frameid%d.yuv", \
 					current_pipeline[index]->output_file, vse_chn_frame.buffer.width, \
 					vse_chn_frame.buffer.height,vse_chn_frame.buffer.stride, \
 					vse_chn_frame.info.frame_id);
@@ -598,6 +676,7 @@ void *encode_vse_chn_data(void *context)
 				if (len < 0 || len >= sizeof(dst_file)) {
 					fprintf(stderr, "Warning: Output truncated for file name: %s\n", dst_file);
 				}
+
 				dump_2plane_yuv_to_file(dst_file,
 					vse_chn_frame.buffer.virt_addr[0],
 					vse_chn_frame.buffer.virt_addr[1],
@@ -609,29 +688,18 @@ void *encode_vse_chn_data(void *context)
 			uint32_t width = vse_chn_frame.buffer.width;
 			uint32_t height = vse_chn_frame.buffer.height;
 
-			if (width % 64 != 0) {
+			if (width % 64 != 0 || height % 64 != 0) {
 				need_align_copy = true;
-
-				// 分配临时64字节对齐buffer
-				if (aligned_img.buffer.virt_addr[0] == NULL) {
-					if (alloc_graphic_buffer(&aligned_img, ALIGN_UP(width, 64),
-							height, 1, MEM_PIX_FMT_NV12) < 0) {
-						printf("Failed to alloc 64B-aligned temp buffer!\n");
-						hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.isp_node_handle,
-							args->pipeline_info[index]->gpu2d_channel, &vse_chn_frame);
-						continue;
-					}
-				}
 
 				uint8_t *src_y  = vse_chn_frame.buffer.virt_addr[0];
 				uint8_t *src_uv = vse_chn_frame.buffer.virt_addr[1];
-				uint8_t *dst_y  = aligned_img.buffer.virt_addr[0];
-				uint8_t *dst_uv = aligned_img.buffer.virt_addr[1];
+				uint8_t *dst_y  = aligned_img[index].buffer.virt_addr[0];
+				uint8_t *dst_uv = aligned_img[index].buffer.virt_addr[1];
 
 				uint32_t src_stride_y = vse_chn_frame.buffer.stride;
 				uint32_t src_stride_uv = vse_chn_frame.buffer.stride;
-				uint32_t dst_stride_y = aligned_img.buffer.stride;
-				uint32_t dst_stride_uv = aligned_img.buffer.stride;
+				uint32_t dst_stride_y = aligned_img[index].buffer.stride;
+				uint32_t dst_stride_uv = aligned_img[index].buffer.stride;
 
 				uint32_t copy_width_y = width;
 				uint32_t copy_width_uv = width;
@@ -648,8 +716,8 @@ void *encode_vse_chn_data(void *context)
 				need_align_copy = false;
 			}
 
-			hbn_vnode_image_t *input_img = need_align_copy ? &aligned_img : &vse_chn_frame;
-			error = create_n2d_buffer_from_hbm_graphic(&src_buffer, &input_img->buffer);
+			hbn_vnode_image_t *input_img = need_align_copy ? &aligned_img[index] : &vse_chn_frame;
+			error = create_n2d_buffer_from_hbm_graphic(&src_buffer[index], &input_img->buffer);
 			if (N2D_IS_ERROR(error)) {
 				printf("Error loading buffer from hb_mem, error=%d.\n", error);
 				hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.isp_node_handle,
@@ -657,56 +725,76 @@ void *encode_vse_chn_data(void *context)
 				continue;
 			}
 
-			// GPU2D处理
-			error = n2d_blit(&tmpbuffer, N2D_NULL, &src_buffer, N2D_NULL, N2D_BLEND_NONE);
+			// 格式转换
+			error = n2d_blit(&tmpbuffer[index], N2D_NULL, &src_buffer[index], N2D_NULL, N2D_BLEND_NONE);
 			if (N2D_IS_ERROR(error)) {
 				printf("Blit error, error=%d.\n", error);
 				goto on_error;
 			}
 			N2D_ON_ERROR(n2d_commit());
 
-			if (N2D_IS_ERROR(error)) {
-				printf("Save file failed! error=%d.\n", error);
-			} else {
-				printf("Saved GPU2D output: %s\n", dst_file);
-			}
-
 			// 旋转操作
-			error = rotation_sample(&tmpbuffer, &dst_rotation, N2D_90);
+			error = rotation_sample(&dst_rotation[index], &tmpbuffer[index], N2D_90);
 			if (N2D_IS_ERROR(error)) {
 				printf("Rotation failed! error=%d.\n", error);
 				goto on_free_src;
 			}
 
 			char dst_file[128];
-			int len = snprintf(dst_file, sizeof(dst_file), "./%s_width:%d_height:%d_stride%d_frameid%d.bmp", current_pipeline[index]->output_file, vse_chn_frame.buffer.width,
-			vse_chn_frame.buffer.height,vse_chn_frame.buffer.stride,
-			vse_chn_frame.info.frame_id);
+			int len = snprintf(dst_file, sizeof(dst_file), "./%s_width_%d_height_%d_stride%d_frameid%d.bmp",
+					   current_pipeline[index]->output_file, vse_chn_frame.buffer.width,
+					   vse_chn_frame.buffer.height,vse_chn_frame.buffer.stride,
+					   vse_chn_frame.info.frame_id);
+
 			if (len < 0 || len >= sizeof(dst_file)) {
 				fprintf(stderr, "Warning: Output truncated for file name: %s\n", dst_file);
 			}
 
-			error = n2d_util_save_buffer_to_file(&dst_rotation, dst_file);
+			if (need_align_copy == true) {
+				uint32_t original_w = vse_chn_frame.buffer.width;
+				uint32_t original_h = vse_chn_frame.buffer.height;
+
+				uint32_t rotate_valid_w = original_h;
+				uint32_t rotate_valid_h = original_w;
+
+				// 裁掉多余像素
+				crop_argb_image(dst_cropped[index].memory,
+						dst_rotation[index].memory,
+						dst_rotation[index].width,
+						dst_rotation[index].height,
+						dst_rotation[index].width  - rotate_valid_w,
+						dst_rotation[index].height - rotate_valid_h);
+
+				error = n2d_util_save_buffer_to_file(&dst_cropped[index], dst_file);
+			} else {
+				error = n2d_util_save_buffer_to_file(&dst_rotation[index], dst_file);
+			}
+
 			if (N2D_IS_ERROR(error)) {
 				printf("Save rotation failed! error=%d.\n", error);
 			} else {
 				printf("Saved rotation file to [%s].\n", dst_file);
 			}
 
-			hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.isp_node_handle,
+			hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.vse_node_handle,
 				args->pipeline_info[index]->gpu2d_channel, &vse_chn_frame);
-			N2D_ON_ERROR(n2d_free(&src_buffer));
+			N2D_ON_ERROR(n2d_free(&src_buffer[index]));
 		}
 		count++;
 	}
 
 on_free_src:
 on_error:
-	N2D_ON_ERROR(n2d_free(&tmpbuffer));
-	N2D_ON_ERROR(n2d_free(&dst_rotation));
-	if (aligned_img.buffer.virt_addr[0]) {
-		hb_mem_free_buf(aligned_img.buffer.fd[0]);
+	for (int index = 0; index < total_pipeline_num; index++) {
+		N2D_ON_ERROR(n2d_free(&tmpbuffer[index]));
+		N2D_ON_ERROR(n2d_free(&dst_cropped[index]));
+		N2D_ON_ERROR(n2d_free(&dst_rotation[index]));
+
+		if (aligned_img[index].buffer.virt_addr[0]) {
+			hb_mem_free_buf(aligned_img[index].buffer.fd[0]);
+		}
 	}
+
 	error = n2d_close();
 	if (N2D_IS_ERROR(error)) {
 		printf("Close context failed! error=%d.\n", error);
@@ -714,8 +802,7 @@ on_error:
 	return NULL;
 }
 
-static int check_sensor_config_valid(pipeline_info_t *pipeline_info, int total_pipeline_num){
-
+static int check_sensor_config_valid(pipeline_info_t *pipeline_info, int total_pipeline_num) {
 	printf("\n");
 	for (int i = 0; i < total_pipeline_num; i++){
 		vp_sensor_config_t *sensor_config_ptr = pipeline_info[i].pipe_contexts.sensor_config;
@@ -756,7 +843,8 @@ static int check_sensor_config_valid(pipeline_info_t *pipeline_info, int total_p
 	return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv)
+{
 	int ret = 0;
 	int c = 0;
 	int index = -1;
@@ -822,7 +910,7 @@ int main(int argc, char** argv) {
 	hb_mem_module_open();
 	ERR_CON_EQ(ret, 0);
 	for (index = 0; index < total_pipeline_num; index++) {
-		ret = create_and_run_vflow(&args->pipeline_info[index]->pipe_contexts,args->pipeline_info[index]->active_mipi_host,
+		ret = create_and_run_vflow(&args->pipeline_info[index]->pipe_contexts, args->pipeline_info[index]->active_mipi_host,
 				args->pipeline_info[index]->gpu2d_channel, index);
 		if (ret != 0) {
 			for (int j = 0; j < index; j++) {

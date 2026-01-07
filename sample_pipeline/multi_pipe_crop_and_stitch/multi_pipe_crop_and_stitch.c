@@ -1220,6 +1220,8 @@ void *send_to_hdmi_display(void *context){
 			}
 			performance_test_stop(&performace_test_param_for_hdmi);
 		}else{
+			((hb_mem_graphic_buf_t*)data_item->items)->stride = ((hb_mem_graphic_buf_t*)data_item->items)->width;
+			((hb_mem_graphic_buf_t*)data_item->items)->vstride = ((hb_mem_graphic_buf_t*)data_item->items)->height;
 			performance_test_start(&performace_test_param_for_hdmi);
 			ret = vp_display_set_frame(&multi_pipe_stitch_info->vp_drm_context, (hb_mem_graphic_buf_t*)data_item->items);
 			if(ret != 0){
@@ -1660,6 +1662,7 @@ int pipeline_start(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 			printf("hdmi not found appropriate resolution\n");
 			return -1;
 		}
+		multi_pipe_stitch_info->vp_drm_context.bt1120 = true;
 		ret = vp_display_init(&multi_pipe_stitch_info->vp_drm_context,
 			multi_pipe_stitch_info->hdmi_output_width, multi_pipe_stitch_info->hdmi_output_height);
 		if(ret != 0){

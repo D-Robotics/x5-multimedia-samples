@@ -98,6 +98,7 @@ typedef struct
 	int busy_warn_threshold;
 
 	int log_level;    /* 新增字段，控制日志等级 */
+	bool bt1120;
 } vp_drm_context_t;
 
 int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height);

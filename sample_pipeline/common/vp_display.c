@@ -335,10 +335,11 @@ static drmModeConnector* find_connector(int fd)
 	return conn; // Will return NULL if no suitable connector was found
 }
 
-static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t height)
+static void drm_init_config(vp_drm_context_t *drm_ctx,
+							int32_t width, int32_t height, uint32_t plane_id, uint32_t crtc_id)
 {
 	memset(drm_ctx, 0, sizeof(vp_drm_context_t));
-	drm_ctx->crtc_id = 31; //63
+	drm_ctx->crtc_id = crtc_id;
 	drm_ctx->connector_id = 75;
 	drm_ctx->width = width;
 	drm_ctx->height = height;
@@ -347,7 +348,7 @@ static void drm_init_config(vp_drm_context_t *drm_ctx, int32_t width, int32_t he
 
 	for (int i = 0; i < drm_ctx->plane_count; i++)
 	{
-		drm_ctx->planes[i].plane_id = 33; //64
+		drm_ctx->planes[i].plane_id = plane_id;
 		drm_ctx->planes[i].src_w = width;
 		drm_ctx->planes[i].src_h = height;
 		drm_ctx->planes[i].crtc_x = 0;
@@ -535,7 +536,11 @@ int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height
 	drmModeConnectorPtr connector = NULL;
 
 	VP_LOG(drm_ctx, VP_LOG_LEVEL_INFO, "Initializing DRM display...\n");
-	drm_init_config(drm_ctx, width, height);
+
+	if (drm_ctx->bt1120)
+		drm_init_config(drm_ctx, width, height, 64, 63); //bt1120
+	else
+		drm_init_config(drm_ctx, width, height, 33, 31); //dc8000
 
 	drm_ctx->front_fb_id = 0;
 	drm_ctx->back_fb_id = 0;

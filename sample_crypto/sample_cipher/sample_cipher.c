@@ -9,6 +9,11 @@
 #include <openssl/aes.h>
 #include <openssl/rand.h>
 #include <openssl/evp.h>
+#include <openssl/err.h>
+#include <openssl/opensslv.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/provider.h>
+#endif
 
 typedef const EVP_CIPHER *(*EVP_GET_CIPHER)(void);
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
@@ -188,28 +193,43 @@ int main(int argc, char** argv)
 	unsigned char decryptedtext[128] = {0};
 	snprintf((char *)plaintext, 128, "Test message for encryption, Cipher[%s], KeySize[%d]", cipher_test_item->cipher_name, key_size);
 
+	// printf("OpenSSL version: %s\n", OpenSSL_version(OPENSSL_VERSION));
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	OSSL_PROVIDER *legacy = OSSL_PROVIDER_load(NULL, "legacy");
+	OSSL_PROVIDER *def = OSSL_PROVIDER_load(NULL, "default");
+	if (legacy == NULL || def == NULL) {
+		fprintf(stderr, "Failed to load legacy or default provider\n");
+		ERR_print_errors_fp(stderr);
+		goto sample_cipher_out;
+	}
+#endif
+
 	// Initialize the EVP context
 	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
 	if (!ctx) {
 		printf("EVP_CIPHER_CTX_new() failed.\n");
-		return 0;
+		goto sample_cipher_out;
 	}
 
 	// Encryption
 	if (1 != EVP_EncryptInit_ex(ctx, cipher, NULL, key, iv)) {
 		printf("EVP_EncryptInit_ex failed\n");
-		return 0;
+		ERR_print_errors_fp(stderr);
+		goto sample_cipher_out;
 	}
 
 	if (1 != EVP_EncryptUpdate(ctx, ciphertext, &len, plaintext, strlen((char *)plaintext))) {
 		printf("EVP_EncryptUpdate failed\n");
-		return 0;
+		ERR_print_errors_fp(stderr);
+		goto sample_cipher_out;
 	}
 	ciphertext_len = len;
 
 	if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) {
 		printf("EVP_EncryptFinal_ex failed\n");
-		return 0;
+		ERR_print_errors_fp(stderr);
+		goto sample_cipher_out;
 	}
 	ciphertext_len += len;
 
@@ -223,18 +243,21 @@ int main(int argc, char** argv)
 	EVP_CIPHER_CTX_reset(ctx);
 	if (1 != EVP_DecryptInit_ex(ctx, cipher, NULL, key, iv)) {
 		printf("EVP_DecryptInit_ex failed\n");
-		return 0;
+		ERR_print_errors_fp(stderr);
+		goto sample_cipher_out;
 	}
 
 	if (1 != EVP_DecryptUpdate(ctx, decryptedtext, &len, ciphertext, ciphertext_len)) {
 		printf("EVP_DecryptUpdate failed\n");
-		return 0;
+		ERR_print_errors_fp(stderr);
+		goto sample_cipher_out;
 	}
 	decryptedtext_len = len;
 
 	if (1 != EVP_DecryptFinal_ex(ctx, decryptedtext + len, &len)) {
 		printf("EVP_DecryptFinal_ex failed\n");
-		return 0;
+		ERR_print_errors_fp(stderr);
+		goto sample_cipher_out;
 	}
 	decryptedtext_len += len;
 
@@ -242,8 +265,20 @@ int main(int argc, char** argv)
 
 	printf("Decrypted text: %s\n", decryptedtext);
 
+sample_cipher_out:
 	// Clean up
-	EVP_CIPHER_CTX_free(ctx);
+	if (ctx)
+		EVP_CIPHER_CTX_free(ctx);
+
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	if (legacy)
+		OSSL_PROVIDER_unload(legacy);
+	if (def)
+		OSSL_PROVIDER_unload(def);
+#endif
+
+	if (key)
+		free(key);
 
 	return 0;
 }

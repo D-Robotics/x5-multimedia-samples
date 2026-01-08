@@ -8,7 +8,7 @@ SRCS := $(wildcard *.c)
 OBJS :=  $(SRCS:.c=.o)
 
 # -lssl
-LIBS += -lcrypto
+LIBS += -lcrypto -lssl
 INCS += -I../../../../../out/deploy/system/usr/include/
 
 .PHONY: all clean install

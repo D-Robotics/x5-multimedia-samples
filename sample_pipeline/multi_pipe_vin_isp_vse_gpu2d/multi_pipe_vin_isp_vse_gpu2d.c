@@ -666,6 +666,7 @@ void *encode_vse_chn_data(void *context)
 					current_pipeline[index]->output_file, ret);
 				continue;
 			}
+
 			if (yuv_debug_enabled) {
 				char dst_file[128];
 				int len = snprintf(dst_file, sizeof(dst_file), "./%s_width_%d_height_%d_stride%d_frameid%d.yuv", \
@@ -711,6 +712,12 @@ void *encode_vse_chn_data(void *context)
 				}
 				for (uint32_t h = 0; h < copy_height_uv; h++) {
 					memcpy(dst_uv + h * dst_stride_uv, src_uv + h * src_stride_uv, copy_width_uv);
+				}
+
+				// 确保Cache数据到DDR
+				for (int j = 0; j < 2; ++j) {
+					hb_mem_flush_buf_with_vaddr((uint64_t)aligned_img[index].buffer.virt_addr[j],
+						aligned_img[index].buffer.size[j]);
 				}
 			} else {
 				need_align_copy = false;

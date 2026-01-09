@@ -502,7 +502,7 @@ static int32_t get_rc_params(media_codec_context_t *context,
 		rc_params->h264_cbr_params.bit_rate = 5000;
 		rc_params->h264_cbr_params.frame_rate = 30;
 		rc_params->h264_cbr_params.initial_rc_qp = 20;
-		rc_params->h264_cbr_params.vbv_buffer_size = 20;
+		rc_params->h264_cbr_params.vbv_buffer_size = 3000;
 		rc_params->h264_cbr_params.mb_level_rc_enalbe = 1;
 		rc_params->h264_cbr_params.min_qp_I = 8;
 		rc_params->h264_cbr_params.max_qp_I = 50;

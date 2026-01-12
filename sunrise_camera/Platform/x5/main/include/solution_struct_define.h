@@ -334,12 +334,27 @@ typedef struct {
 	solution_display_param_check_single_t dispaly_info[SOLUTION_MAX_DISPLAY_COUNT];
 }solution_display_param_check_info_t;
 
+typedef struct {
+	int input_width;
+	int input_height;
+	char sensor_name[128];
+
+	int model_width;
+	int model_height;
+	char model_name[128];
+}solution_bpu_param_check_single_t;
+typedef struct {
+	int not_match_count;
+	solution_bpu_param_check_single_t bpu_info[SOLUTION_MAX_PIPELINE_COUNT];
+}solution_bpu_param_check_info_t;
+
 typedef struct{
 	char *param;
 	int ion_lack;
 	float vpu_lack; //单位: 1080P30
 	solution_decode_param_check_info_t decode_param_check_info;
 	solution_display_param_check_info_t display_param_check_info;
+	solution_bpu_param_check_info_t bpu_param_check_info;
 }solution_check_info_t;
 ////////////////////////////////////////////////////////////////////
 

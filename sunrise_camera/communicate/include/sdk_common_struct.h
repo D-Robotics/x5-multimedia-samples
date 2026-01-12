@@ -772,6 +772,22 @@ typedef struct {
 	T_SDK_DISPLAY_PARAM_CHECK_SINGLE_INFO display_params[SDK_MAX_DISPLAY_COUNT];
 } T_SDK_DISPLAY_PARAM_CHECK_INFO;
 
+typedef struct {
+	int input_width;
+	int input_height;
+	char sensor_name[128];
+
+	int model_width;
+	int model_height;
+	char model_name[128];
+}T_SDK_BPU_PARAM_CHECK_SINGLE_INFO;
+
+#define SDK_MAX_PIPELINE_COUNT (32)
+typedef struct {
+	int not_match_count;
+	T_SDK_BPU_PARAM_CHECK_SINGLE_INFO params[SDK_MAX_PIPELINE_COUNT];
+}T_SDK_BPU_PARAM_CHECK_INFO;
+
 typedef struct
 {
 	char *param;
@@ -779,6 +795,7 @@ typedef struct
 	float vpu_lack;
 	T_SDK_DECODE_PARAM_CHECK_INFO decode_param_check_info;
 	T_SDK_DISPLAY_PARAM_CHECK_INFO display_param_check_info;
+	T_SDK_BPU_PARAM_CHECK_INFO bpu_param_check_info;
 }T_SDK_CHECK_INFO;
 
 #define SDK_JSON_PARAM_MAX_LEN 1024

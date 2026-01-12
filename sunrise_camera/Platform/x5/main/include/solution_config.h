@@ -101,6 +101,8 @@ int32_t solution_cfg_parser_display_param(const char *param_str, int32_t *width,
 
 int32_t solution_bpu_param_get(solution_cfg_t *solution_cfg, solution_bpu_param_info_t *param_info);
 
+int32_t solution_bpu_param_get(solution_cfg_t *solution_cfg, solution_bpu_param_info_t *param_info);
+
 extern int32_t g_solution_cfg_is_load;
 extern solution_cfg_t g_solution_config;
 

@@ -64,6 +64,7 @@ static uint32_t n2d_input_height[MAX_PIPE_NUM] = {0};
 static uint32_t yuv_debug_enabled = 0;
 static uint32_t sensor_type = 0;
 static uint32_t link_port[MAX_PIPE_NUM] = {};
+static pipeline_info_t pipeline_info[MAX_PIPE_NUM] = {0};
 
 void *read_vse_data(void *contex);
 int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
@@ -80,12 +81,11 @@ static struct option const long_options[] = {
 static void print_helpcat(void) {
 	printf("Usage: %s [Options]\n", get_program_name());
 	printf("Options:\n");
-	printf("-c, --config=\"sensor=id output=FILE\"\n");
+	printf("-c, --config=\"sensor=id\"\n");
 	printf("\t\tConfigure parameters for each video pipeline, can be repeated up to %d times.\n", MAX_PIPE_NUM);
 	printf("\t\tsensor   --  Sensor index,can have multiple parameters, reference sensor list.\n");
-	printf("\t\toutput   --  Save bmp data to file.\n");
 	printf("-v, --verbose\tEnable verbose mode\n");
-	printf("-y, --enable yuv-debug\n");
+	printf("-y, --enable\tSave yuv file\n");
 	printf("-h, --help\tShow help message\n");
 	printf("Support sensor list:\n");
 	vp_show_sensors_list();
@@ -170,10 +170,6 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 				pipeline_info->active_mipi_host = pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx;
 				used_mipi_host |= (1 << pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx);
 			}
-		}
-		else if (strcmp(key_value[0], "output") == 0) {
-			strncpy(pipeline_info->output_file, key_value[1], sizeof(pipeline_info->output_file) - 1);
-			pipeline_info->output_file[sizeof(pipeline_info->output_file) - 1] = '\0';
 		} else {
 			fprintf(stderr, "Unknown key: %s\n", key_value[0]);
 		}
@@ -671,10 +667,12 @@ void *encode_vse_chn_data(void *context)
 
 			if (yuv_debug_enabled) {
 				char dst_file[128];
-				int len = snprintf(dst_file, sizeof(dst_file), "./%s_width_%d_height_%d_stride%d_frameid%d.yuv", \
-					current_pipeline[index]->output_file, vse_chn_frame.buffer.width, \
-					vse_chn_frame.buffer.height,vse_chn_frame.buffer.stride, \
-					vse_chn_frame.info.frame_id);
+				int len = snprintf(dst_file, sizeof(dst_file), "./%s_%dx%d_frameid%d_ts_%ld.yuv",
+						   pipeline_info[index].pipe_contexts.sensor_config->sensor_name,
+						   vse_chn_frame.buffer.width,
+						   vse_chn_frame.buffer.height,
+						   vse_chn_frame.info.frame_id,
+						   vse_chn_frame.info.timestamps);
 
 				if (len < 0 || len >= sizeof(dst_file)) {
 					fprintf(stderr, "Warning: Output truncated for file name: %s\n", dst_file);
@@ -754,10 +752,12 @@ void *encode_vse_chn_data(void *context)
 			}
 
 			char dst_file[128];
-			int len = snprintf(dst_file, sizeof(dst_file), "./%s_width_%d_height_%d_stride%d_frameid%d.bmp",
-					   current_pipeline[index]->output_file, vse_chn_frame.buffer.width,
-					   vse_chn_frame.buffer.height,vse_chn_frame.buffer.stride,
-					   vse_chn_frame.info.frame_id);
+			int len = snprintf(dst_file, sizeof(dst_file), "./%s_%dx%d_rotated_frameid%d_ts_%ld.bmp",
+					   pipeline_info[index].pipe_contexts.sensor_config->sensor_name,
+					   vse_chn_frame.buffer.height,
+					   vse_chn_frame.buffer.width,
+					   vse_chn_frame.info.frame_id,
+					   vse_chn_frame.info.timestamps);
 
 			if (len < 0 || len >= sizeof(dst_file)) {
 				fprintf(stderr, "Warning: Output truncated for file name: %s\n", dst_file);
@@ -863,7 +863,6 @@ int main(int argc, char** argv)
 	int index = -1;
 
 	thread_args_t *args = malloc(sizeof(thread_args_t));
-	pipeline_info_t pipeline_info[MAX_PIPE_NUM] = {0}; // 第一个结构体
 
 	if (argc <= 1) {
 		print_helpcat();

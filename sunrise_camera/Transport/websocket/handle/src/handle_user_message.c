@@ -209,6 +209,21 @@ void handle_error_respose_msg(char *ws_msg, int ws_msg_len, T_SDK_CHECK_INFO *ch
 			return;
 		}
 		snprintf(ws_msg + offset, ws_msg_len - offset, ",\"solution_configs\": %s}", config_str);
+	}else if(check_info->bpu_param_check_info.not_match_count != 0){
+		int offset = snprintf(ws_msg, ws_msg_len, "{\"kind\":1,\"app_status\": \"配置失败:  Camera 分辨率无法通过 VSE 放大/缩小到模型分辨率, 点击确定恢复配置 \",");
+		offset += snprintf(ws_msg + offset, ws_msg_len - offset, "\"detailed\": [");
+		for (int i = 0; i < check_info->bpu_param_check_info.not_match_count; i++) {
+			T_SDK_BPU_PARAM_CHECK_SINGLE_INFO *bpu_param_info = &check_info->bpu_param_check_info.params[i];
+			offset += snprintf(ws_msg + offset, ws_msg_len - offset,
+									   "\"[Camera(%s)分辨率%d*%d] -----> [模型(%s)分辨率 %d*%d] \"",
+					bpu_param_info->sensor_name, bpu_param_info->input_width, bpu_param_info->input_height,
+					bpu_param_info->model_name, bpu_param_info->model_width, bpu_param_info->model_height);
+			if (i < check_info->decode_param_check_info.not_match_count - 1) {
+				offset += snprintf(ws_msg + offset, ws_msg_len - offset, ",");
+			}
+		}
+		offset += snprintf(ws_msg + offset, ws_msg_len - offset, "]");
+		snprintf(ws_msg + offset, ws_msg_len - offset, ",\"solution_configs\": %s}", config_str);
 	}
 	else{
 		SC_LOGE("should not run here.");
@@ -265,19 +280,20 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			check_info.display_param_check_info.not_match_count = 0;
 			SDK_Cmd_Impl(SDK_CMD_VPP_CHECK_SOLUTION_CONFIG, (void *)&check_info);
 
-			SC_LOGW("sizeof(T_SDK_CHECK_INFO): %d check_info.display_param_check_info.not_match_count:%d\n", 
+			SC_LOGW("sizeof(T_SDK_CHECK_INFO): %d check_info.display_param_check_info.not_match_count:%d\n",
 					sizeof(T_SDK_CHECK_INFO), check_info.display_param_check_info.not_match_count);
 			if((check_info.ion_lack != 0) ||
 				(check_info.vpu_lack != 0.0) ||
 				(check_info.decode_param_check_info.not_match_count != 0) ||
-				(check_info.display_param_check_info.not_match_count != 0)){
+				(check_info.display_param_check_info.not_match_count != 0) ||
+				(check_info.bpu_param_check_info.not_match_count != 0)){
 				// 2. 不更新配置结构体（上传错误信息）
 				check_param_is_error = 1;
 				SC_LOGW("solution param check failed: [ion_lack:%d] [vpu_lack:%f]\
-					[decode param error count %d] [display param error count %d], so ignore this config.",
+					[decode param error count %d] [display param error count %d] [bpu param error count %d], so ignore this config.",
 					check_info.ion_lack, check_info.vpu_lack,
 					check_info.decode_param_check_info.not_match_count,
-					check_info.display_param_check_info.not_match_count);
+					check_info.bpu_param_check_info.not_match_count);
 			}else{
 				// 2. 更新配置结构体
 				SC_LOGI("================= SET VPP SOLUTION ====================");

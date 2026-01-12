@@ -320,6 +320,45 @@ int parser_display_param(char *param_str, int *width, int *height, float *fps, i
 
 	return 0;
 }
+int32_t solution_bpu_param_get(solution_cfg_t *solution_cfg, solution_bpu_param_info_t *param_info){
+	int ret = 0;
+
+	param_info->valid_count = 0;
+	for (int i = 0; i < STL_MAX_VPP_CAM_NUM; i++){
+
+		solution_cfg_cam_vpp_t *cfg_cam = &solution_cfg->cam_solution.cam_vpp[i];
+		if((cfg_cam->is_valid == 0) || (cfg_cam->is_enable == 0)){
+			continue;
+		}
+
+		if (strlen(cfg_cam->model) <= 0 || strcmp(cfg_cam->model, "null") == 0) {
+			continue;
+		}
+		bpu_model_user_info_t bpu_model_info;
+		ret = bpu_wrap_get_model_user_info(cfg_cam->model, &bpu_model_info);
+		if(ret != 0){
+			printf("Error: get model user info failed, for model %s \n", cfg_cam->model);
+			continue;
+		}
+		vp_sensor_config_t *sensor_config = vp_get_sensor_config_by_name(cfg_cam->sensor);
+		if(sensor_config == NULL){
+			printf("Error: vp_get_sensor_config_by_name failed, for sensor %s \n", cfg_cam->sensor);
+			continue;
+		}
+		solution_bpu_param_single_t *param_single = &param_info->params[param_info->valid_count];
+		param_single->pipeline_id = i;
+		param_single->input_width = sensor_config->camera_config->width;
+		param_single->input_height = sensor_config->camera_config->height;
+		strcpy(param_single->sensor_name, cfg_cam->sensor);
+
+		param_single->model_width = bpu_model_info.input_width;
+		param_single->model_height = bpu_model_info.input_height;
+		strcpy(param_single->model_name, cfg_cam->model);
+
+		param_info->valid_count++;
+	}
+	return 0;
+}
 int32_t solution_cam_display_param_get(solution_cfg_t *solution_cfg, solution_display_param_info_t *param_info){
 	int ret = 0;
 	param_info->valid_count = 0;

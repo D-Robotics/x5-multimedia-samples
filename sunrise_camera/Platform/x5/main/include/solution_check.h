@@ -73,7 +73,25 @@ typedef struct {
 	int valid_count;
 	solution_display_param_single_t params[SOLUTION_MAX_DISPLAY_COUNT];
 }solution_display_param_info_t;
-
 void solution_check_display_param_is_match(solution_display_param_info_t* decode_param,
 	solution_display_param_check_info_t *check_result);
+
+typedef struct {
+	int pipeline_id;
+	int input_width;
+	int input_height;
+	char sensor_name[128];
+
+	int model_width;
+	int model_height;
+	char model_name[128];
+}solution_bpu_param_single_t;
+
+typedef struct {
+	int valid_count;
+	solution_bpu_param_single_t params[SOLUTION_MAX_DISPLAY_COUNT];
+}solution_bpu_param_info_t;
+
+void solution_check_bpu_param_is_match(solution_bpu_param_info_t* bpu_param,
+	solution_bpu_param_check_info_t *check_result);
 #endif

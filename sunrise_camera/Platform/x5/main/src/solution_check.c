@@ -261,3 +261,25 @@ void solution_check_display_param_is_match(solution_display_param_info_t* displa
 		}
 	}
 }
+
+void solution_check_bpu_param_is_match(solution_bpu_param_info_t* bpu_param,
+										   solution_bpu_param_check_info_t *check_result){
+	check_result->not_match_count = 0;
+	for (int i = 0; i < bpu_param->valid_count; i++){
+		solution_bpu_param_single_t *param_single = &bpu_param->params[i];
+		if(((param_single->input_width < param_single->model_width)
+			&& (param_single->input_height > param_single->model_height))
+			|| ((param_single->input_width > param_single->model_width)
+			&& (param_single->input_height < param_single->model_height))){
+				solution_bpu_param_check_single_t *check_single = &check_result->bpu_info[check_result->not_match_count];
+				check_single->input_width = param_single->input_width;
+				check_single->input_height = param_single->input_height;
+				strcpy(check_single->sensor_name, param_single->sensor_name);
+
+				check_single->model_width = param_single->model_width;
+				check_single->model_height = param_single->model_height;
+				strcpy(check_single->model_name, param_single->model_name);
+				check_result->not_match_count++;
+			}
+	}
+}

@@ -228,6 +228,16 @@ int solution_handle_check_config(solution_check_info_t *check_info){
 		// printf("solution_check_display_param_is_match: %d sizeof(solution_check_info_t):%ld\n",
 		// 		check_info->display_param_check_info.not_match_count, sizeof(solution_check_info_t));
 	}
+	//检测 BPU 模型分辨率 与 Sensor 分辨率是否匹配
+	if (strcmp(solution_cfg.solution_name, "cam_solution") == 0){
+		solution_bpu_param_info_t param_info;
+		int ret = solution_bpu_param_get(&solution_cfg, &param_info);
+		if(ret != 0){
+			SC_LOGE("solution_bpu_param_get failed!");
+			return -1;
+		}
+		solution_check_bpu_param_is_match(&param_info, &check_info->bpu_param_check_info);
+	}
 	return 0;
 }
 

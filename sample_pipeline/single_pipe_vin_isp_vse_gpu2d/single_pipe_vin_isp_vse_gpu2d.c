@@ -122,8 +122,8 @@ static void show_help() {
 	printf("Usage: single_pipe_vin_isp_vse_gpu2d [options]\n");
 	printf("Options:\n");
 	printf("  -s \"sensor=index\"            Select sensor index to use\n");
-	printf("  -m, --mode <sensor_mode>       Select sensor mode (1:NORMAL_M, 2:DOL2_M, 6:SLAVE_M)\n");
-	printf("  -h, --help                     Show this help message\n\n");
+	printf("  -v, --verbose                  Enable verbose mode\n");
+	printf("  -h, --help                     Show this help message\n");
 	printf("Available sensors:\n");
 	vp_show_sensors_list();
 }
@@ -546,8 +546,11 @@ static int set_n2d_crop_region(pipe_contex_t *pipe_contex,
 		return ret;
 	}
 
-	printf("GPU2D crop region updated: x=%d, y=%d, w=%d, h=%d\n",
-		crop_x, crop_y, crop_w, crop_h);
+	if (verbose_flag) {
+		printf("GPU2D crop region updated: x=%d, y=%d, w=%d, h=%d\n",
+			crop_x, crop_y, crop_w, crop_h);
+	}
+
 	return 0;
 }
 
@@ -668,8 +671,10 @@ void *producer_thread(void *context) {
 					}
 					set_n2d_crop_region_safe(p, crop_x, crop_y, crop_w, crop_h);
 
-					printf("Adjusted crop region for pipeline %d: x=%d, y=%d, w=%d, h=%d\n",
-						i, crop_x, crop_y, crop_w, crop_h);
+					if (verbose_flag) {
+						printf("Adjusted crop region for pipeline %d: x=%d, y=%d, w=%d, h=%d\n",
+							i, crop_x, crop_y, crop_w, crop_h);
+					}
 				}
 			} else {
 				p->stats.drop_count++;
@@ -703,7 +708,10 @@ void *consumer_thread(void *context) {
 			printf("Saved frame to %s ok\n", dst_file);
 		}
 
-		printf("Received frame %d, frame_id: %d\n", count, out_img.info.frame_id);
+		if (verbose_flag) {
+			printf("Received frame %d, frame_id: %d\n", count, out_img.info.frame_id);
+		}
+
 		count++;
 	}
 	return NULL;
@@ -734,7 +742,7 @@ int main(int argc, char** argv) {
 			break;
 		case 'v':
 			verbose_flag = 1;
-		break;
+			break;
 		case 'h':
 		default:
 			show_help();

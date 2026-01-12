@@ -559,8 +559,10 @@ static int crop_argb_image(
 	int left_strip,
 	int bottom_strip)
 {
-	printf("src_width=%d src_height=%d left_strip=%d bottom_strip=%d \n",
-		src_width, src_height, left_strip, bottom_strip);
+	if (verbose_flag) {
+		printf("src_width=%d src_height=%d left_strip=%d bottom_strip=%d\n",
+			src_width, src_height, left_strip, bottom_strip);
+	}
 
 	if (dst_data == NULL || src_data == NULL) {
 		printf("Error: dst_data/src_data is NULL\n");
@@ -721,6 +723,10 @@ void *encode_vse_chn_data(void *context)
 				}
 			} else {
 				need_align_copy = false;
+			}
+
+			if (verbose_flag) {
+				printf("need_align_copy:%s\n", need_align_copy ? "true" : "false");
 			}
 
 			hbn_vnode_image_t *input_img = need_align_copy ? &aligned_img[index] : &vse_chn_frame;

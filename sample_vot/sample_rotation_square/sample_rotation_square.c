@@ -29,6 +29,9 @@
 
 #define DRM_MAX_PLANES 3
 
+#define RGB_DEF_WIDTH  1920
+#define RGB_DEF_HEIGHT 1080
+
 typedef struct param_config_s{
 	int width;
 	int height;
@@ -214,9 +217,11 @@ static drmModeModeInfo *__get_valid_mode_from_connector(drmModeConnector* conn, 
 		printf("display connector connector not found mode info.\n");
 		return mode;
 	}else{
-		if((width == -1) || (height == -1)){
-			return &conn->modes[0];;
+		if ((width == -1) || (height == -1)) {
+			width  = RGB_DEF_WIDTH;
+			height = RGB_DEF_HEIGHT;
 		}
+
 		for (int i = 0; i < conn->count_modes; i++){
 
 			if((conn->modes[i].hdisplay == width) &&

@@ -31,6 +31,12 @@
 #define RESOURCE_FILE_WIDTH 1920
 #define RESOURCE_FILE_HEIGHT 1080
 #define RESOURCE_FILE_PATH "../resource/nv12_1920x1080.yuv"
+
+#define RGB_DEF_WIDTH  1920
+#define RGB_DEF_HEIGHT 1080
+#define RGB_MAX_WIDTH  2560
+#define RGB_MAX_HEIGHT 1440
+
 typedef struct param_config_s{
 	int width;			//connector's width
 	int height;			//connector's height
@@ -267,23 +273,33 @@ static drmModeModeInfo *__get_valid_mode_from_connector(drmModeConnector* conn, 
 		printf("display connector connector not found mode info.\n");
 		return mode;
 	}else{
-		if((width == -1) || (height == -1)){
-			return &conn->modes[0];;
+		if ((width == -1) || (height == -1)) {
+			width  = RGB_DEF_WIDTH;
+			height = RGB_DEF_HEIGHT;
 		}
-		for (int i = 0; i < conn->count_modes; i++){
 
-			if((conn->modes[i].hdisplay == width) &&
-				(conn->modes[i].vdisplay == height)){
+		if (width > RGB_MAX_WIDTH || height > RGB_MAX_HEIGHT) {
+			width  = RGB_MAX_WIDTH;
+			height = RGB_MAX_HEIGHT;
+		}
+
+		for (int i = 0; i < conn->count_modes; i++) {
+			printf("hdmi index: %02d ch:%d cv:%d vrefresh:%d\n", i, \
+				conn->modes[i].hdisplay, conn->modes[i].vdisplay, conn->modes[i].vrefresh);
+			if ((conn->modes[i].hdisplay == width) &&
+				(conn->modes[i].vdisplay == height)) {
 				mode = &conn->modes[i];
+				printf("display connector connector found mode info.\n");
 				break;
 			}
 		}
+
 		if(mode == NULL){
-			printf("display connector not support resolution: %d*%d.\n",
-				mode->hdisplay, mode->vdisplay);
+			printf("display connector not support resolution: %d*%d.\n", width, height);
 			return mode;
 		}
 	}
+
 	return mode;
 }
 static float __mode_vrefresh(drmModeModeInfo *mode)
@@ -565,6 +581,7 @@ int main(int argc, char** argv) {
 	}else{
 		printf("not support display [%s]\n.", param_config->output);
 	}
+
 	display_context.crtc_id = 31;
 	display_context.plane_id = 33;
 
@@ -583,6 +600,7 @@ int main(int argc, char** argv) {
 	if(ret != 0){
 		goto close_drm;
 	}
+
 	if(param_config->input == 0){
 		uint32_t colors[3] = {0X00FF0000 /*red*/, 0X0000FF00 /*green*/, 0X000000FF /*blue*/};
 		drm_frame_buffer_info_t drm_fb_info[3];
@@ -597,13 +615,13 @@ int main(int argc, char** argv) {
 		for(int i = 0; i < 3; i++){
 			uint32_t color = colors[i];
 			uint32_t *buffer_vaddr = (uint32_t *)drm_fb_info[i].frame_buffer_vaddr;
-			for(int j = 0; j < drm_fb_info->frame_buffer_size / 4; j++){
+			for(int j = 0; j < drm_fb_info[i].frame_buffer_size / 4; j++){
 				buffer_vaddr[j] = color;
 			}
 		}
 		int drm_fb_info_index = 0;
 
-		while(1){
+		while(1) {
 #if 1 //atomic 版本的接口
 			drmModeAtomicReq *req = drmModeAtomicAlloc();
 			ret = __add_property(display_context.drm_fd, req, display_context.plane_id, DRM_MODE_OBJECT_PLANE, "CRTC_ID", display_context.crtc_id);
@@ -642,7 +660,7 @@ int main(int argc, char** argv) {
 			__destroy_and_unmmap_drm_frame_buffer(display_context.drm_fd, &drm_fb_info[i]);
 		}
 
-	}else{
+	} else {
 		hb_mem_module_open();
 		hb_mem_graphic_buf_t hb_mem_graphic_buf;
 		int64_t flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN

@@ -104,7 +104,7 @@ int main(int argc, char** argv) {
 	}
 
 	if(gdc_info.output_file == NULL) {
-		snprintf(output_filename, sizeof(output_filename), "gdc_output_%dx%d.yuv", gdc_info.input_height, gdc_info.input_width);
+		snprintf(output_filename, sizeof(output_filename), "gdc_output_%dx%d.yuv", gdc_info.input_width, gdc_info.input_height);
 		gdc_info.output_file = output_filename;
 	}
 

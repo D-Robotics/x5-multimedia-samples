@@ -989,6 +989,65 @@ static int check_sensor_config_valid(pipeline_info_t *pipeline_info, int total_p
 	return 0;
 }
 
+static int check_gdc_output_resolution(pipeline_info_t *pipeline_info, int total_pipeline_num)
+{
+	// GDC max output resolution: 4096x2160
+	const uint32_t GDC_MAX_OUTPUT_WIDTH = 4096;
+	const uint32_t GDC_MAX_OUTPUT_HEIGHT = 2160;
+
+	if (total_pipeline_num < 2) {
+		// No stitching for single pipeline, skip check
+		return 0;
+	}
+
+	// Get resolution from first sensor
+	uint32_t sensor_width = pipeline_info[0].pipe_contexts.sensor_config->isp_ichn_attr->width;
+	uint32_t sensor_height = pipeline_info[0].pipe_contexts.sensor_config->isp_ichn_attr->height;
+
+	// Check if all sensors have the same resolution
+	for (int i = 1; i < total_pipeline_num; i++) {
+		uint32_t width = pipeline_info[i].pipe_contexts.sensor_config->isp_ichn_attr->width;
+		uint32_t height = pipeline_info[i].pipe_contexts.sensor_config->isp_ichn_attr->height;
+		if (width != sensor_width || height != sensor_height) {
+			printf("\nError: Sensor resolutions do not match!\n");
+			printf("  Sensor configurations:\n");
+			for (int j = 0; j < total_pipeline_num; j++) {
+				vp_sensor_config_t *sensor_config_ptr = pipeline_info[j].pipe_contexts.sensor_config;
+				printf("    [%d] %s: %dx%d\n", j, sensor_config_ptr->sensor_name,
+					sensor_config_ptr->isp_ichn_attr->width,
+					sensor_config_ptr->isp_ichn_attr->height);
+			}
+			printf("\n  All sensors must have the same resolution for stitching.\n\n");
+			return -1;
+		}
+	}
+
+	// Stitched output: width unchanged, height = sensor_height * 2
+	uint32_t stitched_width = sensor_width;
+	uint32_t stitched_height = sensor_height * 2;
+
+	// Check if exceeds GDC max output resolution
+	if (stitched_width > GDC_MAX_OUTPUT_WIDTH || stitched_height > GDC_MAX_OUTPUT_HEIGHT) {
+		printf("\nError: GDC output resolution exceeds maximum supported resolution!\n");
+		printf("  GDC maximum output resolution: %dx%d\n", GDC_MAX_OUTPUT_WIDTH, GDC_MAX_OUTPUT_HEIGHT);
+		printf("  Stitched output resolution: %dx%d (from %dx%d x 2 sensors)\n",
+			stitched_width, stitched_height, sensor_width, sensor_height);
+		printf("  Sensor configurations:\n");
+		for (int i = 0; i < total_pipeline_num; i++) {
+			vp_sensor_config_t *sensor_config_ptr = pipeline_info[i].pipe_contexts.sensor_config;
+			printf("    [%d] %s: %dx%d\n", i, sensor_config_ptr->sensor_name,
+				sensor_config_ptr->isp_ichn_attr->width,
+				sensor_config_ptr->isp_ichn_attr->height);
+		}
+		printf("\n  Please use sensors with lower resolution for stitching.\n");
+		printf("  For example, use sensors with height <= %d for 2-way stitching.\n\n",
+			GDC_MAX_OUTPUT_HEIGHT / 2);
+		return -1;
+	}
+
+	return 0;
+}
+
 int main(int argc, char** argv) {
 	int ret = 0;
 	int c = 0;
@@ -1032,11 +1091,9 @@ int main(int argc, char** argv) {
 		printf("\tSensor index: %d\n", media_info.pipeinfo[i].select_sensor_id);
 		printf("\tSensor name: %s\n", media_info.pipeinfo[i].pipe_contexts.sensor_config->sensor_name);
 		printf("\tActive mipi host: %d\n", media_info.pipeinfo[i].active_mipi_host);
-		if(i == 1){
-			printf("Encode type: %s\n", media_info.encode_type);
-			printf("Output file: %s\n", media_info.output_file);
-		}
-
+	}
+	if (total_pipeline_num >= 1) {
+		printf("Encode type: %s\n", media_info.encode_type);
 	}
 
 	printf("MIPI host: 0x%x\n", used_mipi_host);
@@ -1047,10 +1104,26 @@ int main(int argc, char** argv) {
 	}
 	printf("Verbose: %d\n", verbose_flag);
 
-	// 检测 sensor 配置的合法性
+	// Check sensor configuration validity
 	ret = check_sensor_config_valid(media_info.pipeinfo, total_pipeline_num);
 	if(ret != 0){
 		return ret;
+	}
+
+	// Check if GDC output resolution exceeds maximum limit
+	ret = check_gdc_output_resolution(media_info.pipeinfo, total_pipeline_num);
+	if(ret != 0){
+		return ret;
+	}
+
+	// Regenerate output file name with stitched resolution for multi-pipeline
+	if (total_pipeline_num >= 2) {
+		uint32_t stitched_width = media_info.pipeinfo[0].pipe_contexts.sensor_config->isp_ichn_attr->width;
+		uint32_t stitched_height = media_info.pipeinfo[0].pipe_contexts.sensor_config->isp_ichn_attr->height * 2;
+		uint32_t fps = media_info.pipeinfo[0].pipe_contexts.sensor_config->camera_config->fps;
+		sprintf(media_info.output_file, "stitched_%dx%d_%dfps.%s",
+			stitched_width, stitched_height, fps, media_info.encode_type);
+		printf("Output file: %s\n", media_info.output_file);
 	}
 
 	hb_mem_module_open();

@@ -1746,7 +1746,7 @@ static void uvc_events_process_control(struct uvc_device *dev, uint8_t req,
 			resp->data[0] = dev->request_error_code.data[0];
 			resp->length = dev->request_error_code.length;
 
-			printf("send real error code last prepared(%02x)\n",
+			printf("[Warning] UVC Event Process: Send real error code last prepared(%02x)\n",
 					resp->data[0]);
 			break;
 

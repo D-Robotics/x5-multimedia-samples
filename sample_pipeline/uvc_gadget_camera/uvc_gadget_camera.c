@@ -54,6 +54,8 @@ typedef struct uvc_gadget_camera_contex_s
 	vp_csi_config_t csi_config;
 	vp_sensor_config_t* sensor_config;
 
+	int uvc_stream_on_off;
+
 } uvc_gadget_camera_contex_t;
 
 static uvc_gadget_camera_contex_t g_uvc_gadget_camera_contex = {
@@ -62,7 +64,8 @@ static uvc_gadget_camera_contex_t g_uvc_gadget_camera_contex = {
 	.vse_bind_codec_chn = 0,
 	.vin_isp_is_online = 0,
 	.isp_vse_is_online = 0,
-	.pipeline_thread_state = E_THREAD_STOPPED
+	.pipeline_thread_state = E_THREAD_STOPPED,
+	.uvc_stream_on_off = 0
 };
 
 static struct option const long_options[] = {
@@ -316,7 +319,6 @@ void uvc_release_frame_cb_func(struct uvc_context *ctx,
 }
 
 void uvc_streamon_on_or_off(struct uvc_context *ctx, int is_on, void *userdata){
-
 	if (!ctx || !ctx->udev)
 		return;
 
@@ -370,6 +372,8 @@ void uvc_streamon_on_or_off(struct uvc_context *ctx, int is_on, void *userdata){
 		uac_stream_on_or_off(uac_gadget_contex, is_on);
 		printf("\n\n## uac camera off(%d)##\n", is_on);
 	}
+
+	uvc_gadget_camera_contex->uvc_stream_on_off = is_on;
 }
 
 int main(int argc, char *argv[])
@@ -481,7 +485,13 @@ int main(int argc, char *argv[])
 	while (getchar() != 'q');
 
 	//4. destroy uvc gadget
-	uvc_gadget_destroy_and_stop(g_uvc_gadget_camera_contex.uvc_contex);
+	if (g_uvc_gadget_camera_contex.uvc_stream_on_off) {
+		pipeline_process_stop(&g_uvc_gadget_camera_contex);
+	}
+	else {
+		uvc_gadget_destroy_and_stop(g_uvc_gadget_camera_contex.uvc_contex);
+	}
+
 	hb_mem_module_close();
 
 	//5. destroy uac gadget

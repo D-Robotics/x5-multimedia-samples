@@ -134,45 +134,22 @@ void get_os_version() {
 }
 
 void get_bpu_hw_io_version(void) {
-	FILE *fp;
-	char buffer[MAX_LINE];
-	char *version_start;
-	char version[BUF_LEN];  // 用来保存版本号
-	const char *command = "dmesg | grep 'bpu-core: hw-io:'";  // 当前执行的命令
+	char buffer[128];
+    FILE *fp = popen("cat /sys/module/bpu_hw_io_x5/parameters/bpuio_git_commit", "r");
 
-	// 执行 dmesg 命令并将输出重定向到 fp
-	fp = popen(command, "r");
-	if (fp == NULL) {
-		// 打印执行失败的命令和错误信息
-		perror("Failed to run command.");
-		printf("Command attempted: %s\n", command);
-		return;
-	}
+    if (fp == NULL) {
+        perror("Failed to run command, bpu_hw_io_x5 module path may not exist");
+        return;
+    }
 
-	// 读取 dmesg 输出的每一行
-	while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-		// 查找 "bpu-core: hw-io:" 后面的内容
-		version_start = strstr(buffer, "bpu-core: hw-io:");
-		if (version_start) {
-			// 跳过 "bpu-core: hw-io: git commit: " 部分
-			version_start += strlen("bpu-core: hw-io: git commit: ");
+    // 读取命令输出的第一行
+    if (fgets(buffer, sizeof(buffer), fp) != NULL) {
+        printf("\n[Bpu HW_IO Git Commit Hash]:\n\t%s\n", buffer);
+    } else {
+        printf("\n[Bpu HW_IO Git Commit Hash]:\n\tUnknown (Read failed)\n\n");
+    }
 
-			// 提取版本号并存入 version 中
-			snprintf(version, sizeof(version), "%s", version_start);
-			version[strcspn(version, "\n")] = '\0';  // 去除末尾的换行符
-
-			pclose(fp);
-
-			// 打印版本号
-			printf("\n[Bpu HW_IO Git Commit Hash]:\n\t%s\n\n", version);
-			return;  // 找到版本号后返回
-		}
-	}
-
-	pclose(fp);
-
-	// 如果没有找到版本号，打印 "Unknown"
-	printf("\n[Bpu HW_IO Git Commit Hash]:\n\tUnknown\n\n");
+    pclose(fp);
 }
 
 

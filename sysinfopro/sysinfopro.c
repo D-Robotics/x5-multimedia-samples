@@ -57,25 +57,25 @@ void get_hardware_info() {
 
 // 检测 uboot 节点路径是否有效
 const char* detect_uboot_device() {
-    #define UBOOT_DEV_NODE	"/dev/block/platform/by-name/uboot"
-    struct stat path_stat;
+	#define UBOOT_DEV_NODE	"/dev/block/platform/by-name/uboot"
+	struct stat path_stat;
 
-    // 使用 lstat 获取文件信息
-    if (lstat(UBOOT_DEV_NODE, &path_stat) == -1) {
-        if (errno == ENOENT) {
-            printf("Uboot Path Not Exist: %s\n", UBOOT_DEV_NODE);
-        } else {
-            perror("lstat error");
-        }
-        return NULL;
-    }
+	// 使用 lstat 获取文件信息
+	if (lstat(UBOOT_DEV_NODE, &path_stat) == -1) {
+		if (errno == ENOENT) {
+			printf("Uboot Path Not Exist: %s\n", UBOOT_DEV_NODE);
+		} else {
+			perror("lstat error");
+		}
+		return NULL;
+	}
 
-    // 判断是否为软链接
-    if (S_ISLNK(path_stat.st_mode)) {
-        return UBOOT_DEV_NODE;
-    }
+	// 判断是否为软链接
+	if (S_ISLNK(path_stat.st_mode)) {
+		return UBOOT_DEV_NODE;
+	}
 
-    return NULL;
+	return NULL;
 }
 
 void get_os_version() {
@@ -135,21 +135,21 @@ void get_os_version() {
 
 void get_bpu_hw_io_version(void) {
 	char buffer[128];
-    FILE *fp = popen("cat /sys/module/bpu_hw_io_x5/parameters/bpuio_git_commit", "r");
+	FILE *fp = popen("cat /sys/module/bpu_hw_io_x5/parameters/bpuio_git_commit", "r");
 
-    if (fp == NULL) {
-        perror("Failed to run command, bpu_hw_io_x5 module path may not exist");
-        return;
-    }
+	if (fp == NULL) {
+		perror("Failed to run command, bpu_hw_io_x5 module path may not exist");
+		return;
+	}
 
-    // 读取命令输出的第一行
-    if (fgets(buffer, sizeof(buffer), fp) != NULL) {
-        printf("\n[Bpu HW_IO Git Commit Hash]:\n\t%s\n", buffer);
-    } else {
-        printf("\n[Bpu HW_IO Git Commit Hash]:\n\tUnknown (Read failed)\n\n");
-    }
+	// 读取命令输出的第一行
+	if (fgets(buffer, sizeof(buffer), fp) != NULL) {
+		printf("\n[Bpu HW_IO Git Commit Hash]:\n\t%s\n", buffer);
+	} else {
+		printf("\n[Bpu HW_IO Git Commit Hash]:\n\tUnknown (Read failed)\n\n");
+	}
 
-    pclose(fp);
+	pclose(fp);
 }
 
 

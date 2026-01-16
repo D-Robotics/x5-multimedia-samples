@@ -203,7 +203,17 @@ static int create_isp_node(pipe_contex_t *pipe_contex) {
 	ret = hbn_vnode_set_ichn_attr(*isp_node_handle, ichn_id, isp_ichn_attr);
 	ERR_CON_EQ(ret, 0);
 
-	alloc_attr.buffers_num = 3;
+	/*
+		特殊情况：当前sample 的ISP 有两个使用者，所以 buffer 数量在 VIN onlilne ISP 的模式下， ISP的输出buffer 个数需要多一个
+			使用者1： 用户程序， 从ISP获取数据回灌到GDC
+			使用者2： Pipeline, VIN -> ISP -> GDC 
+	*/
+	if(vin_isp_is_online){
+		alloc_attr.buffers_num = 4;
+	}else{
+		alloc_attr.buffers_num = 3;
+	}
+	
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
@@ -423,7 +433,7 @@ static void gdc_dump_func(hbn_vnode_handle_t gdc_node_handle, char *prefix) {
 	// 调用 hbn_vnode_getframe 获取帧数据
 	ret = hbn_vnode_getframe(gdc_node_handle, ochn_id, timeout, &out_img);
 	if (ret != 0) {
-		printf("hbn_vnode_getframe from isp chn:%d failed(%d)\n", ochn_id, ret);
+		printf("hbn_vnode_getframe from gdc chn:%d failed(%d)\n", ochn_id, ret);
 		return;
 	}
 
@@ -458,7 +468,7 @@ static void isp_dump_to_gdc_func(hbn_vnode_handle_t isp_node_handle,
 	uint32_t ochn_id = 0;
 	uint32_t timeout = 10000;
 	hbn_vnode_image_t out_img;
-
+	
 	// 调用 hbn_vnode_getframe 获取帧数据
 	ret = hbn_vnode_getframe(isp_node_handle, ochn_id, timeout, &out_img);
 	if (ret != 0) {

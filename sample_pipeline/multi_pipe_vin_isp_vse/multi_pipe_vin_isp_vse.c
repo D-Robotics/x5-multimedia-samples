@@ -13,7 +13,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <ctype.h>
-
+#include <signal.h>
 #include "common_utils.h"
 #include "hb_media_codec.h"
 #include "hb_media_error.h"
@@ -761,7 +761,6 @@ void *encode_vse_chn_data(void *context)
 			printf("hbn_vnode_getframe VSE channel %d failed, error code %d\n", 0, ret);
 			continue;
 		}
-
 		memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
 		ret = hb_mm_mc_dequeue_input_buffer(media_context, &input_buffer,
 											2000);
@@ -799,7 +798,6 @@ void *encode_vse_chn_data(void *context)
 			break;
 		}
 		hbn_vnode_releaseframe(vse_node_handle, pipeline_info->vse_bind_codec_chn, &vse_chn_frame);
-
 		count++;
 	}
 
@@ -857,7 +855,7 @@ int main(int argc, char** argv) {
 		print_help();
 		return 0;
 	}
-
+	signal(SIGINT, signal_handle);
 	while ((c = getopt_long(argc, argv, "c:vh", long_options, NULL)) != -1) {
 		switch (c) {
 		case 'c':
@@ -944,9 +942,15 @@ int main(int argc, char** argv) {
 		pthread_join(pipeline_info[index].read_codec_thread, NULL);
 		ret = hbn_vflow_stop(pipeline_info[index].pipe_contexts.vflow_fd);
 		ERR_CON_EQ(ret, 0);
+		hbn_vnode_stop(pipeline_info[index].pipe_contexts.vin_node_handle);
+		hbn_vnode_stop(pipeline_info[index].pipe_contexts.isp_node_handle);
+		hbn_vnode_stop(pipeline_info[index].pipe_contexts.vse_node_handle);
+		hbn_vnode_close(pipeline_info[index].pipe_contexts.vin_node_handle);
+		hbn_vnode_close(pipeline_info[index].pipe_contexts.isp_node_handle);
+		hbn_vnode_close(pipeline_info[index].pipe_contexts.vse_node_handle);
+		hbn_camera_destroy(pipeline_info[index].pipe_contexts.cam_fd);
 		hbn_vflow_destroy(pipeline_info[index].pipe_contexts.vflow_fd);
 	}
 	hb_mem_module_close();
-
 	return 0;
 }

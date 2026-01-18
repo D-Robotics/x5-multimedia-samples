@@ -221,6 +221,10 @@ teQueueStatus mQueueDequeueTimedWidthUserFunc(tsQueue *psQueue, uint32_t u32Wait
 		/*printf("Dequeue timed: now    %lu s, %lu ns\n", sNow.tv_sec, sNow.tv_usec * 1000);*/
 		/*printf("Dequeue timed: until  %lu s, %lu ns\n", sTimeout.tv_sec, sTimeout.tv_nsec);*/
 
+		if (!(*(psQueue->status))) {
+			pthread_mutex_unlock(&psQueue->mutex);
+			return E_QUEUE_STOPPED;
+		}
 		switch (pthread_cond_timedwait(&psQueue->cond_data_available, &psQueue->mutex, &sTimeout))
 		{
 			case (0):

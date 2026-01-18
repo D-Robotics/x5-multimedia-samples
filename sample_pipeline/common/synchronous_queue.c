@@ -267,10 +267,17 @@ int sync_queue_obtain_inused_object_width_user(sync_queue_t* sync_queue, uint32_
 		teQueueStatus status = E_QUEUE_OK;
 		status = mQueueDequeueTimedWidthUserFunc(&sync_queue->inused_queue, timeout_duration_ms, (void **)data_item,
 			dequeue_process_func_with_user, sync_queue, user_flag);
-		if(status != E_QUEUE_OK){
+		if (status == E_QUEUE_STOPPED) {
+			ret = 2;
+			break;
+		} else if (status != E_QUEUE_OK) {
 
 			if(status == E_QUEUE_ERROR_REPEAT){ //读取到重复的数据
 				ret = 1;
+				break;
+			}
+			if (!(*(sync_queue->inused_queue.status))) {
+				ret = 2;
 				break;
 			}
 			printf("[%s -> %s] sync_queue_obtain_inused_object failed:%d, wait time %d\n",

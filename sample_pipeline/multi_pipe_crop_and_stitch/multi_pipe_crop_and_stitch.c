@@ -266,6 +266,8 @@ static void *pipeline_codec_thread(void *context)
 
 		sync_queue_t* vse_to_n2d = outfile_cfg->data_queue;
 		int user_flag = outfile_cfg->queue_user_flag;
+		vse_to_n2d->ununsed_queue.status = &(outfile_cfg->is_running);
+		vse_to_n2d->inused_queue.status = &(outfile_cfg->is_running);
 		ret = sync_queue_obtain_inused_object_width_user(vse_to_n2d, 5000, &data_item, user_flag);
 		if(ret == -1){
 			printf("vse feedback sync_queue_obtain_inused_object vse_to_n2d failed\n");
@@ -274,6 +276,8 @@ static void *pipeline_codec_thread(void *context)
 			// printf("vse feedback thread get same item, so ignore it. %d:%d\n", data_item->inused_frame_index, last_inused_frame_index);
 			usleep(1000);
 			continue;
+		}else if (ret == 2) {
+			break;
 		}else{
 			//do nothing
 		}
@@ -354,7 +358,7 @@ static void pipeline_codec_deinit(sensor_outfile_config_t *codec_config)
 		return;
 	}
 
-	codec_config->is_running = 0;
+	//codec_config->is_running = 0;
 	pthread_join(codec_config->codec_thread, NULL);
 
 	media_codec_context_t *encode_context = &codec_config->encode_context;
@@ -1766,6 +1770,12 @@ int pipeline_stop(multi_pipe_stitch_info_t *multi_pipe_stitch_info){
 		vp_codec_encoder_destroy_and_stop(encode_context);
 	}else if(strcmp(param_config->output, "hdmi")){
 		vp_display_deinit(&multi_pipe_stitch_info->vp_drm_context);
+	}
+
+	for (size_t i = 0; i < param_config->sensor_config_count; i++) {
+		sensor_param_config_t* sensor_param_config = &param_config->sensor_param_config[i];
+		sensor_param_config->h264_outfile.is_running = 0;
+		sensor_param_config->mjpeg_outfile.is_running = 0;
 	}
 
 	//4. pipeline stop

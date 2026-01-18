@@ -13,7 +13,7 @@
 #include <string.h>
 #include <pthread.h>
 #include "channel_param_parser.h"
-
+#include <signal.h>
 #include "common_utils.h"
 
 #define VSE_MAX_CHANNELS 6
@@ -70,6 +70,7 @@ int main(int argc, char** argv) {
 	int c = 0;
 	int index = -1;
 
+	signal(SIGINT, signal_handle);
 	/* parse options */
 	while((c = getopt_long(argc, argv, "s:c:h",
 							long_options, &opt_index)) != -1) {

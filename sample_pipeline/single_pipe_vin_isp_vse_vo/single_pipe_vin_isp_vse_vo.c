@@ -12,7 +12,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <pthread.h>
-
+#include <signal.h>
 #include "common_utils.h"
 #include "vp_display.h"
 #include "channel_param_parser.h"
@@ -487,7 +487,7 @@ int main(int argc, char** argv) {
 	int c = 0;
 	int index = -1;
 	int active_mipi_host;
-
+	signal(SIGINT, signal_handle);
 	while ((c = getopt_long(argc, argv, "s:c:h", long_options, &opt_index)) != -1) {
 		switch (c) {
 		case 's':

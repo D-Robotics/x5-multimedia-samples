@@ -11,6 +11,7 @@ typedef enum
     E_QUEUE_ERROR_NO_MEM,
     E_QUEUE_ERROR_FULL,
 	E_QUEUE_ERROR_REPEAT,
+	E_QUEUE_STOPPED,
 } teQueueStatus;
 
 typedef struct
@@ -23,6 +24,7 @@ typedef struct
     pthread_mutex_t mutex;
     pthread_cond_t cond_space_available;
     pthread_cond_t cond_data_available;
+	int *status;
 } tsQueue;
 
 typedef int(*queue_process_func_t)(void *data, void *handle);

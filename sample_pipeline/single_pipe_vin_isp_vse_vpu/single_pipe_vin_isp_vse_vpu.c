@@ -13,7 +13,7 @@
 #include <string.h>
 #include <pthread.h>
 #include "channel_param_parser.h"
-
+#include <signal.h>
 #include "hb_media_codec.h"
 #include "hb_media_error.h"
 #include "common_utils.h"
@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
 	int opt_index = 0;
 	int c = 0;
 	int index = -1;
-
+	signal(SIGINT, signal_handle);
 	/* parse options */
 	while((c = getopt_long(argc, argv, "s:c:h",
 							long_options, &opt_index)) != -1) {

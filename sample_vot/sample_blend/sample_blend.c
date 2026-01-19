@@ -27,8 +27,8 @@
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
 
-#define DRM_MAX_BLEND_WIDTH  2560
-#define DRM_MAX_BLEND_HEIGHT 1440
+#define DRM_MAX_BLEND_WIDTH  1920
+#define DRM_MAX_BLEND_HEIGHT 1080
 #define DRM_MAX_BLEND_FPS    60
 
 #define DRM_MAX_BLEND_PLANES 3 // 只有3个图层支持 融合
@@ -272,9 +272,8 @@ static drmModeModeInfo *__get_valid_mode_from_connector(drmModeConnector* conn, 
 				if(conn->modes[i].vrefresh * conn->modes[i].hdisplay * conn->modes[i].vdisplay 
 						<= DRM_RGB_FORMAT_MAX_CAPACITY /*当前示例使用的是 RGB模式*/){
 					mode = &conn->modes[i];
+					break;
 				}
-				
-				break;
 			}
 		}
 		if(mode == NULL){

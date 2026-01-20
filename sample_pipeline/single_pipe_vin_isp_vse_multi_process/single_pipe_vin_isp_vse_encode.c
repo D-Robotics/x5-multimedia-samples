@@ -339,14 +339,6 @@ void encode_process_main()
 
 		input_buffer.user_ptr = &send_buf;
 
-		ret = hb_mem_flush_buf_with_vaddr((uint64_t)send_buf.virt_addr[0], send_buf.size[0]);
-		if (ret < 0)
-			printf("cache flush failed. y_data(%p), y_size(%lu)\n", send_buf.virt_addr[0], send_buf.size[0]);
-
-		ret = hb_mem_flush_buf_with_vaddr((uint64_t)send_buf.virt_addr[0], send_buf.size[1]);
-		if (ret < 0)
-			printf("cache flush failed. uv_data(%p), uv_size(%lu)\n", send_buf.virt_addr[1], send_buf.size[1]);
-
 		ret = hb_mm_mc_queue_input_buffer(&media_context, &input_buffer, 2000);
 		if (ret != 0) {
 			printf("hb_mm_mc_queue_input_buffer failed\n");

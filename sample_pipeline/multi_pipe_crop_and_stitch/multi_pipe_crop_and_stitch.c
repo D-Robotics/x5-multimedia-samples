@@ -601,6 +601,8 @@ void *get_data_from_feedback_vse(void *context){
 		performance_test_start_simple(&performace_test_param_for_vse_feedback_total);
 
 		sync_queue_t* vse_to_n2d = &multi_pipe_stitch_info->vse_to_n2d;
+		vse_to_n2d->ununsed_queue.status = &(multi_pipe_stitch_info->is_running);
+		vse_to_n2d->inused_queue.status = &(multi_pipe_stitch_info->is_running);
 		ret = sync_queue_obtain_inused_object_width_user(vse_to_n2d, 5000, &data_item, sync_queue_user_flag);
 		if(ret == -1){
 			printf("vse feedback sync_queue_obtain_inused_object vse_to_n2d failed\n");
@@ -883,6 +885,8 @@ void *get_stitch_data(void *context){
 		//1. get source image from vse
 		//uint64_t start_tmp = get_timestamp_ms();
 		sync_queue_t* vse_to_n2d = &multi_pipe_stitch_info->vse_to_n2d;
+		vse_to_n2d->ununsed_queue.status = &(multi_pipe_stitch_info->is_running);
+		vse_to_n2d->inused_queue.status = &(multi_pipe_stitch_info->is_running);
 		ret = sync_queue_obtain_inused_object_width_user(vse_to_n2d, 5000, &data_item, sync_queue_user_flag);
 		if(ret == -1){
 			printf("n2d sync_queue_obtain_inused_object vse_to_n2d failed\n");

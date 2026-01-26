@@ -80,9 +80,15 @@ typedef struct vp_csi_config_s{
 	int mclk_is_not_configed;
 }vp_csi_config_t;
 
+typedef int32_t (*sensor_read_chip_id_cb_t) (vcon_propertie_t vcon_props,
+					     void *sensor_config,
+					     uint32_t addr,
+					     int32_t *chip_id);
+
 typedef struct vp_sensor_config_s {
 	int16_t chip_id_reg;
 	int16_t chip_id;
+	sensor_read_chip_id_cb_t read_chip_id_cb;
 	// Some sensors use a different set of i2c addresses
 	uint32_t sensor_i2c_addr_list[8];
 	char sensor_name[128];

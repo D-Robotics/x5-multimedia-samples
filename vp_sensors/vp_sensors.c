@@ -544,7 +544,11 @@ static int32_t vp_i2c_read_reg16_data8(uint32_t bus, uint8_t i2c_addr, uint16_t 
 	return 0;
 }
 
-static int32_t read_chip_id(vcon_propertie_t vcon_props, vp_sensor_config_t *sensor_config, uint32_t addr, int32_t *chip_id) {
+static int32_t read_chip_id(vcon_propertie_t vcon_props, vp_sensor_config_t *sensor_config, uint32_t addr, int32_t *chip_id)
+{
+	if (sensor_config->read_chip_id_cb != NULL) {
+		return sensor_config->read_chip_id_cb(vcon_props, (void*)sensor_config, addr, chip_id);
+	}
 
 	if(sensor_config->chip_id >> 8 == 0) {
 		// 读取 8 位 chip ID

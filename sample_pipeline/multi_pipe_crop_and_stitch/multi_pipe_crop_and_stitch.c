@@ -264,6 +264,8 @@ static void *pipeline_codec_thread(void *context)
 
 	while (outfile_cfg->is_running){
 
+		if (!outfile_cfg->productor)
+			continue;
 		sync_queue_t* vse_to_n2d = outfile_cfg->data_queue;
 		int user_flag = outfile_cfg->queue_user_flag;
 		vse_to_n2d->ununsed_queue.status = &(outfile_cfg->is_running);
@@ -505,6 +507,11 @@ void *get_data_from_pipeline(void *context){
 
 			performance_test_stop(performace_test_param);
 			get_vse_frame_count++;
+
+			for (size_t i = 0; i < MAX_PIPE_NUM; i++) {
+				multi_pipe_stitch_info->param_config.sensor_param_config[i].mjpeg_outfile.productor = 1;
+				multi_pipe_stitch_info->param_config.sensor_param_config[i].h264_outfile.productor = 1;
+			}
 		}
 		if(get_vse_frame_count != param_config->sensor_config_count){
 			break;
@@ -1151,7 +1158,6 @@ void *send_to_hdmi_display(void *context){
 		data_item_t *data_item = NULL;
 		performance_test_start_simple(&performace_total_test_param_simple);
 		performance_test_start(&performace_test_param_for_hdmi_get_queue);
-
 		if(n2d_to_output->inused_queue_count >= inused_queue_count_thresold){
 			printf("hdmi process too slow, so drop frame: %d >= %d\n", n2d_to_output->inused_queue_count, inused_queue_count_thresold);
 			ret = sync_queue_obtain_inused_object(n2d_to_output, 5000, &data_item);
@@ -1829,6 +1835,8 @@ int main(int argc, char** argv) {
 	for (size_t i = 0; i < MAX_PIPE_NUM; i++){
 		pthread_mutex_init(&multi_pipe_stitch_info.bpu_results[i].lock, NULL);
 		multi_pipe_stitch_info.bpu_results[i].obj_count = 0;
+		multi_pipe_stitch_info.param_config.sensor_param_config[i].h264_outfile.productor = 0;
+		multi_pipe_stitch_info.param_config.sensor_param_config[i].mjpeg_outfile.productor = 0;
 	}
 
 	param_config_t *param_config = &multi_pipe_stitch_info.param_config;

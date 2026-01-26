@@ -752,12 +752,12 @@ void *encode_vse_chn_data(void *context)
 			}
 
 			char dst_file[128];
-			int len = snprintf(dst_file, sizeof(dst_file), "./%s_%dx%d_rotated_frameid%d_ts_%ld.bmp",
+			int len = snprintf(dst_file, sizeof(dst_file), "./%s_%dx%d_rotated_frameid%d_ts_%ld_ch%d.bmp",
 					   pipeline_info[index].pipe_contexts.sensor_config->sensor_name,
 					   vse_chn_frame.buffer.height,
 					   vse_chn_frame.buffer.width,
 					   vse_chn_frame.info.frame_id,
-					   vse_chn_frame.info.timestamps);
+					   vse_chn_frame.info.timestamps, index);
 
 			if (len < 0 || len >= sizeof(dst_file)) {
 				fprintf(stderr, "Warning: Output truncated for file name: %s\n", dst_file);
@@ -966,6 +966,7 @@ int main(int argc, char** argv)
 	for (int index = 0; index < total_pipeline_num; index++) {
 		ret = hbn_vflow_stop(args->pipeline_info[index]->pipe_contexts.vflow_fd);
 		ERR_CON_EQ(ret, 0);
+		hbn_camera_destroy(args->pipeline_info[index]->pipe_contexts.cam_fd);
 		hbn_vflow_destroy(args->pipeline_info[index]->pipe_contexts.vflow_fd);
 	}
 

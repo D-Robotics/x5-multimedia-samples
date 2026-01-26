@@ -1,4 +1,5 @@
 #include "vp_sensors.h"
+#include "imx415_common.h"
 
 #define SENSOR_WIDTH  3840
 #define SENSOR_HEIGHT  2160
@@ -135,8 +136,9 @@ static n2d_config_t imx415_gpu2d_scale_crop_attr = {
 };
 
 vp_sensor_config_t imx415_linear_3480x2160_raw10_60fps_4lane = {
-	.chip_id_reg = 0x4001,
-	.chip_id = 0x03,
+	.chip_id_reg = IMX415_SENSOR_INFO,
+	.chip_id     = IMX415_CHIP_ID,
+	.read_chip_id_cb = imx415_read_chip_id,
 	.sensor_i2c_addr_list = {0x1A},
 	.sensor_name = "imx415-60fps-4lane",
 	.support_sensor_mode  = {NORMAL_M},

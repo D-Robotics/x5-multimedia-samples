@@ -115,6 +115,8 @@ int sync_queue_get_unused_object(sync_queue_t* sync_queue, uint32_t timeout_ms, 
 		teQueueStatus status = E_QUEUE_OK;
 		status = mQueueDequeueTimed(&sync_queue->ununsed_queue, 1000, (void **)data_item);
 		if(status != E_QUEUE_OK){
+			if (timeout_duration_ms * run_count < timeout_ms - 1000)
+					continue;
 			printf("[%s -> %s] sync_queue_get_unused_object failed:%d, wait time %d\n",
 				sync_queue->sync_queue_info.productor_name,
 				sync_queue->sync_queue_info.consumer_name ,
@@ -310,6 +312,8 @@ int sync_queue_obtain_inused_object(sync_queue_t* sync_queue, uint32_t timeout_m
 		status = mQueueDequeueTimedWidthFunc(&sync_queue->inused_queue, timeout_duration_ms, (void **)data_item,
 			dequeue_process_func, sync_queue);
 		if(status != E_QUEUE_OK){
+			if (timeout_duration_ms * run_count < timeout_ms - 1000)
+				continue;
 			printf("[%s -> %s] sync_queue_obtain_inused_object failed:%d, wait time %d\n",
 				sync_queue->sync_queue_info.productor_name,
 				sync_queue->sync_queue_info.consumer_name ,

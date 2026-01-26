@@ -32,6 +32,7 @@ typedef struct {
 	uint64_t cur_timestamps;
 	uint64_t last_timestamps;
 #endif
+	int productor;
 }sensor_outfile_config_t;
 
 #define MAX_PIPE_NUM 4

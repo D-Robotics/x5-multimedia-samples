@@ -278,6 +278,7 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 			check_info.vpu_lack = 0.0;
 			check_info.decode_param_check_info.not_match_count = 0;
 			check_info.display_param_check_info.not_match_count = 0;
+			check_info.bpu_param_check_info.not_match_count = 0;
 			SDK_Cmd_Impl(SDK_CMD_VPP_CHECK_SOLUTION_CONFIG, (void *)&check_info);
 
 			SC_LOGW("sizeof(T_SDK_CHECK_INFO): %d check_info.display_param_check_info.not_match_count:%d\n",

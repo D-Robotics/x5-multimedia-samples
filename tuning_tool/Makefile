@@ -32,7 +32,7 @@ $(TUNING_BUILD_DIR)/%.o: %.c
 	@$(CC) $(INCS) $(CFLAGS) -c $< $(LIBS) $(LIBSDIR) -o $@
 
 clean:
-	rm -rf ${TUNING_BUILD_DIR}
+	rm -rf ${BUILD_DIR}
 
 install: ${TARGET}
 	$(Q)install -d ${PLATFORM_SAMPLES_DEPLOY_DIR}/${RELATIVE_PATH}

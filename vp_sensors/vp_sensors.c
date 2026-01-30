@@ -67,6 +67,7 @@ extern vp_sensor_config_t shw3g_linear_2064x1552_raw12_30fps_4lane;
 extern vp_sensor_config_t shw3g_linear_2064x1552_raw12_30fps_4lane_vc1;
 extern vp_sensor_config_t sc235hai_linear_1920x1080_raw10_30fps_2lane;
 extern vp_sensor_config_t cv4006_linear_1280x720_raw10_60fps_2lane;
+extern vp_sensor_config_t ov50h40_linear_3840x2160_raw10_30fps_4lane;
 
 vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc1330t_linear_1280x960_raw10_30fps_1lane,
@@ -121,6 +122,7 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&shw3g_linear_2064x1552_raw12_30fps_4lane_vc1,
 	&sc235hai_linear_1920x1080_raw10_30fps_2lane,
 	&cv4006_linear_1280x720_raw10_60fps_2lane,
+	&ov50h40_linear_3840x2160_raw10_30fps_4lane,
 };
 uint32_t vp_get_sensors_list_number() {
 	return sizeof(vp_sensor_config_list) / sizeof(vp_sensor_config_list[0]);

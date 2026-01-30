@@ -49,7 +49,7 @@ static char feedback_raw_format[32] = {0};
 static int32_t used_mipi_host = 0;
 static uint32_t link_port = 0;
 
-int32_t lut3d_map[LUT_SIZE][LUT_SIZE][LUT_SIZE][3];
+unsigned short lut3d_map[LUT_SIZE][LUT_SIZE][LUT_SIZE][3];
 
 int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
 int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
@@ -560,66 +560,111 @@ static int32_t tuning_feeback_init(tuning_context_t *ctx)
 	return RET_SUCCESS;
 }
 
-const char *kernelSource =
-"__kernel void apply_3dlut(__global const unsigned char* buf_src, __global unsigned char* buf_opencl, __global int* lut3d_map, int lut_size, int img_height, int img_width) {\n"
-"	int height = get_global_id(0);\n"
-"	int width = get_global_id(1);\n"
-"	int off = img_width * img_height;\n"
-
-"	int y_pos = height * img_width + width;\n"
-"	int u_pos = off + (height / 2) * img_width + (width & ~1u);\n"
-"	int v_pos = off + (height / 2) * img_width + (width | 1u);\n"
-
-"	unsigned char Y = buf_src[y_pos];\n"
-"	unsigned char U = buf_src[u_pos];\n"
-"	unsigned char V = buf_src[v_pos];\n"
-
-"	int R = Y + (int)(1.403 * (V - 128));\n"
-"	int G = Y - (int)(0.344136 * (U - 128) + 0.714136 * (V - 128));\n"
-"	int B = Y + (int)(1.772 * (U - 128));\n"
-
-"	R = clamp(R, 0, 255);\n"
-"	G = clamp(G, 0, 255);\n"
-"	B = clamp(B, 0, 255);\n"
-
-"	float x = R / 255.0f * (lut_size - 1);\n"
-"	float y = G / 255.0f * (lut_size - 1);\n"
-"	float z = B / 255.0f * (lut_size - 1);\n"
-
-"	int x0 = (int)x, y0 = (int)y, z0 = (int)z;\n"
-"	int x1 = min(x0 + 1, lut_size - 1);\n"
-"	int y1 = min(y0 + 1, lut_size - 1);\n"
-"	int z1 = min(z0 + 1, lut_size - 1);\n"
-
-"	float dx = x - x0;\n"
-"	float dy = y - y0;\n"
-"	float dz = z - z0;\n"
-
-"	float tmp[3] = {0};\n"
-"	for (int i = 0; i < 3; i++) {\n"
-"		tmp[i] = (1 - dx) * (1 - dy) * (1 - dz) * lut3d_map[((x0 * lut_size + y0) * lut_size + z0) * 3 + i] +\n"
-"			dx * (1 - dy) * (1 - dz) * lut3d_map[((x1 * lut_size + y0) * lut_size + z0) * 3 + i] +\n"
-"			(1 - dx) * dy * (1 - dz) * lut3d_map[((x0 * lut_size + y1) * lut_size + z0) * 3 + i] +\n"
-"			(1 - dx) * (1 - dy) * dz * lut3d_map[((x0 * lut_size + y0) * lut_size + z1) * 3 + i] +\n"
-"			dx * (1 - dy) * dz * lut3d_map[((x1 * lut_size + y0) * lut_size + z1) * 3 + i] +\n"
-"			(1 - dx) * dy * dz * lut3d_map[((x0 * lut_size + y1) * lut_size + z1) * 3 + i] +\n"
-"			dx * dy * (1 - dz) * lut3d_map[((x1 * lut_size + y1) * lut_size + z0) * 3 + i] +\n"
-"			dx * dy * dz * lut3d_map[((x1 * lut_size + y1) * lut_size + z1) * 3 + i];\n"
-"		tmp[i] = min(tmp[i], 65280.0f);\n"
-"	}\n"
-
-"	unsigned char R_R = ((unsigned char)tmp[0]) >> 8;\n"
-"	unsigned char G_R = ((unsigned char)tmp[1]) >> 8;\n"
-"	unsigned char B_R = ((unsigned char)tmp[2]) >> 8;\n"
-
-"	int Y_R = (int)(0.299 * R_R + 0.587 * G_R + 0.114 * B_R);\n"
-"	int U_R = (int)(-0.169 * R_R - 0.331 * G_R + 0.500 * B_R + 128);\n"
-"	int V_R = (int)(0.500 * R_R - 0.419 * G_R - 0.081 * B_R + 128);\n"
-
-"	buf_opencl[y_pos] = (unsigned char)clamp(Y_R, 0, 255);\n"
-"	buf_opencl[u_pos] = (unsigned char)clamp(U_R, 0, 255);\n"
-"	buf_opencl[v_pos] = (unsigned char)clamp(V_R, 0, 255);\n"
-"} \n";
+static const char *kernelSource =
+"inline float3 lut_lookup(float3 rgb, __global const unsigned short* lut_ptr, int lut_size) {\n"
+"    float3 coord = rgb * (float)(lut_size - 1);\n"
+"    int3 idx0 = convert_int3(coord);\n"
+"    int3 idx1 = idx0 + (int3)(1, 1, 1);\n"
+"    idx1 = min(idx1, (int3)(lut_size - 1));\n"
+"\n"
+"    float3 d = coord - convert_float3(idx0);\n"
+"\n"
+"    int y_stride = lut_size;\n"
+"    int x_stride = lut_size * lut_size;\n"
+"\n"
+"    int off000 = idx0.x * x_stride + idx0.y * y_stride + idx0.z;\n"
+"    int off001 = idx0.x * x_stride + idx0.y * y_stride + idx1.z;\n"
+"    int off010 = idx0.x * x_stride + idx1.y * y_stride + idx0.z;\n"
+"    int off011 = idx0.x * x_stride + idx1.y * y_stride + idx1.z;\n"
+"    int off100 = idx1.x * x_stride + idx0.y * y_stride + idx0.z;\n"
+"    int off101 = idx1.x * x_stride + idx0.y * y_stride + idx1.z;\n"
+"    int off110 = idx1.x * x_stride + idx1.y * y_stride + idx0.z;\n"
+"    int off111 = idx1.x * x_stride + idx1.y * y_stride + idx1.z;\n"
+"\n"
+"    float3 c000 = convert_float3(vload3(off000, lut_ptr));\n"
+"    float3 c001 = convert_float3(vload3(off001, lut_ptr));\n"
+"    float3 c010 = convert_float3(vload3(off010, lut_ptr));\n"
+"    float3 c011 = convert_float3(vload3(off011, lut_ptr));\n"
+"    float3 c100 = convert_float3(vload3(off100, lut_ptr));\n"
+"    float3 c101 = convert_float3(vload3(off101, lut_ptr));\n"
+"    float3 c110 = convert_float3(vload3(off110, lut_ptr));\n"
+"    float3 c111 = convert_float3(vload3(off111, lut_ptr));\n"
+"\n"
+"    float3 c00 = mix(c000, c001, d.z);\n"
+"    float3 c01 = mix(c010, c011, d.z);\n"
+"    float3 c10 = mix(c100, c101, d.z);\n"
+"    float3 c11 = mix(c110, c111, d.z);\n"
+"\n"
+"    float3 c0 = mix(c00, c01, d.y);\n"
+"    float3 c1 = mix(c10, c11, d.y);\n"
+"\n"
+"    return mix(c0, c1, d.x);\n"
+"}\n"
+"\n"
+"__kernel void apply_3dlut(__global const unsigned char* buf_src,\n"
+"                          __global unsigned char* buf_dst,\n"
+"                          __global const unsigned short* lut3d_map,\n"
+"                          int lut_size,\n"
+"                          int img_height,\n"
+"                          int img_width) {\n"
+"    int block_y = get_global_id(0);\n"
+"    int block_x = get_global_id(1);\n"
+"    int x = block_x * 2;\n"
+"    int y = block_y * 2;\n"
+"\n"
+"    if (x >= img_width || y >= img_height) return;\n"
+"\n"
+"    int stride = img_width;\n"
+"    int uv_idx = stride * img_height + block_y * stride + block_x * 2;\n"
+"\n"
+"    unsigned char u_val = buf_src[uv_idx];\n"
+"    unsigned char v_val = buf_src[uv_idx + 1];\n"
+"    float u_f = (float)u_val - 128.0f;\n"
+"    float v_f = (float)v_val - 128.0f;\n"
+"\n"
+"    int y_idx_00 = y * stride + x;\n"
+"    int y_idx_01 = y_idx_00 + 1;\n"
+"    int y_idx_10 = (y + 1) * stride + x;\n"
+"    int y_idx_11 = y_idx_10 + 1;\n"
+"\n"
+"    float4 Y;\n"
+"    Y.s0 = (float)buf_src[y_idx_00];\n"
+"    Y.s1 = (float)buf_src[y_idx_01];\n"
+"    Y.s2 = (float)buf_src[y_idx_10];\n"
+"    Y.s3 = (float)buf_src[y_idx_11];\n"
+"\n"
+"    float4 R = Y + (float4)(1.403f * v_f);\n"
+"    float4 G = Y - (float4)(0.344f * u_f) - (float4)(0.714f * v_f);\n"
+"    float4 B = Y + (float4)(1.772f * u_f);\n"
+"\n"
+"    R = clamp(R, 0.0f, 255.0f) * (1.0f / 255.0f);\n"
+"    G = clamp(G, 0.0f, 255.0f) * (1.0f / 255.0f);\n"
+"    B = clamp(B, 0.0f, 255.0f) * (1.0f / 255.0f);\n"
+"\n"
+"    float3 res00 = lut_lookup((float3)(R.s0, G.s0, B.s0), lut3d_map, lut_size);\n"
+"    float3 res01 = lut_lookup((float3)(R.s1, G.s1, B.s1), lut3d_map, lut_size);\n"
+"    float3 res10 = lut_lookup((float3)(R.s2, G.s2, B.s2), lut3d_map, lut_size);\n"
+"    float3 res11 = lut_lookup((float3)(R.s3, G.s3, B.s3), lut3d_map, lut_size);\n"
+"\n"
+"    res00 *= (1.0f / 256.0f); res01 *= (1.0f / 256.0f);\n"
+"    res10 *= (1.0f / 256.0f); res11 *= (1.0f / 256.0f);\n"
+"\n"
+"    float4 Rf = (float4)(res00.x, res01.x, res10.x, res11.x);\n"
+"    float4 Gf = (float4)(res00.y, res01.y, res10.y, res11.y);\n"
+"    float4 Bf = (float4)(res00.z, res01.z, res10.z, res11.z);\n"
+"\n"
+"    float4 Y_out = 0.299f * Rf + 0.587f * Gf + 0.114f * Bf;\n"
+"    float u_out_f = 128.0f + (-0.169f * Rf.s0 - 0.331f * Gf.s0 + 0.5f * Bf.s0);\n"
+"    float v_out_f = 128.0f + (0.5f * Rf.s0 - 0.419f * Gf.s0 - 0.081f * Bf.s0);\n"
+"\n"
+"    buf_dst[y_idx_00] = (unsigned char)clamp((int)Y_out.s0, 0, 255);\n"
+"    buf_dst[y_idx_01] = (unsigned char)clamp((int)Y_out.s1, 0, 255);\n"
+"    buf_dst[y_idx_10] = (unsigned char)clamp((int)Y_out.s2, 0, 255);\n"
+"    buf_dst[y_idx_11] = (unsigned char)clamp((int)Y_out.s3, 0, 255);\n"
+"\n"
+"    buf_dst[uv_idx]     = (unsigned char)clamp((int)u_out_f, 0, 255);\n"
+"    buf_dst[uv_idx + 1] = (unsigned char)clamp((int)v_out_f, 0, 255);\n"
+"}\n";
 
 static int32_t tuning_opencl_3dlut_init(pipe_contex_info_t *pipe_info)
 {
@@ -693,10 +738,24 @@ static int32_t tuning_opencl_3dlut_init(pipe_contex_info_t *pipe_info)
 		return RET_FAILURE;
 	}
 
-	opencl_ctx->lut_buffer = clCreateBuffer(opencl_ctx->context, CL_MEM_READ_ONLY,
-						LUT_SIZE * LUT_SIZE * LUT_SIZE * 3 * sizeof(int), NULL, &ret);
+	opencl_ctx->lut_buffer = clCreateBuffer(opencl_ctx->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+						LUT_SIZE * LUT_SIZE * LUT_SIZE * 3 * sizeof(unsigned short), lut3d_map, &ret);
 	if (ret != CL_SUCCESS) {
 		pr_tuning("clCreateBuffer fail, ret: %d\n", ret);
+		return RET_FAILURE;
+	}
+
+	int lut_size = LUT_SIZE;
+	int img_width = pipe_info->img_width;
+	int img_height = pipe_info->img_height;
+	ret = clSetKernelArg(opencl_ctx->kernel, 0, sizeof(cl_mem), &opencl_ctx->input_image);
+	ret |= clSetKernelArg(opencl_ctx->kernel, 1, sizeof(cl_mem), &opencl_ctx->output_image);
+	ret |= clSetKernelArg(opencl_ctx->kernel, 2, sizeof(cl_mem), &opencl_ctx->lut_buffer);
+	ret |= clSetKernelArg(opencl_ctx->kernel, 3, sizeof(int), &lut_size);
+	ret |= clSetKernelArg(opencl_ctx->kernel, 4, sizeof(int), &img_height);
+	ret |= clSetKernelArg(opencl_ctx->kernel, 5, sizeof(int), &img_width);
+	if (ret != CL_SUCCESS) {
+		pr_tuning("clSetKernelArg fail, ret: %d\n", ret);
 		return RET_FAILURE;
 	}
 
@@ -721,18 +780,24 @@ void lut3d_map_init()
 	for (r = 0; r < LUT_SIZE; r++) {
 	for (g = 0; g < LUT_SIZE; g++) {
 	for (b = 0; b < LUT_SIZE; b++) {
-	if (r < LUT_SIZE / 2 && g < LUT_SIZE / 2 && b < LUT_SIZE / 2) {
+	if (r < LUT_SIZE / 2) {
 		lut3d_map[r][g][b][0] = FLOAT288INT((LUT_KNEE * r) / ((LUT_SIZE - 1) / 2.0));
-		lut3d_map[r][g][b][1] = FLOAT288INT((LUT_KNEE * g) / ((LUT_SIZE - 1) / 2.0));
-		lut3d_map[r][g][b][2] = FLOAT288INT((LUT_KNEE * b) / ((LUT_SIZE - 1) / 2.0));
 	} else {
 		lut3d_map[r][g][b][0] = FLOAT288INT(((255.0 - LUT_KNEE) * (r - LUT_SIZE / 2.0)) / ((LUT_SIZE - 1) / 2.0) + LUT_KNEE);
+	}
+	if (g < LUT_SIZE / 2) {
+		lut3d_map[r][g][b][1] = FLOAT288INT((LUT_KNEE * g) / ((LUT_SIZE - 1) / 2.0));
+	} else {
 		lut3d_map[r][g][b][1] = FLOAT288INT(((255.0 - LUT_KNEE) * (g - LUT_SIZE / 2.0)) / ((LUT_SIZE - 1) / 2.0) + LUT_KNEE);
+	}
+	if (b < LUT_SIZE / 2) {
+		lut3d_map[r][g][b][2] = FLOAT288INT((LUT_KNEE * b) / ((LUT_SIZE - 1) / 2.0));
+	} else {
 		lut3d_map[r][g][b][2] = FLOAT288INT(((255.0 - LUT_KNEE) * (b - LUT_SIZE / 2.0)) / ((LUT_SIZE - 1) / 2.0) + LUT_KNEE);
 	}
-	// lut3d_map[r][g][b][0] = (255.0 * r) / ((LUT_SIZE - 1));
-	// lut3d_map[r][g][b][1] = (255.0 * g) / ((LUT_SIZE - 1));
-	// lut3d_map[r][g][b][2] = (255.0 * b) / ((LUT_SIZE - 1));
+	// lut3d_map[r][g][b][0] = FLOAT288INT((255.0 * r) / ((LUT_SIZE - 1)));
+	// lut3d_map[r][g][b][1] = FLOAT288INT((255.0 * g) / ((LUT_SIZE - 1)));
+	// lut3d_map[r][g][b][2] = FLOAT288INT((255.0 * b) / ((LUT_SIZE - 1)));
 	}
 	}
 	}

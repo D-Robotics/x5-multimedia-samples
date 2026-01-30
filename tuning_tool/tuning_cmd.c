@@ -1188,24 +1188,6 @@ static void tuning_opencl_3dlut(tuning_context_t *ctx, unsigned char *buf_src, u
 		return;
 	}
 
-	ret = clEnqueueWriteBuffer(opencl_ctx->queue, opencl_ctx->lut_buffer, CL_TRUE, 0, LUT_SIZE * LUT_SIZE * LUT_SIZE * 3 * sizeof(int), lut3d_map, 0, NULL, NULL);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clEnqueueWriteBuffer fail, ret: %d\n", ret);
-		return;
-	}
-
-	int lut_size = LUT_SIZE;
-	ret = clSetKernelArg(opencl_ctx->kernel, 0, sizeof(cl_mem), &opencl_ctx->input_image);
-	ret |= clSetKernelArg(opencl_ctx->kernel, 1, sizeof(cl_mem), &opencl_ctx->output_image);
-	ret |= clSetKernelArg(opencl_ctx->kernel, 2, sizeof(cl_mem), &opencl_ctx->lut_buffer);
-	ret |= clSetKernelArg(opencl_ctx->kernel, 3, sizeof(int), &lut_size);
-	ret |= clSetKernelArg(opencl_ctx->kernel, 4, sizeof(int), &img_height);
-	ret |= clSetKernelArg(opencl_ctx->kernel, 5, sizeof(int), &img_width);
-	if (ret != CL_SUCCESS) {
-		pr_tuning("clSetKernelArg fail, ret: %d\n", ret);
-		return;
-	}
-
 	size_t global_work_size[2] = {img_height, img_width};
 	ret = clEnqueueNDRangeKernel(opencl_ctx->queue, opencl_ctx->kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL);
 	if (ret != CL_SUCCESS) {

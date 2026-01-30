@@ -19,8 +19,9 @@
 #define RET_FAILURE	-1
 
 #define LUT_SIZE 10
-#define LUT_KNEE 150
+#define LUT_KNEE 80
 #define FV_DELAY_FRAME 60
+// #define CPU_3DLUT
 
 #define DEF_DUMP_PATH	"/userdata"
 #define DEF_TMPFS_DUMP_PATH	"/tmp"

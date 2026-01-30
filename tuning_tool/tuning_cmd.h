@@ -10,7 +10,7 @@
 #include "tuning_tool.h"
 
 extern tuning_context_t *global_ctx;
-extern int32_t lut3d_map[LUT_SIZE][LUT_SIZE][LUT_SIZE][3];
+extern unsigned short lut3d_map[LUT_SIZE][LUT_SIZE][LUT_SIZE][3];
 
 typedef struct tuning_cmd_func {
 	char cmd;
@@ -82,7 +82,7 @@ typedef struct tuning_cmd_func {
 			"c -> set dpcc attr\n"\
 			"C -> get dpcc attr\n"\
 			"g -> set bayer pattern attr\n"\
-			"i -> handle with 3dlut\n"\
+			"G -> handle with 3dlut\n"\
 			"x -> set af attr\n"\
 			"X -> get af attr\n"\
 			"q -> quit\n"\
@@ -120,6 +120,7 @@ typedef struct tuning_cmd_func {
 	{'c',	tuning_handle_set_dpcc_attr},\
 	{'C',	tuning_handle_get_dpcc_attr},\
 	{'g',	tuning_handle_set_pattern_attr},\
+	{'G',	tuning_handle_3dlut},\
 	{'i',	tuning_handle_set_rgbir_attr},\
 	{'I',	tuning_handle_get_rgbir_attr},\
 	{'x',	tuning_handle_set_af_attr},\

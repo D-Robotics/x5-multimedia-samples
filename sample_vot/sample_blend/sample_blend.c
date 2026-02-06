@@ -368,11 +368,18 @@ static int display_setup(display_context_t *display_context){
 		printf("not support %s, connector type is %d.\n", param_config->output, display_context->connector_type);
 		goto free_res;
 	}
-	drmModeModeInfo* mode = __get_valid_mode_from_connector(conn, param_config->width, param_config->height);
-	if(mode == NULL){
-		ret = -1;
+
+	drmModeModeInfo* mode = NULL;
+	if (display_context->connector_type == DRM_MODE_CONNECTOR_DSI) {
+		mode = &conn->modes[0];
+	} else { // hdmi
+		mode = __get_valid_mode_from_connector(conn, param_config->width, param_config->height);
+	}
+
+	if (mode == NULL) {
 		goto free_conn;
 	}
+
 	display_context->width = mode->hdisplay;
 	display_context->height = mode->vdisplay;
 

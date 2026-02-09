@@ -890,7 +890,7 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 
 	if(pipelinemode == Offline || pipelinemode == MCM){
 		hbn_buf_alloc_attr_t alloc_attr = {0};
-		alloc_attr.buffers_num = 3;
+		alloc_attr.buffers_num = 4;
 		alloc_attr.is_contig = 1;
 		alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 				| HB_MEM_USAGE_CPU_WRITE_OFTEN

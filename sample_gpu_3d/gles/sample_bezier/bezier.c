@@ -98,7 +98,7 @@ int main(int argc, char* argv[])
 			return 1;
 		}
 
-		if (setenv("GBM_CONNECTOR_ID", "75", 1) != 0) {
+		if (setenv("GBM_CONNECTOR_ID", "74", 1) != 0) {
 			perror("setenv failed");
 			return 1;
 		}

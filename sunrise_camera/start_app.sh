@@ -13,28 +13,18 @@ echo 105000 > /sys/class/thermal/thermal_zone1/trip_point_1_temp
 # 设置cpu运行在高性能模式
 echo performance > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor
 
-BOARD_ID=$(cat /sys/class/socinfo/board_id)
+# RDK OS
+systemctl stop lightdm
 
-case "$BOARD_ID" in
-	0x03*|0x05*)
-		#RDK
-		modprobe sii902x
-		modprobe panel-wh-cm480
-		modprobe ft5406
-		modprobe hb_bl
-		modprobe vio_n2d
-		modprobe vs-x5-syscon-bridge
-		modprobe vs_drm
-		;;
-	*)
-		#EVB
-		modprobe panel-jc-050hd134
-		modprobe galcore
-		modprobe vio_n2d
-		modprobe lontium_lt8618
-		modprobe vs-x5-syscon-bridge
-		modprobe vs_drm
-esac
+rmmod vs_drm
+rmmod vs-x5-syscon-bridge
+rmmod sii902x
+rmmod drm_kms_helper
+
+modprobe sii902x
+modprobe vs-x5-syscon-bridge
+modprobe drm_kms_helper
+modprobe vs_drm
 
 cd "${local_path}"/sunrise_camera/bin || exit 1
 echo "============= Start Sunrise Camera ==============="

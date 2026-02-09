@@ -373,6 +373,7 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 	switch (date_type) {
 		case SENSOR_DATA_TYPE_RAW10:
 		case SENSOR_DATA_TYPE_RAW12:
+		case SENSOR_DATA_TYPE_RAW14:
 			strcat(dst_file, ".raw");
 			printf("Dumping RAW data: handle %d, resolution: %dx%d (stride: %d), size: %ld, frame id: %d, timestamp: %ld\n",
 					(int)vin_node_handle,

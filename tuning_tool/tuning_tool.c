@@ -345,7 +345,8 @@ static void *tuning_main_worker_thread(void *arg)
 			if (HBPLAYER_EN) {
 				raw_type = (ctx->pipe_contex_info[i].vin_format == 0x2A) ? RAW_8 :
 					(ctx->pipe_contex_info[i].vin_format == 0x2B) ? RAW_10 :
-					(ctx->pipe_contex_info[i].vin_format == 0x2C) ? RAW_12 : RAW_10;
+					(ctx->pipe_contex_info[i].vin_format == 0x2C) ? RAW_12 :
+					(ctx->pipe_contex_info[i].vin_format == 0x2D) ? RAW_14 : RAW_10;
 				ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img, raw_type, i);
 				if (ret)
 					pr_tuning("send to hbplayer failed for sensor %d, skip it\n", i);

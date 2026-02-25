@@ -27,6 +27,8 @@
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
 
+#include "hdmi_id.h"
+
 #define DRM_MAX_BLEND_WIDTH  1920
 #define DRM_MAX_BLEND_HEIGHT 1080
 #define DRM_MAX_BLEND_FPS    60
@@ -499,13 +501,14 @@ int main(int argc, char** argv) {
 	if (ret != 0){
 		return -1;
 	}
-	if(strcmp(param_config->output, "hdmi") == 0){
-		display_context.connector_id = 75;
+
+	if (strcmp(param_config->output, "hdmi") == 0) {
+		display_context.connector_id = get_hdmi_connector_id();
 		display_context.connector_type = DRM_MODE_CONNECTOR_HDMIA;
-	}else if(strcmp(param_config->output, "dsi") == 0){
+	} else if (strcmp(param_config->output, "dsi") == 0) {
 		display_context.connector_id = 73;
 		display_context.connector_type = DRM_MODE_CONNECTOR_DSI;
-	}else{
+	} else {
 		printf("not support display [%s]\n.", param_config->output);
 	}
 	//1. open drm device
@@ -530,8 +533,6 @@ int main(int argc, char** argv) {
 	for (int i = 0; i < DRM_MAX_BLEND_PLANES; i++){
 		printf("Found plane id : %d, %d\n", i, display_context.plane_ids[i]);
 	}
-
-
 
 	drm_frame_buffer_info_t drm_fb_info[DRM_MAX_BLEND_PLANES];
 	for(int i = 0; i < DRM_MAX_BLEND_PLANES; i++){

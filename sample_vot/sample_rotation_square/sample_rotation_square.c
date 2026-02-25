@@ -27,10 +27,13 @@
 #include <xf86drmMode.h>
 #include <drm_fourcc.h>
 
+#include "connector_id.h"
+
 #define DRM_MAX_PLANES 3
 
 #define RGB_DEF_WIDTH  1920
 #define RGB_DEF_HEIGHT 1080
+#define RGB_DEF_FPS    60
 
 typedef struct param_config_s{
 	int width;
@@ -222,15 +225,20 @@ static drmModeModeInfo *__get_valid_mode_from_connector(drmModeConnector* conn, 
 			height = RGB_DEF_HEIGHT;
 		}
 
-		for (int i = 0; i < conn->count_modes; i++){
+		for (int i = 0; i < conn->count_modes; i++) {
+			printf("hdmi index: %02d ch:%d cv:%d vrefresh:%d\n", i, \
+				conn->modes[i].hdisplay, conn->modes[i].vdisplay, conn->modes[i].vrefresh);
 
-			if((conn->modes[i].hdisplay == width) &&
-				(conn->modes[i].vdisplay == height)){
+			if ((conn->modes[i].hdisplay == width)  &&
+			    (conn->modes[i].vdisplay == height) &&
+			    (conn->modes[i].vrefresh == RGB_DEF_FPS)) {
 				mode = &conn->modes[i];
+				printf("display connector connector found mode info.\n");
 				break;
 			}
 		}
-		if(mode == NULL){
+
+		if (mode == NULL) {
 			printf("display connector not support resolution: %d*%d.\n",
 				mode->hdisplay, mode->vdisplay);
 			return mode;
@@ -469,15 +477,18 @@ int main(int argc, char** argv) {
 	if (ret != 0){
 		return -1;
 	}
-	if(strcmp(param_config->output, "hdmi") == 0){
-		display_context.connector_id = 75;
+
+	if (strcmp(param_config->output, "hdmi") == 0) {
 		display_context.connector_type = DRM_MODE_CONNECTOR_HDMIA;
-	}else if(strcmp(param_config->output, "dsi") == 0){
-		display_context.connector_id = 73;
+	} else if (strcmp(param_config->output, "dsi") == 0) {
 		display_context.connector_type = DRM_MODE_CONNECTOR_DSI;
-	}else{
+	} else {
 		printf("not support display [%s]\n.", param_config->output);
+		return -1;
 	}
+
+	display_context.connector_id = get_connector_id(display_context.connector_type);
+
 	//1. open drm device
 	display_context.drm_fd = drmOpen("vs-drm", NULL);
 	if (display_context.drm_fd < 0) {

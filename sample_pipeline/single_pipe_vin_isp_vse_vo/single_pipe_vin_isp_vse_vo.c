@@ -29,6 +29,9 @@ vp_drm_context_t vp_drm_context;
 extern int vin_isp_is_online;
 extern int isp_vse_is_online;
 
+static uint32_t hdmi_width;
+static uint32_t hdmi_heigh;
+
 static int create_and_run_vflow(pipe_contex_t *pipe_contex, int active_mipi_host);
 void *read_vse_data(void *contex);
 
@@ -226,9 +229,8 @@ static int create_vse_node(pipe_contex_t *pipe_contex) {
 	vse_ochn_attr.fmt = FRM_FMT_NV12;
 	vse_ochn_attr.bit_width = 8;
 
-	// 输出原分辨率
-	vse_ochn_attr.target_w = input_width;
-	vse_ochn_attr.target_h = input_height;
+	vse_ochn_attr.target_w = hdmi_width;
+	vse_ochn_attr.target_h = hdmi_heigh;
 
 	ret = hbn_vnode_open(HB_VSE, hw_id, AUTO_ALLOC_ID, vse_node_handle);
 	ERR_CON_EQ(ret, 0);
@@ -391,7 +393,6 @@ void vp_vin_print_hb_mem_graphic_buf_t(const hb_mem_graphic_buf_t *graphic_buf) 
 	printf("\n");
 }
 
-
 void *read_vse_data(void *context) {
 	pipe_contex_t *pipe_context = (pipe_contex_t *)context;
 	hbn_vnode_handle_t vse_node_handle = pipe_context->vse_node_handle;
@@ -430,19 +431,13 @@ static int display_init(pipe_contex_t *pipe_contex)
 	int ret;
 	int output_width, output_height;
 	int hdmi_output_width, hdmi_output_height;
+
 	vp_sensor_config_t *sensor_config = pipe_contex->sensor_config;
 	isp_attr_t *isp_attr = sensor_config->isp_attr;
-
 	output_width = isp_attr->crop.w;
 	output_height = isp_attr->crop.h;
 
-	// ==== 新增：检查分辨率是否支持 ====
-	if (!vp_display_is_resolution_supported(output_width, output_height)) {
-		printf("\n\nError: Resolution %dx%d is not supported by HDMI\n",
-			output_width, output_height);
-		vp_display_print_supported_resolutions();
-		return -1;
-	}
+	vp_display_print_supported_resolutions();
 
 	ret = vp_display_check_hdmi_is_connected();
 	if(ret == 0) {
@@ -450,8 +445,9 @@ static int display_init(pipe_contex_t *pipe_contex)
 		return -1;
 	}
 
-	ret = vp_display_get_max_resolution_if_not_match(output_width, output_height,
-													&hdmi_output_width, &hdmi_output_height);
+	// 找到直接匹配的分辨率或长宽都更小的分辨率
+	ret = vp_display_get_fit_smaller_resolution(output_width, output_height, &hdmi_output_width, &hdmi_output_height);
+
 	if (ret == 1) {
 		printf("hdmi support resolution %d*%d\n", output_width, output_height);
 	} else if (ret == 0) {
@@ -462,6 +458,8 @@ static int display_init(pipe_contex_t *pipe_contex)
 		return -1;
 	}
 
+	hdmi_width = hdmi_output_width;
+	hdmi_heigh = hdmi_output_height;
 	ret = vp_display_init(&vp_drm_context, hdmi_output_width, hdmi_output_height);
 	if (ret != 0) {
 		printf("hdmi init failed.\n");
@@ -539,13 +537,13 @@ int main(int argc, char** argv) {
 
 	hb_mem_module_open();
 
-	ret = create_and_run_vflow(&pipe_contex, active_mipi_host);
-	ERR_CON_EQ(ret, 0);
-
 	ret = display_init(&pipe_contex);
 	if (ret != 0) {
 		goto cleanup;
 	}
+
+	ret = create_and_run_vflow(&pipe_contex, active_mipi_host);
+	ERR_CON_EQ(ret, 0);
 
 	running = 1;
 	ret = pthread_create(&read_thread, NULL, (void *)read_vse_data,

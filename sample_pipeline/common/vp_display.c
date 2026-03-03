@@ -530,6 +530,96 @@ int32_t vp_display_get_max_resolution_if_not_match(
 	return 0;
 }
 
+/**
+ * @brief 匹配sensor和HDMI分辨率：优先精确匹配，无则找长宽都≤输入值的最大分辨率
+ * @param width 输入的目标宽度（sensor分辨率宽）
+ * @param height 输入的目标高度（sensor分辨率高）
+ * @param out_width 输出匹配到的宽度
+ * @param out_height 输出匹配到的高度
+ * @return 1-精确匹配成功；0-找到符合条件的非精确匹配；-1-失败（无可用分辨率/接口错误）
+ */
+int32_t vp_display_get_fit_smaller_resolution(
+	int32_t width, int32_t height, int32_t *out_width, int32_t *out_height)
+{
+
+	if (out_width == NULL || out_height == NULL || width <= 0 || height <= 0) {
+		fprintf(stderr, "Invalid input parameters\n");
+		return -1;
+	}
+
+	*out_width = 0;
+	*out_height = 0;
+
+	int drm_fd = drmOpen("vs-drm", NULL);
+	if (drm_fd < 0) {
+		perror("drmOpen failed");
+		return -1;
+	}
+
+	drmModeRes *resources = drmModeGetResources(drm_fd);
+	if (!resources) {
+		perror("drmModeGetResources failed");
+		close(drm_fd);
+		return -1;
+	}
+
+	drmModeConnectorPtr connector_ptr = find_connector(drm_fd);
+	if (connector_ptr == NULL) {
+		perror("find_connector failed");
+		drmModeFreeResources(resources);
+		close(drm_fd);
+		return -1;
+	}
+
+	drmModeConnector *connector = drmModeGetConnector(drm_fd, connector_ptr->connector_id);
+	if (!connector) {
+		perror("drmModeGetConnector failed");
+		drmModeFreeResources(resources);
+		close(drm_fd);
+		return -1;
+	}
+
+	drmModeModeInfo *exact_mode = NULL;
+	int fit_max_area = 0;
+	int fit_width = 0, fit_height = 0;
+
+	for (int i = 0; i < connector->count_modes; i++) {
+		int curr_width = connector->modes[i].hdisplay;
+		int curr_height = connector->modes[i].vdisplay;
+		int curr_area = curr_width * curr_height;
+
+		if (curr_width == width && curr_height == height) {
+			exact_mode = &connector->modes[i];
+			break;
+		}
+
+		if (curr_width <= width && curr_height <= height) {
+			if (curr_area > fit_max_area) {
+				fit_max_area = curr_area;
+				fit_width = curr_width;
+				fit_height = curr_height;
+			}
+		}
+	}
+
+	drmModeFreeConnector(connector);
+	drmModeFreeResources(resources);
+	close(drm_fd);
+
+	if (exact_mode) {
+		*out_width = exact_mode->hdisplay;
+		*out_height = exact_mode->vdisplay;
+		return 1;
+	} else if (fit_max_area > 0) {
+		*out_width = fit_width;
+		*out_height = fit_height;
+		return 0;
+	} else {
+		fprintf(stderr, "No resolution found (all modes are larger than %dx%d)\n", width, height);
+		return -1;
+	}
+}
+
 int32_t vp_display_init(vp_drm_context_t *drm_ctx, int32_t width, int32_t height)
 {
 	int32_t ret = 0;

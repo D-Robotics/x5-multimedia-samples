@@ -104,10 +104,14 @@ static int frame_queue_pop(frame_queue_t *q, hbn_vnode_image_t *out) {
 	return 0;
 }
 
-static void frame_queue_push(frame_queue_t *q, hbn_vnode_image_t *frame) {
+static int frame_queue_push(frame_queue_t *q, hbn_vnode_image_t *frame) {
 	pthread_mutex_lock(&q->mutex);
-	while (q->count == FRAME_QUEUE_SIZE)
-		pthread_cond_wait(&q->not_full, &q->mutex);
+
+	if (q->count >= FRAME_QUEUE_SIZE) {
+		pthread_mutex_unlock(&q->mutex);
+		printf("Frame queue full, drop frame! (current count: %d)\n", q->count);
+		return -1;
+	}
 
 	q->frames[q->tail].frame = *frame;
 	q->frames[q->tail].valid = 1;
@@ -116,6 +120,8 @@ static void frame_queue_push(frame_queue_t *q, hbn_vnode_image_t *frame) {
 
 	pthread_cond_signal(&q->not_empty);
 	pthread_mutex_unlock(&q->mutex);
+
+	return 0;
 }
 
 static void show_help() {
@@ -643,50 +649,60 @@ void *producer_thread(void *context) {
 		for (int i = 0; i < total_pipeline_num; i++) {
 			pipeline_info_t *p = args->pipeline_info[i];
 			hbn_vnode_image_t out_img = {0};
+			int get_frame_ok = 0;
 
 			if (hbn_vnode_getframe(p->pipe_contexts.gpu2d_node_handle, p->bind_chn, 2000, &out_img) == 0) {
-				frame_queue_push(&frame_queue, &out_img);
-				frame_counters[i]++;
+				get_frame_ok = 1;
 
-				if (frame_counters[i] % adjust_interval == 0) {
-					static int crop_x = 0;
-					static int crop_y = 0;
-					static int crop_w = 0;
-					static int crop_h = 0;
+				int push_ret = frame_queue_push(&frame_queue, &out_img);
+				if (push_ret != 0) {
+					p->stats.drop_count++;
+					printf("Pipeline %d: frame queue full, drop frame (drop count: %lu)\n", i, p->stats.drop_count);
+				} else {
+					frame_counters[i]++;
 
-					int input_w = g_gpu2d_attr.input_width[0];
-					int input_h = g_gpu2d_attr.input_height[0];
+					if (frame_counters[i] % adjust_interval == 0) {
+						static int crop_x = 0;
+						static int crop_y = 0;
+						static int crop_w = 0;
+						static int crop_h = 0;
 
-					if (crop_w == 0 || crop_h == 0) {
-						crop_w = input_w;
-						crop_h = input_h;
-					}
+						int input_w = g_gpu2d_attr.input_width[0];
+						int input_h = g_gpu2d_attr.input_height[0];
 
-					crop_w -= 200;
-					crop_h -= 100;
+						if (crop_w == 0 || crop_h == 0) {
+							crop_w = input_w;
+							crop_h = input_h;
+						}
 
-					if (crop_w < input_w / 2 || crop_h < input_h / 2) {
-						crop_w = input_w;
-						crop_h = input_h;
-					}
-					set_n2d_crop_region_safe(p, crop_x, crop_y, crop_w, crop_h);
+						crop_w -= 200;
+						crop_h -= 100;
 
-					if (verbose_flag) {
-						printf("Adjusted crop region for pipeline %d: x=%d, y=%d, w=%d, h=%d\n",
-							i, crop_x, crop_y, crop_w, crop_h);
+						if (crop_w < input_w / 2 || crop_h < input_h / 2) {
+							crop_w = input_w;
+							crop_h = input_h;
+						}
+						set_n2d_crop_region_safe(p, crop_x, crop_y, crop_w, crop_h);
+
+						if (verbose_flag) {
+							printf("Adjusted crop region for pipeline %d: x=%d, y=%d, w=%d, h=%d\n",
+								i, crop_x, crop_y, crop_w, crop_h);
+						}
 					}
 				}
 			} else {
 				p->stats.drop_count++;
-				printf("hbn_vnode_getframe failed\n");
+				printf("hbn_vnode_getframe failed for pipeline %d (drop count: %lu)\n", i, p->stats.drop_count);
 			}
 
-			hbn_vnode_releaseframe(p->pipe_contexts.gpu2d_node_handle, p->bind_chn, &out_img);
+			if (get_frame_ok) {
+				hbn_vnode_releaseframe(p->pipe_contexts.gpu2d_node_handle, p->bind_chn, &out_img);
+			}
 		}
 	}
+
 	return NULL;
 }
-
 
 void *consumer_thread(void *context) {
 	uint32_t count = 0;
@@ -714,6 +730,7 @@ void *consumer_thread(void *context) {
 
 		count++;
 	}
+
 	return NULL;
 }
 

@@ -16,6 +16,7 @@ function print_usage() {
 	echo "run with [-w 2]: dump 20 yuv from the start"
 	echo "run with [-r 1]: send raw to hbplayer"
 	echo "run with [-f xx]: feedback raw list xx times"
+	echo "run with [--hdmi]: enable HDMI preview (also enables VSE, output to HDMI)"
 	exit 1
 }
 

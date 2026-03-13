@@ -29,6 +29,7 @@ typedef struct tuning_cmd_func {
 		{"offline", no_argument, 0, 0},\
 		{"mcm", no_argument, 0, 0},\
 		{"enable_vse", no_argument, 0, 0},\
+		{"hdmi", no_argument, 0, 0},\
 		{"work_mode", required_argument, 0, 'w'},\
 		{"feedback_times", required_argument, 0, 'f'},\
 		{"hight", required_argument, 0, 'H'},\

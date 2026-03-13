@@ -20,6 +20,7 @@
 #include "common_utils.h"
 #include "hb_media_codec.h"
 #include "hb_media_error.h"
+#include "vp_display.h"
 
 // 由于不需要预览多路，一次只需要初始化一个 channel， 默认使用 vse channel 0 ，如果需要使用 channel 1 ，那就更改 VSE_CHANNELS_USED 为 1 。
 #define VSE_CHANNELS_USED 0
@@ -43,11 +44,88 @@ static int settle = -1;
 static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static uint32_t pipelinemode = 2; // 0: Online ; 1: MCM; 2: Offline
 static uint32_t enable_vse = 0; // 0: disable_vse ; 1: enable_vse
+static uint32_t enable_hdmi = 0; // 0: disable ; 1: enable hdmi preview (via VSE->DRM)
 static uint32_t feedback_raw_hight;
 static uint32_t feedback_raw_width;
 static char feedback_raw_format[32] = {0};
 static int32_t used_mipi_host = 0;
 static uint32_t link_port = 0;
+
+static vp_drm_context_t g_drm_context;
+static int32_t g_drm_inited = 0;
+static uint32_t g_hdmi_width = 0;
+static uint32_t g_hdmi_height = 0;
+static int32_t g_hdmi_modes_printed = 0;
+
+static int32_t tuning_pick_hdmi_resolution(int32_t input_width, int32_t input_height,
+	int32_t *out_width, int32_t *out_height)
+{
+	int32_t ret;
+
+	ret = vp_display_get_fit_smaller_resolution(input_width, input_height, out_width, out_height);
+	if (ret >= 0) {
+		return ret;
+	}
+
+	/* 若 HDMI 只支持比输入更大的分辨率，则选择“最小的可用模式”，避免直接失败 */
+	int drm_fd = drmOpen("vs-drm", NULL);
+	if (drm_fd < 0) {
+		perror("drmOpen failed");
+		return -1;
+	}
+
+	drmModeRes *resources = drmModeGetResources(drm_fd);
+	if (!resources) {
+		perror("drmModeGetResources failed");
+		close(drm_fd);
+		return -1;
+	}
+
+	drmModeConnector *best_conn = NULL;
+	int best_area = 0;
+	int best_w = 0;
+	int best_h = 0;
+
+	for (int i = 0; i < resources->count_connectors; i++) {
+		drmModeConnector *conn = drmModeGetConnector(drm_fd, resources->connectors[i]);
+		if (!conn) {
+			continue;
+		}
+		if (conn->connector_type != DRM_MODE_CONNECTOR_HDMIA ||
+			conn->connection != DRM_MODE_CONNECTED ||
+			conn->count_modes <= 0) {
+			drmModeFreeConnector(conn);
+			continue;
+		}
+
+		for (int m = 0; m < conn->count_modes; m++) {
+			int w = conn->modes[m].hdisplay;
+			int h = conn->modes[m].vdisplay;
+			int area = w * h;
+			if (best_area == 0 || area < best_area) {
+				best_area = area;
+				best_w = w;
+				best_h = h;
+			}
+		}
+		best_conn = conn;
+		break;
+	}
+
+	if (best_conn) {
+		drmModeFreeConnector(best_conn);
+	}
+	drmModeFreeResources(resources);
+	close(drm_fd);
+
+	if (best_area > 0) {
+		*out_width = best_w;
+		*out_height = best_h;
+		return 0;
+	}
+
+	return -1;
+}
 
 unsigned short lut3d_map[LUT_SIZE][LUT_SIZE][LUT_SIZE][3];
 
@@ -199,6 +277,11 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 			if (strcmp(long_options[option_index].name, "enable_vse") == 0) {
 				printf("VSE enabled!!!\n");
 				enable_vse = 1;
+			}
+			if (strcmp(long_options[option_index].name, "hdmi") == 0) {
+				printf("HDMI preview enabled!!!\n");
+				enable_hdmi = 1;
+				enable_vse = 1; // HDMI 预览依赖 VSE 输出到适配的分辨率
 			}
 			break;
 		case 'f':
@@ -434,6 +517,60 @@ static void *tuning_main_worker_thread(void *arg)
 			}
 			if (ret)
 				pr_tuning("send to hbplayer failed, skip it\n");
+		}
+
+		if (enable_hdmi && enable_vse) {
+			if (!g_drm_inited) {
+				int32_t drm_w = (int32_t)g_hdmi_width;
+				int32_t drm_h = (int32_t)g_hdmi_height;
+
+				if (!g_hdmi_modes_printed) {
+					vp_display_print_supported_resolutions();
+					g_hdmi_modes_printed = 1;
+				}
+
+				ret = vp_display_check_hdmi_is_connected();
+				if (ret < 0) {
+					printf("\n\nFailed: output form is hdmi, but not found hdmi connector.\n\n");
+				} else {
+					/*
+					 * 优先使用 create_vse_node() 已经选好的 HDMI 输出分辨率；
+					 * 避免 img_width/img_height 尚未就绪时传入 0 导致反复失败。
+					 */
+					if (drm_w <= 0 || drm_h <= 0) {
+						int32_t input_width = (int32_t)ctx->pipe_contex_info[i].img_width;
+						int32_t input_height = (int32_t)ctx->pipe_contex_info[i].img_height;
+						if (input_width > 0 && input_height > 0) {
+							int32_t out_w = 0, out_h = 0;
+							if (tuning_pick_hdmi_resolution(input_width, input_height, &out_w, &out_h) >= 0) {
+								drm_w = out_w;
+								drm_h = out_h;
+								g_hdmi_width = (uint32_t)out_w;
+								g_hdmi_height = (uint32_t)out_h;
+							}
+						}
+					}
+
+					if (drm_w > 0 && drm_h > 0) {
+						ret = vp_display_init(&g_drm_context, drm_w, drm_h);
+						if (ret == 0) {
+							g_drm_inited = 1;
+							printf("vp_display_init ok: %dx%d\n", drm_w, drm_h);
+						} else {
+							printf("hdmi init failed.\n");
+						}
+					} else {
+						printf("hdmi resolution not ready, skip init this round\n");
+					}
+				}
+			}
+
+			if (g_drm_inited) {
+				ret = vp_display_set_frame(&g_drm_context, &vse_img[VSE_CHANNELS_USED].buffer);
+				if (ret) {
+					printf("vp_display_set_frame for hdmi failed %d.\n", ret);
+				}
+			}
 		}
 #ifdef TUNING_DEBUG
 		// pr_tuning("get buffer size %ld-%ld\n", yuv_img.buffer.size[0], yuv_img.buffer.size[1]);
@@ -984,10 +1121,36 @@ static int32_t create_vse_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	vse_ochn_attr[VSE_CHANNELS_USED].fmt = FRM_FMT_NV12;
 	vse_ochn_attr[VSE_CHANNELS_USED].bit_width = 8;
 	// 全部设置到宽为 640 的像素，保证流畅，但是要注意，每个通道的功能和限制不同，如果修改 VSE_CHANNELS_USED 的数值，可能导致功能异常，需要参考 VSE 文档，了解每个通道的功能再进行修改。
-	ratio = input_width / VSE_WIDTH_TARGET;
-	global_ctx->vse_ratio = ratio;
-	vse_ochn_attr[VSE_CHANNELS_USED].target_w = VSE_WIDTH_TARGET;
-	vse_ochn_attr[VSE_CHANNELS_USED].target_h = input_height / ratio;
+	if (enable_hdmi) {
+		int32_t hdmi_output_width = 0;
+		int32_t hdmi_output_height = 0;
+
+		if (vp_display_check_hdmi_is_connected() < 0) {
+			printf("\n\nFailed: output form is hdmi, but not found hdmi connector.\n\n");
+			printf("Please run insmode_driver.sh to load HDMI related drivers before using --hdmi.\n");
+			printf("（使用 HDMI 功能前，请先执行 insmode_driver.sh 加载显示相关驱动。）\n\n");
+			return RET_FAILURE;
+		}
+
+		ret = tuning_pick_hdmi_resolution((int32_t)input_width, (int32_t)input_height,
+			&hdmi_output_width, &hdmi_output_height);
+		if (ret < 0) {
+			printf("hdmi not found appropriate resolution\n");
+			goto vse_default_target;
+		}
+
+		g_hdmi_width = (uint32_t)hdmi_output_width;
+		g_hdmi_height = (uint32_t)hdmi_output_height;
+		global_ctx->vse_ratio = 1;
+		vse_ochn_attr[VSE_CHANNELS_USED].target_w = (uint32_t)hdmi_output_width;
+		vse_ochn_attr[VSE_CHANNELS_USED].target_h = (uint32_t)hdmi_output_height;
+	} else {
+vse_default_target:
+		ratio = input_width / VSE_WIDTH_TARGET;
+		global_ctx->vse_ratio = ratio;
+		vse_ochn_attr[VSE_CHANNELS_USED].target_w = VSE_WIDTH_TARGET;
+		vse_ochn_attr[VSE_CHANNELS_USED].target_h = input_height / ratio;
+	}
 
 
 	// 创建 VSE 节点

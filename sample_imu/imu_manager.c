@@ -95,7 +95,7 @@ static int check_file_access(const char *path) {
         fprintf(stderr, "No read permission: %s (try with sudo)\n", path);
         return -1;
     }
-    return 0;
+    return 1;
 }
 
 // 完整设备验证

@@ -394,7 +394,7 @@ int32_t solution_cam_display_param_get(solution_cfg_t *solution_cfg, solution_di
 		}
 
 		//sensor param
-		solution_cfg_cam_vpp_t *cam_vpp = &g_solution_config.cam_solution.cam_vpp[pipeline_id];
+		solution_cfg_cam_vpp_t *cam_vpp = &solution_cfg->cam_solution.cam_vpp[pipeline_id];
 		int sensor_width = -1, sensor_height = -1, sensor_fps = -1;
 		ret = vp_get_sensor_info_by_name(cam_vpp->sensor, &sensor_width, &sensor_height, &sensor_fps);
 		if(ret != 0){

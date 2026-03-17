@@ -42,7 +42,7 @@ void tuning_get_filename(char *name, char *path, hbn_vnode_image_t *out_img, df_
 }
 
 int32_t tuning_send_raw_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf,
-				enum RAW_BIT format, int32_t pipe_id)
+				enum RAW_BIT format, int32_t pipe_id, int32_t chn_id)
 {
 	void *raw_addr = NULL;
 	pic_info_t hbplayer_info;
@@ -75,11 +75,11 @@ int32_t tuning_send_raw_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t
 	}
 	if (plane_cnt == 1)
 	{
-		hbplayer_info.chn_id = 0;
+		hbplayer_info.chn_id = chn_id;
 		ret = hb_tool_send_raw_pic(event, &hbplayer_info, raw_addr, size, 0, 0);
 	}else if (plane_cnt == 2)
 	{
-		hbplayer_info.chn_id = 0;
+		hbplayer_info.chn_id = chn_id;
 		ret = hb_tool_send_raw_pic(event, &hbplayer_info, raw_addr, size, 0, 0);
 
 		void *short_raw_addr = normal_buf->buffer.virt_addr[1];
@@ -92,7 +92,7 @@ int32_t tuning_send_raw_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t
 		else
 		{
 			pic_info_t short_info = hbplayer_info;
-			short_info.chn_id = 2;
+			short_info.chn_id = chn_id + 2;
 			ret |= hb_tool_send_raw_pic(event, &short_info, short_raw_addr, short_size, 0, 0);
 		}
 	}

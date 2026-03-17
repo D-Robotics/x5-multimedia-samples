@@ -41,6 +41,7 @@ static void print_help() {
 
 tuning_context_t *global_ctx;
 static int settle = -1;
+static int pdaf_en = 0;
 static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static uint32_t pipelinemode = 2; // 0: Online ; 1: MCM; 2: Offline
 static uint32_t enable_vse = 0; // 0: disable_vse ; 1: enable_vse
@@ -381,7 +382,8 @@ static void *tuning_main_worker_thread(void *arg)
 {
 	int i = 0;
 	int ret;
-	hbn_vnode_image_t raw_img = {0};
+	hbn_vnode_image_t raw_img_pdaf = {0};
+	hbn_vnode_image_t raw_img_main = {0};
 	hbn_vnode_image_t yuv_img = {0};
 	hbn_vnode_image_t vse_img[VSE_CHANNELS_USED + 1] = {0};
 	static int32_t yuv_stream_cnt = 0;
@@ -419,22 +421,48 @@ static void *tuning_main_worker_thread(void *arg)
 		vse_node_handle = ctx->pipe_contex_info[i].pipe_contex.vse_node_handle;
 
 		if (ctx->send_raw) {
-			ret = hbn_vnode_getframe(vin_node_handle, 0, 1500, &raw_img);
-			if (ret) {
-				pr_tuning("Sensor-%d get buffer from sif fail\n", i);
-				goto out;
-			}
+			raw_type = (ctx->pipe_contex_info[i].vin_format == 0x2A) ? RAW_8 :
+				(ctx->pipe_contex_info[i].vin_format == 0x2B) ? RAW_10 :
+				(ctx->pipe_contex_info[i].vin_format == 0x2C) ? RAW_12 :
+				(ctx->pipe_contex_info[i].vin_format == 0x2D) ? RAW_14 : RAW_10;
 
-			if (HBPLAYER_EN) {
-				raw_type = (ctx->pipe_contex_info[i].vin_format == 0x2A) ? RAW_8 :
-					(ctx->pipe_contex_info[i].vin_format == 0x2B) ? RAW_10 :
-					(ctx->pipe_contex_info[i].vin_format == 0x2C) ? RAW_12 :
-					(ctx->pipe_contex_info[i].vin_format == 0x2D) ? RAW_14 : RAW_10;
-				ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img, raw_type, i);
-				if (ret)
-					pr_tuning("send to hbplayer failed for sensor %d, skip it\n", i);
+			if (pdaf_en) {
+				ret = hbn_vnode_getframe(vin_node_handle, VIN_PDAF, 1500, &raw_img_pdaf);
+				if (ret) {
+					pr_tuning("Sensor-%d get PDAF buffer from vin fail\n", i);
+					goto out;
+				}
+				if (HBPLAYER_EN) {
+					ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img_pdaf, raw_type, i, 1);
+					if (ret)
+						pr_tuning("send PDAF to hbplayer failed for sensor %d, skip it\n", i);
+				}
+				hbn_vnode_releaseframe(vin_node_handle, VIN_PDAF, &raw_img_pdaf);
+
+				ret = hbn_vnode_getframe(vin_node_handle, VIN_MAIN_FRAME, 1500, &raw_img_main);
+				if (ret) {
+					pr_tuning("Sensor-%d get MAIN_FRAME buffer from vin fail\n", i);
+					goto out;
+				}
+				if (HBPLAYER_EN) {
+					ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img_main, raw_type, i, 0);
+					if (ret)
+						pr_tuning("send MAIN_FRAME to hbplayer failed for sensor %d, skip it\n", i);
+				}
+				hbn_vnode_releaseframe(vin_node_handle, VIN_MAIN_FRAME, &raw_img_main);
+			} else {
+				ret = hbn_vnode_getframe(vin_node_handle, VIN_MAIN_FRAME, 1500, &raw_img_main);
+				if (ret) {
+					pr_tuning("Sensor-%d get MAIN_FRAME buffer from vin fail\n", i);
+					goto out;
+				}
+				if (HBPLAYER_EN) {
+					ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img_main, raw_type, i, 0);
+					if (ret)
+						pr_tuning("send MAIN_FRAME to hbplayer failed for sensor %d, skip it\n", i);
+				}
+				hbn_vnode_releaseframe(vin_node_handle, VIN_MAIN_FRAME, &raw_img_main);
 			}
-			hbn_vnode_releaseframe(vin_node_handle, 0, &raw_img);
 		}
 
 		if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
@@ -968,7 +996,9 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	vin_node_attr_t *vin_node_attr = NULL;
 	vin_ichn_attr_t *vin_ichn_attr = NULL;
 	vin_ochn_attr_t *vin_ochn_attr = NULL;
+	vin_ochn_attr_t *vin_pdaf_ochn_attr = NULL;
 	hbn_vnode_handle_t *vin_node_handle = NULL;
+	hbn_buf_alloc_attr_t alloc_pdaf_attr = {0};
 	vin_attr_ex_t vin_attr_ex;
 	uint32_t hw_id = 0;
 	uint32_t ichn_id = 0;
@@ -979,6 +1009,7 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	vin_node_attr = sensor_config->vin_node_attr;
 	vin_ichn_attr = sensor_config->vin_ichn_attr;
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
+	vin_pdaf_ochn_attr = sensor_config->vin_pdaf_ochn_attr;
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 	link_port = vin_node_attr->cim_attr.vc_index;
@@ -1014,6 +1045,10 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	FUNC_EQ(hbn_vnode_set_attr(*vin_node_handle, vin_node_attr), 0, return RET_FAILURE);
 	FUNC_EQ(hbn_vnode_set_ichn_attr(*vin_node_handle, ichn_id, vin_ichn_attr), 0, return RET_FAILURE);
 	FUNC_EQ(hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr), 0, return RET_FAILURE);
+	if (vin_pdaf_ochn_attr && vin_pdaf_ochn_attr->pdaf_en == 1) {
+		pdaf_en = vin_pdaf_ochn_attr->pdaf_en;
+		FUNC_EQ(hbn_vnode_set_ochn_attr(*vin_node_handle, VIN_PDAF, vin_pdaf_ochn_attr), 0, return RET_FAILURE);
+	}
 
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
@@ -1036,6 +1071,14 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 				| HB_MEM_USAGE_HW_CIM
 				| HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
 		FUNC_EQ(hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr), 0, return RET_FAILURE);
+	}
+
+	if (vin_pdaf_ochn_attr && vin_pdaf_ochn_attr->pdaf_en == 1) {
+		memset(&alloc_pdaf_attr, 0, sizeof(hbn_buf_alloc_attr_t));
+		alloc_pdaf_attr.buffers_num = 6;
+		alloc_pdaf_attr.is_contig   = 1;
+		alloc_pdaf_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		FUNC_EQ(hbn_vnode_set_ochn_buf_attr(*vin_node_handle, VIN_PDAF, &alloc_pdaf_attr), 0, return RET_FAILURE);
 	}
 	return RET_SUCCESS;
 }
@@ -1074,8 +1117,11 @@ static int32_t create_isp_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	FUNC_EQ(hbn_vnode_set_attr(*isp_node_handle, isp_attr), 0, return RET_FAILURE);
 	FUNC_EQ(hbn_vnode_set_ochn_attr(*isp_node_handle, ochn_id, isp_ochn_attr), 0, return RET_FAILURE);
 	FUNC_EQ(hbn_vnode_set_ichn_attr(*isp_node_handle, ichn_id, isp_ichn_attr), 0, return RET_FAILURE);
+	if (isp_attr->af_mode) {
+		FUNC_EQ(hbn_vnode_set_ichn_attr(*isp_node_handle, ISP_PDAF_DATA, isp_ichn_attr), 0, return RET_FAILURE);
+	}
 
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = 6;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 			| HB_MEM_USAGE_CPU_WRITE_OFTEN
@@ -1218,6 +1264,14 @@ static int32_t multi_pipe_create(tuning_context_t *ctx, uint32_t pipelinemode)
 				ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 					pipe_contex->vin_node_handle, 1,
 					pipe_contex->isp_node_handle, 0);
+					if (pdaf_en) {
+						ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->vin_node_handle,
+								VIN_PDAF,
+								pipe_contex->isp_node_handle,
+								ISP_PDAF_DATA);
+						ERR_CON_EQ(ret, 0);
+					}
 					if(enable_vse)
 					{
 						ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
@@ -1231,6 +1285,14 @@ static int32_t multi_pipe_create(tuning_context_t *ctx, uint32_t pipelinemode)
 				ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 					pipe_contex->vin_node_handle, 0,
 					pipe_contex->isp_node_handle, 0);
+					if (pdaf_en) {
+						ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->vin_node_handle,
+								VIN_PDAF,
+								pipe_contex->isp_node_handle,
+								ISP_PDAF_DATA);
+						ERR_CON_EQ(ret, 0);
+					}
 					if(enable_vse)
 					{
 						ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,

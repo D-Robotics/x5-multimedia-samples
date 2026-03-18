@@ -71,6 +71,10 @@ extern vp_sensor_config_t ov50h40_linear_3840x2160_raw10_30fps_4lane;
 extern vp_sensor_config_t ov50h40_linear_4096x3072_raw14_30fps_4lane;
 extern vp_sensor_config_t sc132gs_linear_1088x1280_raw10_30fps_slave_1lane_right;
 extern vp_sensor_config_t sc132gs_linear_1088x1280_raw10_30fps_slave_1lane_left;
+extern vp_sensor_config_t sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc0;
+extern vp_sensor_config_t sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc1;
+extern vp_sensor_config_t sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc2;
+extern vp_sensor_config_t sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc3;
 
 vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc1330t_linear_1280x960_raw10_30fps_1lane,
@@ -129,6 +133,10 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&ov50h40_linear_4096x3072_raw14_30fps_4lane,
 	&sc132gs_linear_1088x1280_raw10_30fps_slave_1lane_right,
 	&sc132gs_linear_1088x1280_raw10_30fps_slave_1lane_left,
+	&sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc0,
+	&sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc1,
+	&sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc2,
+	&sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc3,
 };
 uint32_t vp_get_sensors_list_number() {
 	return sizeof(vp_sensor_config_list) / sizeof(vp_sensor_config_list[0]);

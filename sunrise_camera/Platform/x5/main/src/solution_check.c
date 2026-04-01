@@ -191,7 +191,7 @@ static int is_string_not_match(const char *str1, const char *str2) {
 static int is_param_not_match(display_base_info_t *sensor, display_base_info_t *display) {
 	return (sensor->width != display->width) ||
 		   (sensor->height != display->height) ||
-		   (sensor->fps != display->fps);
+		   (sensor->fps < display->fps);
 }
 void solution_check_display_param_is_match(solution_display_param_info_t* display_param,
 										   solution_display_param_check_info_t *check_result) {

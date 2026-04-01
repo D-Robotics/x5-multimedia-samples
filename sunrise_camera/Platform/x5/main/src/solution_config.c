@@ -290,12 +290,14 @@ int32_t solution_cfg_update_camera_config(){
 	return 0;
 }
 
-int parser_display_param(char *param_str, int *width, int *height, float *fps, int *is_interval) {
+int32_t solution_cfg_parser_display_param(const char *param_str, int32_t *width, int32_t *height, float *fps,
+					  int32_t *is_interval)
+{
 
 	if (param_str == NULL || width == NULL || height == NULL || fps == NULL || is_interval == NULL) {
 		return -1;
 	}
-	int w, h;
+	int32_t w, h;
 	float f;
 	int ret;
 	// 2. 先匹配含隔行标识i的格式：%di:%d*%f
@@ -387,7 +389,8 @@ int32_t solution_cam_display_param_get(solution_cfg_t *solution_cfg, solution_di
 		//display param
 		int hdmi_width = -1, hdmi_height = -1, is_interval = -1;
 		float hdmi_fps = -1;
-		ret = parser_display_param(cfg_display->resolution, &hdmi_width, &hdmi_height, &hdmi_fps, &is_interval);
+		ret = solution_cfg_parser_display_param(cfg_display->resolution, &hdmi_width, &hdmi_height, &hdmi_fps,
+							&is_interval);
 		if(ret != 0){
 			printf("ERROR: [csi_%d] parse display param [{%s}] error\n", pipeline_id, cfg_display->resolution);
 			// return -1;
@@ -459,7 +462,8 @@ int32_t solution_cfg_update_display_config(){
 						change_to_invalid = 1;
 					}else{
 						solution_cfg_cam_vpp_t *cam_vpp = &g_solution_config.cam_solution.cam_vpp[cfg_display->data_source];
-						ret = parser_display_param(cfg_display->resolution, &hdmi_width, &hdmi_height, &hdmi_fps, &is_interval);
+						ret = solution_cfg_parser_display_param(cfg_display->resolution, &hdmi_width, &hdmi_height, &hdmi_fps,
+							&is_interval);
 						if(ret != 0){
 							printf("[disaplay cfg update] resolution parse error, so reset to disable. [%s]\n", cfg_display->resolution);
 							change_to_invalid = 1;

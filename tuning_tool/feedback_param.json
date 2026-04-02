@@ -1,0 +1,18 @@
+{
+    "width": 1920,
+    "height": 1080,
+    "format": "raw10",
+    "calib_lname":"dummy_tuning.json",
+    "tuning_data": {
+        "enable": 1,
+        "_comment_bayer_start": "0=R,1=GR,2=GB,3=B",
+        "bayer_start": 3,
+        "bayer_pattern": 0,
+        "lines_per_second": 33750,
+        "exposure_time_max": 1012,
+        "exposure_time_min": 1,
+        "exposure_time_long_max": 2242,
+        "analog_gain_max": 251,
+        "digital_gain_max": 0
+    }
+}

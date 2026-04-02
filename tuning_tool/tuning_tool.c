@@ -16,6 +16,8 @@
 #include <fcntl.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdlib.h>
+#include "cjson/cJSON.h"
 
 #include "common_utils.h"
 #include "hb_media_codec.h"
@@ -35,6 +37,7 @@ static void print_help() {
 	printf("  -r 1                   Send raw to hbplayer\n");
 	printf("  -w 2                   Dump 20 yuv from the start\n");
 	printf("  -f -H -W -F            feedback raw file xx with specified height, width, and format(raw8/raw10/raw12)\n");
+	printf("  -J file                set feedback json file for dummy sensor\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
 }
@@ -46,9 +49,11 @@ static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static uint32_t pipelinemode = 2; // 0: Online ; 1: MCM; 2: Offline
 static uint32_t enable_vse = 0; // 0: disable_vse ; 1: enable_vse
 static uint32_t enable_hdmi = 0; // 0: disable ; 1: enable hdmi preview (via VSE->DRM)
-static uint32_t feedback_raw_hight;
-static uint32_t feedback_raw_width;
-static char feedback_raw_format[32] = {0};
+static uint32_t feedback_raw_hight = 1080;
+static uint32_t feedback_raw_width = 1920;
+static char feedback_raw_format[32] = "raw10";
+static char feedback_param_file[256] = {0};
+static char feedback_calib_lname[128] = {0};
 static int32_t used_mipi_host = 0;
 static uint32_t link_port = 0;
 
@@ -57,6 +62,83 @@ static int32_t g_drm_inited = 0;
 static uint32_t g_hdmi_width = 0;
 static uint32_t g_hdmi_height = 0;
 static int32_t g_hdmi_modes_printed = 0;
+
+static int32_t parse_feedback_param_from_file(const char *file_path, char *sensor_param_buf, size_t sensor_param_buf_size)
+{
+	FILE *fp = NULL;
+	long file_size = 0;
+	size_t read_size = 0;
+	char *json_str = NULL;
+	cJSON *root = NULL;
+	cJSON *item = NULL;
+	char *sensor_param_compact = NULL;
+
+	if (file_path == NULL || file_path[0] == '\0') {
+		return RET_FAILURE;
+	}
+
+	fp = fopen(file_path, "r");
+	if (fp == NULL) {
+		printf("Failed to open feedback json file: %s\n", file_path);
+		return RET_FAILURE;
+	}
+	fseek(fp, 0, SEEK_END);
+	file_size = ftell(fp);
+	if (file_size <= 0) {
+		fclose(fp);
+		printf("Invalid feedback json file size: %ld\n", file_size);
+		return RET_FAILURE;
+	}
+	fseek(fp, 0, SEEK_SET);
+
+	json_str = (char *)malloc((size_t)file_size + 1);
+	if (json_str == NULL) {
+		fclose(fp);
+		return RET_FAILURE;
+	}
+	read_size = fread(json_str, 1, (size_t)file_size, fp);
+	fclose(fp);
+	if (read_size != (size_t)file_size) {
+		free(json_str);
+		return RET_FAILURE;
+	}
+	json_str[file_size] = '\0';
+
+	root = cJSON_Parse(json_str);
+	free(json_str);
+	if (root == NULL) {
+		printf("Invalid json format in feedback file: %s\n", file_path);
+		return RET_FAILURE;
+	}
+
+	item = cJSON_GetObjectItem(root, "height");
+	if (cJSON_IsNumber(item)) {
+		feedback_raw_hight = (uint32_t)item->valueint;
+	}
+	item = cJSON_GetObjectItem(root, "width");
+	if (cJSON_IsNumber(item)) {
+		feedback_raw_width = (uint32_t)item->valueint;
+	}
+	item = cJSON_GetObjectItem(root, "format");
+	if (cJSON_IsString(item) && item->valuestring) {
+		strncpy(feedback_raw_format, item->valuestring, sizeof(feedback_raw_format) - 1);
+		feedback_raw_format[sizeof(feedback_raw_format) - 1] = '\0';
+	}
+	item = cJSON_GetObjectItem(root, "calib_lname");
+	if (cJSON_IsString(item) && item->valuestring) {
+		strncpy(feedback_calib_lname, item->valuestring, sizeof(feedback_calib_lname) - 1);
+		feedback_calib_lname[sizeof(feedback_calib_lname) - 1] = '\0';
+	}
+
+	sensor_param_compact = cJSON_PrintUnformatted(root);
+	if (sensor_param_compact != NULL) {
+		strncpy(sensor_param_buf, sensor_param_compact, sensor_param_buf_size - 1);
+		sensor_param_buf[sensor_param_buf_size - 1] = '\0';
+		cJSON_free(sensor_param_compact);
+	}
+	cJSON_Delete(root);
+	return RET_SUCCESS;
+}
 
 static int32_t tuning_pick_hdmi_resolution(int32_t input_width, int32_t input_height,
 	int32_t *out_width, int32_t *out_height)
@@ -298,6 +380,10 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 			strncpy(feedback_raw_format, optarg, sizeof(feedback_raw_format) - 1);
 			feedback_raw_format[sizeof(feedback_raw_format) - 1] = '\0';
 			break;
+		case 'J':
+			strncpy(feedback_param_file, optarg, sizeof(feedback_param_file) - 1);
+			feedback_param_file[sizeof(feedback_param_file) - 1] = '\0';
+			break;
 		case 'a':
 			bit_mask(ctx->work_mode, LUT3D_MASK);
 			break;
@@ -316,17 +402,36 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 		printf("\tSensor index: %d\n", ctx->pipe_contex_info[i].select_sensor_id);
 		printf("\tSensor name: %s\n", ctx->pipe_contex_info[i].pipe_contex.sensor_config->sensor_name);
 		printf("\tUse mipi host: %d\n", ctx->pipe_contex_info[i].active_mipi_host);
-		raw_type = (!strcmp(feedback_raw_format, "raw8")) ? 0x2A :
-			(!strcmp(feedback_raw_format, "raw10")) ? 0x2B :
-			(!strcmp(feedback_raw_format, "raw12")) ? 0x2C : 0x2B;
-		bit_width = (!strcmp(feedback_raw_format, "raw8")) ? 8 :
-			(!strcmp(feedback_raw_format, "raw10")) ? 10 :
-			(!strcmp(feedback_raw_format, "raw12")) ? 12 : 10;
 		if(strcmp(ctx->pipe_contex_info[i].pipe_contex.sensor_config->sensor_name, "dummy") == 0){
-			printf("feedback_raw_width: %d feedback_raw_hight:  %d raw_type: %#X\n",feedback_raw_width, feedback_raw_hight,raw_type);
+			static char feedback_sensor_param_json[2048] = {0};
+			if (feedback_param_file[0] != '\0') {
+				parse_feedback_param_from_file(feedback_param_file, feedback_sensor_param_json, sizeof(feedback_sensor_param_json));
+			}
+			raw_type = (!strcmp(feedback_raw_format, "raw8")) ? 0x2A :
+				(!strcmp(feedback_raw_format, "raw10")) ? 0x2B :
+				(!strcmp(feedback_raw_format, "raw12")) ? 0x2C :
+				(!strcmp(feedback_raw_format, "raw14")) ? 0x2D :
+				(!strcmp(feedback_raw_format, "raw16")) ? 0x2E :0x2B;
+			bit_width = (!strcmp(feedback_raw_format, "raw8")) ? 8 :
+				(!strcmp(feedback_raw_format, "raw10")) ? 10 :
+				(!strcmp(feedback_raw_format, "raw12")) ? 12 :
+				(!strcmp(feedback_raw_format, "raw14")) ? 14 :
+				(!strcmp(feedback_raw_format, "raw16")) ? 16 : 10;
+			printf("feedback_raw_width: %d feedback_raw_hight:  %d raw_type: %#X\n",
+				feedback_raw_width, feedback_raw_hight, raw_type);
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->format = raw_type;
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->height = feedback_raw_hight;
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->width = feedback_raw_width;
+			if (feedback_sensor_param_json[0] != '\0') {
+				ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->sensor_param = feedback_sensor_param_json;
+			}
+			if (feedback_calib_lname[0] != '\0') {
+				strncpy(ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->calib_lname,
+					feedback_calib_lname,
+					sizeof(ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->calib_lname) - 1);
+				ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->calib_lname[
+					sizeof(ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->calib_lname) - 1] = '\0';
+			}
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->vin_ichn_attr->format = raw_type;
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->vin_ichn_attr->height = feedback_raw_hight;
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->vin_ichn_attr->width = feedback_raw_width;

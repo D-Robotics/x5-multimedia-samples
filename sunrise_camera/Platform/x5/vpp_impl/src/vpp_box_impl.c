@@ -559,6 +559,27 @@ int32_t vpp_box_init(void)
 				SC_LOGE("bpu_wrap_model_init failed");
 				return -1;
 			}
+
+			/*
+				1. 数值下标的含义：
+					主码流：下标是0
+					子码流：下标是1、2、3 ..., 由于目前只支持1个子码流，所以这里固定用1
+				2. 编码类型区分的原因：JS实现的播放器中根据编码器类型做了不同逻辑
+					H264：固定使用主码流
+					H265：固定使用子码流
+
+			*/
+			int image_width = g_vpp_box[i].vpp_codec_ctxs[0].m_encode_context.video_enc_params.width;
+			int image_height = g_vpp_box[i].vpp_codec_ctxs[0].m_encode_context.video_enc_params.height;
+
+			if ((VPP_STEAM_COUNT >= 2)
+			    && (g_vpp_box[i].vpp_codec_ctxs[0].m_encode_user_config.codec_type == MEDIA_CODEC_ID_H265)) {
+				image_width = g_vpp_box[i].vpp_codec_ctxs[1].m_encode_context.video_enc_params.width;
+				image_height = g_vpp_box[i].vpp_codec_ctxs[1].m_encode_context.video_enc_params.height;
+			}
+
+			// 设置bpu后处理的原始图像大小为推流图像大小
+			bpu_wrap_set_ori_hw(&g_vpp_box[i].m_bpu_handle, image_width, image_height);
 			// 注册算法结果回调函数
 			bpu_wrap_callback_register(&g_vpp_box[i].m_bpu_handle,
 				bpu_wrap_general_result_handle, &g_vpp_box[i].m_bpu_handle.m_vpp_id);

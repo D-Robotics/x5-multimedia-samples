@@ -193,7 +193,7 @@ int32_t av_open_stream(DecodeParams *p_param,
 	}
 
 	// 获取视频流的帧数
-	p_param->frame_num = (*p_avContext)->streams[video_idx]->codec_info_nb_frames;
+	p_param->frame_num = (*p_avContext)->streams[video_idx]->nb_frames;
 	printf("p_param->frame_num: %d\n", p_param->frame_num);
 
 exit:

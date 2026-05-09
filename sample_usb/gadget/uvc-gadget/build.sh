@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/bin/sh
 
 # When unexpected situations occur during script execution, exit immediately to avoid errors being ignored and incorrect final results
 set -e
 
-function do_all() {
+do_all() {
 	mkdir -p build
 	cd build
 	cmake .. --install-prefix=$PWD/_install
@@ -13,7 +13,7 @@ function do_all() {
 
 	cd -
 
-	if [ ! -z ${APP_DEPLOY_DIR} ]; then
+	if [ -n "${APP_DEPLOY_DIR}" ]; then
 		mkdir -p ${APP_DEPLOY_DIR}/platform_samples/sample_usb/uvc-gadget
 		cp build/_install/bin/* ${APP_DEPLOY_DIR}/platform_samples/sample_usb/uvc-gadget/ -rf
 		cp build/_install/lib/* ${APP_DEPLOY_DIR}/platform_samples/sample_usb/uvc-gadget/ -rf
@@ -22,7 +22,7 @@ function do_all() {
 	fi
 }
 
-function do_clean()
+do_clean()
 {
 	cd build
 

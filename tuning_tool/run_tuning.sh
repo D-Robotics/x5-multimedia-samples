@@ -1,10 +1,10 @@
-#!/bash
+#!/bin/sh
 CUR_TEST_SHELL=$(readlink -f $0)
 COMMON_DIR=$(pwd)
 
 FEEDBACK_PARAM_FILE="feedback_param.json"
 
-function print_usage() {
+print_usage() {
 	echo "run_tuning.sh --list: list all case"
 	echo "run_tuning.sh --run [sensor_index]: run this sensor"
 	echo "run_tuning.sh --online/offline/mcm/: Open the data stream in online/offline/mcm/ mode"
@@ -19,7 +19,7 @@ function print_usage() {
 	exit 1
 }
 
-function get_case() {
+get_case() {
 	if [ -z "$1" ]; then
 		echo "Please input the index of the sensor which you want to run."
 		echo "eg: --run 1"
@@ -27,20 +27,20 @@ function get_case() {
 	fi
 }
 
-function suit_case_run() {
-	local sensor_args=()   # 存储 sensor 参数
-	local extra_args=()    # 存储额外参数（如 -w 2）
-	local mode="--offline" # 默认模式为 offline
-	local sensor_count=0   # 统计 sensor 数量
-	local has_f_param=0    # 标记是否出现 -f 参数
-	local dummy_index=$(./isp_tuning | grep "sensor_name: dummy" | awk '{print $2}' | tr -d :) # 获取dummy_index
+suit_case_run() {
+	local sensor_args=""
+	local extra_args=""
+	local mode="--offline"
+	local sensor_count=0
+	local has_f_param=0
+	local dummy_index=$(./isp_tuning | grep "sensor_name: dummy" | awk '{print $2}' | tr -d :)
 
 	local user_param_json_file=${FEEDBACK_PARAM_FILE}
 
-	while [[ $# -gt 0 ]]; do
+	while [ $# -gt 0 ]; do
 		case "$1" in
 			"--online")
-				if [[ "$sensor_count" -gt 1 ]]; then
+				if [ "$sensor_count" -gt 1 ]; then
 					echo "Error: --online modes only support one sensor!"
 					exit 1
 				fi
@@ -53,74 +53,84 @@ function suit_case_run() {
 				mode="--mcm"
 				;;
 			"--param_json")
-				if [[ $# -gt 1 ]]; then
+				if [ $# -gt 1 ]; then
 					user_param_json_file="$2"
 					shift
 				fi
 				;;
-			[0-9]*)  # 纯数字 (sensor ID)
-				if [[ "$1" =~ ^[0-9]+$ ]]; then
-					sensor_args+=("-s" "sensor=$1")
-					((sensor_count++))
-					if [[ "$mode" == "--offline" && "$sensor_count" -gt 4 ]]; then
-						echo "Error: --offline mode supports up to 4 sensors!"
-						exit 1
-					fi
-					if [[ "$mode" == "--mcm" && "$sensor_count" -gt 4 ]]; then
-						echo "Error: --mcm mode supports up to 4 sensors!"
-						exit 1
-					fi
-					if [[ "$1" == "$dummy_index" ]]; then
-						extra_args+=(-w 1)
-						extra_args+=(-J "$user_param_json_file")
-					fi
-				else
-					extra_args+=("$1")
-				fi
+			[0-9]*)
+				case "$1" in
+					*[!0-9]*)
+						extra_args="$extra_args $1"
+						;;
+					*)
+						sensor_args="$sensor_args -s sensor=$1"
+						sensor_count=$((sensor_count + 1))
+						if [ "$mode" = "--offline" ] && [ "$sensor_count" -gt 4 ]; then
+							echo "Error: --offline mode supports up to 4 sensors!"
+							exit 1
+						fi
+						if [ "$mode" = "--mcm" ] && [ "$sensor_count" -gt 4 ]; then
+							echo "Error: --mcm mode supports up to 4 sensors!"
+							exit 1
+						fi
+						if [ "$1" = "$dummy_index" ]; then
+							extra_args="$extra_args -w 1"
+							extra_args="$extra_args -J $user_param_json_file"
+						fi
+						;;
+				esac
 				;;
-			"-f")  # 处理 `-f` 参数
-				has_f_param=1  # 标记 -f 存在
-				extra_args+=("$1")
-				if [[ $# -gt 1 ]]; then
-					extra_args+=("$2")
+			"-f")
+				has_f_param=1
+				extra_args="$extra_args $1"
+				if [ $# -gt 1 ]; then
+					extra_args="$extra_args $2"
 					shift
 				fi
 				;;
-			-*)  # 处理 `-w 2` 这种额外参数
-				if [[ $# -gt 1 && "$2" =~ ^[0-9]+$ ]]; then
-					extra_args+=("$1" "$2")
-					shift
+			-*)
+				if [ $# -gt 1 ]; then
+					case "$2" in
+						*[!0-9]*)
+							extra_args="$extra_args $1"
+							;;
+						*)
+							extra_args="$extra_args $1 $2"
+							shift
+							;;
+					esac
 				else
-					extra_args+=("$1")
+					extra_args="$extra_args $1"
 				fi
 				;;
 			*)
-				extra_args+=("$1")  # 其他参数
+				extra_args="$extra_args $1"
 				;;
 		esac
 		shift
 	done
 
-	if [[ ${#sensor_args[@]} -eq 0 ]]; then
+	if [ -z "$sensor_args" ]; then
 		echo "Please input the index of the sensor which you want to run."
 		echo "eg: --run 1"
 		exit 1
 	fi
 
-	echo "Executing: ./isp_tuning $mode ${sensor_args[*]} ${extra_args[*]}"
-	./isp_tuning "$mode" "${sensor_args[@]}" "${extra_args[@]}"
+	echo "Executing: ./isp_tuning $mode $sensor_args $extra_args"
+	./isp_tuning $mode $sensor_args $extra_args
 }
 
-function vtuner_control() {
+vtuner_control() {
 	if [ -z "$1" ]; then
 		echo "Please input --tune 1 to open the vtuner_server."
 		exit 1
 	fi
 
-	if [ "$1" == "1" ]; then
+	if [ "$1" = "1" ]; then
 		echo 1 > /sys/kernel/debug/isp/tune
 		echo "Open vtuner_server Success! Please connect VtunerClient"
-	elif [ "$1" == "0" ]; then
+	elif [ "$1" = "0" ]; then
 		echo 0 > /sys/kernel/debug/isp/tune
 		echo "Close vtuner_server done!"
 	else
@@ -129,16 +139,16 @@ function vtuner_control() {
 	fi
 }
 
-function log_control() {
+log_control() {
 	if [ -z "$1" ]; then
 		echo "Please input --log 1 to print the camera_server log."
 		exit 1
 	fi
 
-	if [ "$1" == "1" ]; then
+	if [ "$1" = "1" ]; then
 		echo 31 31 31 > /sys/kernel/debug/isp/log
 		echo "logcat show verbose log"
-	elif [ "$1" == "0" ]; then
+	elif [ "$1" = "0" ]; then
 		echo 3 3 3 > /sys/kernel/debug/isp/log
 		echo "logcat just show import log"
 	else
@@ -147,18 +157,18 @@ function log_control() {
 	fi
 }
 
-function specify_command() {
+specify_command() {
 	local _command=$1
 	shift 1
-	if [ "$_command" == "--list" ]; then
+	if [ "$_command" = "--list" ]; then
 		./isp_tuning
-	elif [ "$_command" == "--run" ]; then
+	elif [ "$_command" = "--run" ]; then
 		suit_case_run "$@"
-	elif [ "$_command" == "--help" ]; then
+	elif [ "$_command" = "--help" ]; then
 		print_usage
-	elif [ "$_command" == "--tune" ]; then
+	elif [ "$_command" = "--tune" ]; then
 		vtuner_control "$@"
-	elif [ "$_command" == "--log" ]; then
+	elif [ "$_command" = "--log" ]; then
 		log_control "$@"
 	else
 		echo "invaild cmd input : $_command "

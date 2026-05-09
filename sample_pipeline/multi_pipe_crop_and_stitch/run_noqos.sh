@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # 配置cpu bpu ddr 降频的结温温度
 echo 105000 > /sys/class/thermal/thermal_zone0/trip_point_0_temp
 echo 105000 > /sys/class/thermal/thermal_zone1/trip_point_1_temp

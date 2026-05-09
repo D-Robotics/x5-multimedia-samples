@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/bin/sh
 
 export BMEM_CACHEABLE=true
-SCRIPT_DIR="$( cd "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")" )" && pwd )"
+SCRIPT_DIR="$( cd "$( dirname "$(readlink -f "$0")" )" && pwd )"
 MODELS_DIR=$SCRIPT_DIR/../
 TOP_DIR=$MODELS_DIR/../
 export LD_LIBRARY_PATH=$TOP_DIR/hbdk3/x5:$LD_LIBRARY_PATH
@@ -14,7 +14,7 @@ OUTPUT_1_1=/userdata/model-2k_11/
 SRC_FILE=$MODELS_DIR/HBDK3_MODEL_2K/input_0_feature_1x1088x2048x3_ddr_native.bin
 MODEL_NAME=I2004_ForTest2k_1x1088x2048x3
 
-function check_golden_result()
+check_golden_result()
 {
 	count=0
 	for output_files in $OUTPUT_0_0*.txt

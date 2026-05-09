@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 echo "build script path: ${SCRIPT_DIR}"

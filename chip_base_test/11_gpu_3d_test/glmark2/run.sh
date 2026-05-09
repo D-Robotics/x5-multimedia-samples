@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 #insmod display module related drivers
 modprobe panel-jc-050hd134

@@ -158,7 +158,7 @@ void show_hrut_status() {
 	char buffer[1024];
 
 	// 执行命令并获取输出
-	fp = popen("bash -c \"hrut_somstatus | tr -d '\\0' | sed 's/^/\\t/'\"", "r");
+	fp = popen("sh -c \"hrut_somstatus | tr -d '\\0' | sed 's/^/\\t/'\"", "r");
 	if (fp == NULL) {
 		perror("Failed to run command");
 		return;

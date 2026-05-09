@@ -1,7 +1,6 @@
-#!/bin/bash
+#!/bin/sh
 
 set -e
-set -o pipefail
 
 # 定义错误退出函数
 error_exit() {

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 echo "set bpu limit."
 devmem 0x2052000c
 devmem 0x2052000c 32 1

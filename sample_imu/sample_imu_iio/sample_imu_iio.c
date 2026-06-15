@@ -16,7 +16,7 @@
 
 static void print_help(const char *default_imu_name)
 {
-	printf("Usage: sample_imu [OPTIONS]\n");
+	printf("Usage: sample_imu_iio [OPTIONS]\n");
 	printf("Options:\n");
 	printf("  -n <imu_name>         Specify IMU name");
 	if (default_imu_name) {

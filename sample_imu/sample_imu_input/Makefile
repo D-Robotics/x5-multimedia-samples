@@ -1,22 +1,17 @@
-include ../Makefile.in
+include ../../Makefile.in
 CUR_DIR := $(shell pwd)
 RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DIR))
-DEPLOY_SYSTEM_DIR = ${HR_BUILD_OUTPUT_DIR}/deploy/system
-INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
-INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/include
 
-TARGET = sample_imu
+TARGET = sample_imu_input
 
-SRCS := $(foreach cf, $(CUR_DIR), $(wildcard $(cf)/*.c))
-OBJS :=  $(SRCS:.c=.o)
+SRCS := $(wildcard *.c)
+OBJS := $(SRCS:.c=.o)
 
-.PHONY: all clean
-
+.PHONY: all clean install
 
 %.o:%.c
 	@mkdir -p $(abspath $(dir $@))
 	$(CC) $(INCS) $(CFLAGS) -c $< $(LIBS) $(LIBSDIR) -o $@
-
 
 $(TARGET):$(OBJS)
 	@mkdir -p $(abspath $(dir $@))

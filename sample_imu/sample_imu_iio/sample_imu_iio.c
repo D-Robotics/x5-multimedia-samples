@@ -12,7 +12,7 @@
 #define DEFAULT_IMU_NAME "bmi08x"
 
 static void print_help() {
-    printf("Usage: sample_imu [OPTIONS]\n");
+    printf("Usage: sample_imu_iio [OPTIONS]\n");
     printf("Options:\n");
     printf("  -n <imu_name>         Specify IMU name (default: %s)\n", DEFAULT_IMU_NAME);
     printf("  -h                    Show this help message\n");

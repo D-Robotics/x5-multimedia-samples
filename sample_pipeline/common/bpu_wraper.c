@@ -252,8 +252,6 @@ static void *inference_yolov5s(void *ptr)
 		}
 
 		performance_test_start(&performace_test_param_for_infer);
-		// make sure memory data is flushed to DDR before inference
-		hbSysFlushMem(&input_tensor->m_dnn_tensor.sysMem[0], HB_SYS_MEM_CACHE_CLEAN);
 
 		hbDNNTensor *output = &output_tensors[cur_ouput_buf_idx][0];
 
@@ -401,15 +399,10 @@ int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *mod
 	mQueueCreate(&bpu_handle->m_input_queue, 2);//the length of queue is 2
 	mQueueCreate(&bpu_handle->m_output_queue, 3);//the length of queue is 3
 
-	// 分配 bpu input buffer 使用的内存
+	// BPU input buffer 直接映射 VSE buffer 地址，无需预分配内存
 	bpu_handle->m_cur_input_tensor = 0;
 	for (i = 0; i < BPU_INPUT_BUFFER_NUM; i++) {
-		HB_CHECK_SUCCESS(hbSysAllocCachedMem(&bpu_handle->m_input_tensors[i].m_dnn_tensor.sysMem[0],
-			bpu_handle->m_image_info.m_model_h * bpu_handle->m_image_info.m_model_w),
-			"hbSysAllocCachedMem failed");
-		HB_CHECK_SUCCESS(hbSysAllocCachedMem(&bpu_handle->m_input_tensors[i].m_dnn_tensor.sysMem[1],
-			bpu_handle->m_image_info.m_model_h * bpu_handle->m_image_info.m_model_w / 2),
-			"hbSysAllocCachedMem failed");
+		memset(&bpu_handle->m_input_tensors[i], 0, sizeof(bpu_tensor_info_t));
 	}
 	bpu_handle->post_processs_enable = 1;
 	return ret;
@@ -418,18 +411,10 @@ int32_t bpu_wrap_init(bpu_handle_t *bpu_handle, char *model_file_name, char *mod
 int32_t bpu_wrap_deinit(bpu_handle_t *handle)
 {
 	int32_t ret = 0;
-	int32_t i = 0;
 
 	if (handle == NULL)
 		return 0;
 
-	for (i = 0; i < BPU_INPUT_BUFFER_NUM; i++) {
-		ret = hbSysFreeMem(&handle->m_input_tensors[i].m_dnn_tensor.sysMem[0]);	   // 释放模型输入资源
-		ret |= hbSysFreeMem(&handle->m_input_tensors[i].m_dnn_tensor.sysMem[1]);
-		if (ret)
-			printf("input data free failed\n");
-	}
-	// 销毁队列
 	mQueueDestroy(&handle->m_output_queue);
 	mQueueDestroy(&handle->m_input_queue);
 
@@ -575,23 +560,26 @@ int32_t bpu_wrap_send_frame(bpu_handle_t *handle, bpu_buffer_info_t *input_buffe
 	}
 #endif
 
-	// 准备输入数据（用于存放yuv数据）
+	// 准备输入数据（直接映射 VSE buffer，无内存拷贝）
 	hbDNNTensor *input_tensor = &handle->m_input_tensors[handle->m_cur_input_tensor].m_dnn_tensor;
 	handle->m_input_tensors[handle->m_cur_input_tensor].tv = input_buffer->tv;
 
 	input_tensor->properties.tensorLayout = HB_DNN_LAYOUT_NCHW;
 	// 张量类型为Y通道及UV通道为输入的图片, 方便直接使用 vpu出来的y和uv分离的数据
 	input_tensor->properties.tensorType = HB_DNN_IMG_TYPE_NV12_SEPARATE; // 用于Y和UV分离的场景，主要为我们摄像头数据通路场景
-	// 填充 input_tensor->sysMem 成员变量 Y 分量
-	hbSysWriteMem(&input_tensor->sysMem[0],
-		(char *)input_buffer->addr[0],
-		input_buffer->w_stride * input_buffer->height);
-	input_tensor->sysMem[0].memSize = input_buffer->w_stride * input_buffer->height;
-	// 填充 input_tensor->data_ext 成员变量， UV 分量
-	hbSysWriteMem(&input_tensor->sysMem[1],
-		(char *)input_buffer->addr[1],
-		(input_buffer->w_stride * input_buffer->height) / 2);
-	input_tensor->sysMem[1].memSize = (input_buffer->w_stride * input_buffer->height) / 2;
+	uint32_t y_size = input_buffer->w_stride * input_buffer->height;
+	uint32_t uv_size = y_size / 2;
+	uint32_t total_size = y_size + uv_size;
+
+	// Y 分量：映射 VSE buffer 物理地址和虚拟地址
+	input_tensor->sysMem[0].phyAddr = input_buffer->paddr[0];
+	input_tensor->sysMem[0].virAddr = input_buffer->addr[0];
+	input_tensor->sysMem[0].memSize = total_size;
+
+	// UV 分量：映射 VSE buffer 物理地址和虚拟地址
+	input_tensor->sysMem[1].phyAddr = input_buffer->paddr[1];
+	input_tensor->sysMem[1].virAddr = input_buffer->addr[1];
+	input_tensor->sysMem[1].memSize = uv_size;
 
 	// HB_DNN_IMG_TYPE_NV12_SEPARATE 类型的 layout 为 (1, 3, h, w)
 	input_tensor->properties.validShape.numDimensions = 4;

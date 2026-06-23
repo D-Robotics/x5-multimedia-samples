@@ -1,0 +1,10 @@
+{
+    "device": "/dev/dri/card0",
+    "hwcursor": true,
+    "pbuffers": false,
+    "outputs": [
+        { "name": "DSI1",  "mode": "off" },
+        { "name": "HDMI1", "mode": "1920x1080", "format": "xrgb8888", "primary": true },
+        { "name": "Virtual1", "mode": "off" }
+    ]
+}

@@ -101,7 +101,6 @@ static vin_ochn_attr_t imx678_vin_ochn_attr = {
 static isp_attr_t imx678_isp_attr = {
 	.input_mode = PASSTHROUGH_MODE , // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
 	.sensor_mode = ISP_DOL2_M,
-	.af_mode = 1,
 	.tile_mode = 0,
 	.crop = {
 		.x = 0,

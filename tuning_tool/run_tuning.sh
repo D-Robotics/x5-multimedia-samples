@@ -2,9 +2,7 @@
 CUR_TEST_SHELL=$(readlink -f $0)
 COMMON_DIR=$(pwd)
 
-FEEDBACK_IMG_H="1080"
-FEEDBACK_IMG_W="1920"
-RAW_FORMAT="raw10"
+FEEDBACK_PARAM_FILE="feedback_param.json"
 
 function print_usage() {
 	echo "run_tuning.sh --list: list all case"
@@ -16,6 +14,8 @@ function print_usage() {
 	echo "run with [-w 2]: dump 20 yuv from the start"
 	echo "run with [-r 1]: send raw to hbplayer"
 	echo "run with [-f xx]: feedback raw list xx times"
+	echo "run with [--param_json file]: use feedback json config (default: feedback_param.json)"
+	echo "run with [--hdmi]: enable HDMI preview (also enables VSE, output to HDMI)"
 	exit 1
 }
 
@@ -35,11 +35,7 @@ function suit_case_run() {
 	local has_f_param=0    # 标记是否出现 -f 参数
 	local dummy_index=$(./isp_tuning | grep "sensor_name: dummy" | awk '{print $2}' | tr -d :) # 获取dummy_index
 
-	# dummy sensor
-	local user_height=${FEEDBACK_IMG_H}
-	local user_width=${FEEDBACK_IMG_W}
-	local user_format=${RAW_FORMAT}
-	local user_specified_params=0  # 是否用户指定了-H -W -F
+	local user_param_json_file=${FEEDBACK_PARAM_FILE}
 
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
@@ -56,24 +52,9 @@ function suit_case_run() {
 			"--mcm")
 				mode="--mcm"
 				;;
-			"-H")
+			"--param_json")
 				if [[ $# -gt 1 ]]; then
-					user_height="$2"
-					user_specified_params=1
-					shift
-				fi
-				;;
-			"-W")
-				if [[ $# -gt 1 ]]; then
-					user_width="$2"
-					user_specified_params=1
-					shift
-				fi
-				;;
-			"-F")
-				if [[ $# -gt 1 ]]; then
-					user_format="$2"
-					user_specified_params=1
+					user_param_json_file="$2"
 					shift
 				fi
 				;;
@@ -89,9 +70,9 @@ function suit_case_run() {
 						echo "Error: --mcm mode supports up to 4 sensors!"
 						exit 1
 					fi
-					# 如果是 dummy sensor 且未指定 -H -W -F，则使用默认值
-					if [[ "$1" == "$dummy_index" && "$user_specified_params" -eq 0 ]]; then
-						extra_args+=(-H $user_height -W $user_width -F $user_format -w 1)
+					if [[ "$1" == "$dummy_index" ]]; then
+						extra_args+=(-w 1)
+						extra_args+=(-J "$user_param_json_file")
 					fi
 				else
 					extra_args+=("$1")

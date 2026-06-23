@@ -1,16 +1,21 @@
-include ../Makefile.in
+include ../../Makefile.in
 CUR_DIR := $(shell pwd)
 RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DIR))
-DEPLOY_SYSTEM_DIR = ${HR_BUILD_OUTPUT_DIR}/deploy/system
-INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
-INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/include
 
-TARGET = sample_imu
+TARGET = single_pipe_vin_isp_vse_quickstart_display
 
-SRCS := $(foreach cf, $(CUR_DIR), $(wildcard $(cf)/*.c))
+#SRC_PATH += ${CUR_DIR}/../common
+SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
+
+LIBS += -lm -ldrm
+INCS += -I $(CUR_DIR)/
+INCS += -I $(CUR_DIR)/../common/
+INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
+INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+
 OBJS :=  $(SRCS:.c=.o)
 
-.PHONY: all clean
+.PHONY: all clean install
 
 
 %.o:%.c

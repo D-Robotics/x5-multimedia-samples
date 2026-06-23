@@ -442,7 +442,7 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 							dst_input_channel);
 	ERR_CON_EQ(ret, 0);
 
-	if(sensor_type != SENSOR_TYPE_NORMAL) {
+	if((sensor_type != SENSOR_TYPE_NORMAL) && (sensor_type != SENSOR_TYPE_HSMT_RAW)) {
 		ret = create_deserial_node(pipe_contex);
 		ERR_CON_EQ(ret, 0);
 		ret = hbn_camera_attach_to_deserial(pipe_contex->cam_fd, pipe_contex->des_fd, link_port);
@@ -479,8 +479,8 @@ void isp_dump_func(hbn_vnode_handle_t isp_node_handle) {
 
 	// 将帧数据写入文件
 	snprintf(dst_file, sizeof(dst_file),
-		"handle_%d_isp_chn%d_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
-		(int)isp_node_handle, ochn_id,
+		"handle_%d_isp_chn%d_vc%d_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
+		(int)isp_node_handle, ochn_id, link_port,
 		out_img.buffer.width, out_img.buffer.height, out_img.buffer.stride,
 		out_img.info.frame_id, out_img.info.timestamps);
 	printf("handle %d isp dump yuv %dx%d(stride:%d), buffer size: %ld + %ld frame id: %d,"

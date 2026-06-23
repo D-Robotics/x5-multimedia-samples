@@ -3,6 +3,7 @@ CUR_DIR := $(shell pwd)
 RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DIR))
 
 SH_FILE := run_tuning.sh
+FEEDBACK_PARAM_JSON := feedback_param.json
 BUILD_DIR := out
 TUNING_BUILD_DIR := ${BUILD_DIR}/tuning_out
 TARGET := ${BUILD_DIR}/isp_tuning
@@ -12,11 +13,16 @@ SRC_DIRS += ../utils/
 SRC_DIRS += $(shell find ../vp_sensors -maxdepth 1 -type d)
 
 SRC_FILES := $(foreach cf, $(SRC_DIRS), $(wildcard $(cf)/*.c))
+SRC_FILES += ../sample_pipeline/common/vp_display.c
 OBJ_FILES := $(patsubst %.c,${TUNING_BUILD_DIR}/%.o,$(SRC_FILES))
 LIBS += -levent_pthreads -lhbplayer -lpthread -levent -lalog -lm
 LIBS += -lOpenCL -lVDK -lGAL -lEGL -lVSC -lCLC -lGLESv2 -lSPIRV_viv -ldrm_vivante -ldrm -lgbm -lgbm_viv
 # CFLAGS += -D TUNING_DEBUG
 # CFLAGS += -D TUNING_API_DELAY_DEBUG
+
+INCS += -I../sample_pipeline/common
+INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
+INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
 
 .PHONY: all clean install
 
@@ -37,4 +43,6 @@ clean:
 install: ${TARGET}
 	$(Q)install -d ${PLATFORM_SAMPLES_DEPLOY_DIR}/${RELATIVE_PATH}
 	$(Q)install -m 0775 ${TARGET} ${SH_FILE} \
+		${PLATFORM_SAMPLES_DEPLOY_DIR}/${RELATIVE_PATH}/
+	$(Q)install -m 0644 ${FEEDBACK_PARAM_JSON} \
 		${PLATFORM_SAMPLES_DEPLOY_DIR}/${RELATIVE_PATH}/

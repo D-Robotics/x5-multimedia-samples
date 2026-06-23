@@ -99,7 +99,7 @@ subdir += main
 
 ############################################################
 ifeq ($(MODULE_VPP), y)
-	PLATFORM_LIBS_NAME := cam vpf hbmem multimedia avformat avcodec avutil swresample ffmedia gdcbin cjson alog dnn cnn_intf hbrt_bayes_aarch64 drm z dl rt pthread mk_api jsoncpp zlmediakit zltoolkit mov ext-codec mpeg flv ssl crypto
+	PLATFORM_LIBS_NAME := cam vpf hbmem multimedia avformat avcodec avutil swresample ffmedia gdcbin cjson alog dnn cnn_intf hbrt_bayes_aarch64 ssl crypto drm udev z dl rt pthread mk_api jsoncpp zlmediakit zltoolkit mov ext-codec mpeg flv
 	PLATFORM_LIBS += $(patsubst %,-l%,$(PLATFORM_LIBS_NAME))
 	LDFLAGS_EX += -L$(HBRE_LIB) -L$(HR_BUILD_OUTPUT_DIR)/deploy/system/usr/lib
 endif

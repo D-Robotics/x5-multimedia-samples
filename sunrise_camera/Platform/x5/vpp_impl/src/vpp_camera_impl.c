@@ -1,49 +1,46 @@
-#include <stdio.h>
-#include <string.h>
+#include "vpp_camera_impl.h"
+
+#include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
-#include <unistd.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <sys/types.h>
-#include <sys/stat.h>
+#include <string.h>
 #include <sys/ioctl.h>
-#include <fcntl.h>
-#include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
 
+#include "bpu_wrap.h"
 #include "communicate/sdk_common_cmd.h"
 #include "communicate/sdk_common_struct.h"
 #include "communicate/sdk_communicate.h"
-
-#include "utils/nalu_utils.h"
-#include "utils/utils_log.h"
-#include "utils/cqueue.h"
-#include "utils/common_utils.h"
-#include "utils/stream_define.h"
-#include "utils/mthread.h"
-#include "utils/mqueue.h"
-#include "utils/time_utils.h"
-
 #include "model_info.h"
-
-#include "bpu_wrap.h"
-#include "vp_wrap.h"
+#include "utils/common_utils.h"
+#include "utils/cqueue.h"
+#include "utils/mqueue.h"
+#include "utils/mthread.h"
+#include "utils/nalu_utils.h"
+#include "utils/stream_define.h"
+#include "utils/time_utils.h"
+#include "utils/utils_log.h"
 #include "vp_codec.h"
-#include "vp_sensors.h"
 #include "vp_display.h"
-
 #include "vp_gdc.h"
-
+#include "vp_sensors.h"
+#include "vp_wrap.h"
 #include "vpp_preparam.h"
-#include "vpp_camera_impl.h"
 
 #define VPP_STEAM_COUNT 2
 #define VPP_CAM_MAX_CHANNELS 32
-#define VPP_VSE_OUTBUFFER_COUNT 3
-#define VPP_VSE_OUTBUFFER_RELEASE_COUNT 2
+#define VPP_VNODE_OUTBUFFER_COUNT 6
+#define VPP_VSE_OUTBUFFER_COUNT 6
+#define VPP_VSE_QUEUE_DEPTH 4
 
-
-typedef enum {
+typedef enum
+{
 	WaitFrameFromFlowQueue = 0,
 	SendToCodec,
 	WaitDataFromCodec,
@@ -53,101 +50,75 @@ typedef enum {
 	PushStreamToMediaServer,
 	GiveBackDataToCodec,
 	EncodeThreadStepSentry,
-}encode_thread_step_t;
+} encode_thread_step_t;
 
-typedef enum {
+typedef enum
+{
 	BPUWaitFrameFromFlowQueue = 0,
 	SendFrameToBPUQueue,
 	BPUGiveBackFrameToFlow,
 	BPUThreadStepSentry
-}bpu_thread_step_t;
-const char* encode_thread_step_name(encode_thread_step_t step) {
-	static const char* step_names[] = {
-		"WaitFrameFromFlowQueue",
-		"SendToCodec",
-		"WaitDataFromCodec",
-		"GiveBackFrameToFlow",
-		"GiveBackFrameToFlowQueue",
-		"SendVideoFrameInfo",
-		"PushStreamToMediaServer",
-		"GiveBackDataToCodec",
-		"EncodeThreadStepSentry"
-	};
-	if (step < EncodeThreadStepSentry) {
-		return step_names[step];
-	}
-	return "UnknownEncodeStep";
-}
-const char* bpu_thread_step_name(bpu_thread_step_t step) {
-	static const char* step_names[] = {
-		"BPUWaitFrameFromFlowQueue",
-		"SendFrameToBPUQueue",
-		"BPUGiveBackFrameToFlow",
-		"BPUThreadStepSentry"
-	};
-	if (step < BPUThreadStepSentry) {
-		return step_names[step];
-	}
-	return "UnknownBpuStep";
-}
+} bpu_thread_step_t;
 
-typedef struct
-{
-	//for media server
+typedef struct {
+	// for media server
 	char stream_name[128];
-	const char *media_type; //主码流和子码流 共同使用
-	void *media_handler; // media handler for MediaServer
+	const char *media_type;	 //主码流和子码流 共同使用
+	void *media_handler;	 // media handler for MediaServer
 
-	//for display
+	// for display
 	int stream_index;
-	//for codec
+	// for codec
 	media_codec_context_t m_encode_context;
 	media_codec_user_config_t m_encode_user_config;
 
-	//for multi thread
-	tsThread 		m_vflow_thread;		/* 从vse获取图像，送入编码 */
-	tsThread 		m_venc_thread;		/*从编码器获取图像，送入共享内存 */
-	tsQueue			m_vflow_to_enc_queue;
-	tsQueue			m_enc_to_vflow_queue;
-	void*   p_vpp_camera;
+	// for multi thread
+	tsThread m_vflow_thread; /* 从vse获取图像，送入编码 */
+	tsThread m_venc_thread;	 /* 从编码器获取图像，送入共享内存 */
+	tsThread m_drm_thread;	 /* 从vse获取图像，送入drm */
+	tsQueue
+	    m_vflow_queue; /* 单队列：生产者入队，venc/drm 用 PeekFromRear 只用不移除，仅 vflow 从队头出队并 release */
+	// tsQueue			m_vflow_to_enc_queue;
+	// tsQueue			m_enc_to_vflow_queue;
+	void *p_vpp_camera;
 	int vflow_chn;
 	int8_t osd_chn;
-	//for debug
-	int vflow_thread_run_counter;
+	// for debug
 	int codec_thread_run_counter;
+	int drm_thread_run_counter;
 	int vflow_frame_counter;
-	int vflow_buffer_used_count;
+	int vflow_snap_last_venc;
+	int vflow_snap_last_drm;
 
 	encode_thread_step_t encode_thread_step;
 	uint64_t first_frame_timestamp;
-}vpp_codec_ctx_t;
+} vpp_codec_ctx_t;
 
-typedef struct
-{
-	//for app info
+typedef struct {
+	// for app info
 	int pipline_id;
 	int vpp_impl_index;
 
-	//for drm
-	int drm_init_succesed;
+	// for drm
+	int32_t drm_display_fps_cfg;
 	vp_drm_context_t *drm_context;
 
-	//for vflow
+	// for vflow
 	vp_vflow_contex_t vp_vflow_contex;
 
-	//for vflow and codec
+	// for vflow and codec
 	vpp_codec_ctx_t vpp_codec_ctxs[VPP_STEAM_COUNT];
 
-	//for bpu
-	tsThread		m_bpu_thread;
-	bpu_handle_t	m_bpu_handle;
+	// for bpu
+	tsThread m_bpu_thread;
+	bpu_handle_t m_bpu_handle;
 	int m_vse_for_bpu_channel;
 	bpu_model_user_info_t bpu_model_user_info;
 
-	//for debug: run times
+	// for debug: run times
 	int bpu_thread_run_counter;
 
-	//for debug: check is blocked
+	// for debug: check is blocked
 	bpu_thread_step_t bpu_thread_step;
 } vpp_camera_t;
 
@@ -155,31 +126,116 @@ static vp_drm_context_t g_drm_context;
 static vpp_camera_t g_vpp_camera[VPP_CAM_MAX_CHANNELS];
 
 static int vp_set_isp_param(char *param, uint32_t length);
-static int vp_get_isp_param(char* result, uint32_t length);
+static int vp_get_isp_param(char *result, uint32_t length);
 
-static void vp_print_debug_infos_for_multithread(vpp_codec_ctx_t *p_vpp_codec_ctx){
+const char *encode_thread_step_name(encode_thread_step_t step)
+{
+	static const char *step_names[] = {"WaitFrameFromFlowQueue",   "SendToCodec",
+					   "WaitDataFromCodec",	       "GiveBackFrameToFlow",
+					   "GiveBackFrameToFlowQueue", "SendVideoFrameInfo",
+					   "PushStreamToMediaServer",  "GiveBackDataToCodec",
+					   "EncodeThreadStepSentry"};
+	if (step < EncodeThreadStepSentry) {
+		return step_names[step];
+	}
+	return "UnknownEncodeStep";
+}
 
+const char *bpu_thread_step_name(bpu_thread_step_t step)
+{
+	static const char *step_names[] = {"BPUWaitFrameFromFlowQueue", "SendFrameToBPUQueue", "BPUGiveBackFrameToFlow",
+					   "BPUThreadStepSentry"};
+	if (step < BPUThreadStepSentry) {
+		return step_names[step];
+	}
+	return "UnknownBpuStep";
+}
+
+/* 周期性统计并打印 fps：每帧调用一次，interval_ms 内累计帧数，超时则打日志并重置 */
+static void vpp_camera_fps_stat_tick(int *frame_count, uint64_t *last_ms, int pipline_id, const char *stream_name,
+				     const char *stage_name)
+{
+	const uint64_t interval_ms = 3000;
+
+	(*frame_count)++;
+	uint64_t now = get_timestamp_ms();
+	uint64_t elapsed = now - *last_ms;
+	if (elapsed >= interval_ms) {
+		SC_LOGI("[%d][%s] %s fps: %.1f (%d frames / %llu ms)", pipline_id, stream_name, stage_name,
+			(float)(*frame_count) * 1000.0f / elapsed, *frame_count, (unsigned long long)elapsed);
+		*frame_count = 0;
+		*last_ms = now;
+	}
+}
+
+/*
+ * 仅 DRM 送显用：产帧率高于显示器刷新时，相邻两次送显之间「策略上难免」的跳帧上界：
+ *   policy_max = ceil(upstream / consumer) - 1
+ * 例：30fps 采集、24Hz 送显 -> policy_max=1。
+ */
+static int vpp_soft_skip_policy_max(int upstream_fps, int consumer_fps)
+{
+	if (upstream_fps <= 0 || consumer_fps <= 0)
+		return 0;
+	if (upstream_fps <= consumer_fps)
+		return 0;
+	return (upstream_fps + consumer_fps - 1) / consumer_fps - 1;
+}
+
+static void vpp_soft_skip_check_after_venc(vpp_camera_t *p_vpp_camera, vpp_codec_ctx_t *ctx, int vf_now)
+{
+	if (ctx->vflow_snap_last_venc != 0) {
+		int skipped = vf_now - ctx->vflow_snap_last_venc - 1;
+
+		if (skipped > 0)
+			SC_LOGW("[%d][%s] soft skip (venc): %d frame(s), vflow %d -> %d", p_vpp_camera->pipline_id,
+				ctx->stream_name, skipped, ctx->vflow_snap_last_venc, vf_now);
+	}
+	ctx->vflow_snap_last_venc = vf_now;
+}
+
+static void vpp_soft_skip_check_after_drm(vpp_camera_t *p_vpp_camera, vpp_codec_ctx_t *ctx, int vf_now)
+{
+	camera_config_t *cam_cfg = p_vpp_camera->vp_vflow_contex.sensor_config
+				       ? p_vpp_camera->vp_vflow_contex.sensor_config->camera_config
+				       : NULL;
+	int vflow_fps = cam_cfg ? cam_cfg->fps : 0;
+	int32_t drm_hz = (p_vpp_camera->drm_display_fps_cfg >= 0) ? p_vpp_camera->drm_display_fps_cfg : vflow_fps;
+
+	if (ctx->vflow_snap_last_drm != 0) {
+		int skipped = vf_now - ctx->vflow_snap_last_drm - 1;
+		int policy_max = vpp_soft_skip_policy_max(vflow_fps, (int)drm_hz);
+
+		if (skipped > policy_max) {
+			int excess = skipped - policy_max;
+
+			SC_LOGW("[%d][%s] soft skip (drm): excess %d (total %d, policy_allow %d), vflow %d -> %d",
+				p_vpp_camera->pipline_id, ctx->stream_name, excess, skipped, policy_max,
+				ctx->vflow_snap_last_drm, vf_now);
+		}
+	}
+	ctx->vflow_snap_last_drm = vf_now;
+}
+
+static void vp_print_debug_infos_for_multithread(vpp_codec_ctx_t *p_vpp_codec_ctx)
+{
 	vpp_camera_t *p_vpp_camera = (vpp_camera_t *)p_vpp_codec_ctx->p_vpp_camera;
-	SC_LOGI("[%d][%s] thread counter: [flow thread: %d][encode thread: %d] [bpu thread: %d]",
-		p_vpp_camera->pipline_id,
-		p_vpp_codec_ctx->stream_name,
-		p_vpp_codec_ctx->vflow_thread_run_counter,
-		p_vpp_codec_ctx->codec_thread_run_counter,
-		p_vpp_camera->bpu_thread_run_counter);
-	SC_LOGI("[%d][%s] thread status: [encode thread: %s] [bpu thread: %s]\n",
-		p_vpp_camera->pipline_id,
-		p_vpp_codec_ctx->stream_name,
-		encode_thread_step_name(p_vpp_codec_ctx->encode_thread_step),
+	SC_LOGI("[%d][%s] thread counter: [encode thread: %d] [drm thread: %d] [bpu thread: %d]",
+		p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, p_vpp_codec_ctx->codec_thread_run_counter,
+		p_vpp_codec_ctx->drm_thread_run_counter, p_vpp_camera->bpu_thread_run_counter);
+
+	SC_LOGI("[%d][%s] thread status: [encode thread: %s] [bpu thread: %s]\n", p_vpp_camera->pipline_id,
+		p_vpp_codec_ctx->stream_name, encode_thread_step_name(p_vpp_codec_ctx->encode_thread_step),
 		bpu_thread_step_name(p_vpp_camera->bpu_thread_step));
 
-	SC_LOGI("[%d][%s] queue status:[vse_to_enc_queue: %d] [enc_to_vse_queue:%d]\n",
-		p_vpp_camera->pipline_id,
-		p_vpp_codec_ctx->stream_name,
-		mQueueGetCount(&p_vpp_codec_ctx->m_vflow_to_enc_queue),
-		mQueueGetCount(&p_vpp_codec_ctx->m_enc_to_vflow_queue));
+	SC_LOGI("[%d][%s] queue status:[vse_to_enc_queue: %d] [enc_to_vse_queue:%d]\n", p_vpp_camera->pipline_id,
+		p_vpp_codec_ctx->stream_name, mQueueGetCount(&p_vpp_codec_ctx->m_vflow_queue));
+
 	int get_frame_form_flow = __sync_fetch_and_add(&p_vpp_codec_ctx->vflow_frame_counter, 0);
-	SC_LOGI("[%d][%s] get frame from flow: %d\n", p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, get_frame_form_flow);
+	SC_LOGI("[%d][%s] get frame from flow: %d\n", p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name,
+		get_frame_form_flow);
 }
+
 static int32_t send_video_frame_info(int pipeline_id, int frame_id, int64_t timestamp)
 {
 	int32_t ret = 0;
@@ -190,57 +246,58 @@ static int32_t send_video_frame_info(int pipeline_id, int frame_id, int64_t time
 		SC_LOGE("Failed to allocate memory for ws_msg");
 		return -1;
 	}
-	sprintf(ws_msg, "{\"kind\":11, \"pipeline\":%d, \"frame_id\":%d, \"timestamp\":%ld}", pipeline_id + 1, frame_id, timestamp);
-	ret = SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_SEND_MSG, (void*)ws_msg);
+	sprintf(ws_msg, "{\"kind\":11, \"pipeline\":%d, \"frame_id\":%d, \"timestamp\":%ld}", pipeline_id + 1, frame_id,
+		timestamp);
+	ret = SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_SEND_MSG, (void *)ws_msg);
 	free(ws_msg);
 	return ret;
 }
 
 static void vpp_camera_push_stream(int pipeline_id, int video_id, vpp_codec_ctx_t *vpp_codec_ctx, ImageFrame *stream)
 {
-	if(stream == NULL) {
+	if (stream == NULL) {
 		SC_LOGE("Param is NULL");
 		return;
 	}
 	__sync_lock_test_and_set(&vpp_codec_ctx->encode_thread_step, SendVideoFrameInfo);
 	media_codec_buffer_t *buffer = (media_codec_buffer_t *)(stream->frame_buffer);
-	if(vpp_codec_ctx->first_frame_timestamp == 0){
+	if (vpp_codec_ctx->first_frame_timestamp == 0) {
 		vpp_codec_ctx->first_frame_timestamp = buffer->vstream_buf.pts / 1000;
-		SC_LOGI("channel %d stream %s recved first frame, and pts is %lld.", pipeline_id, vpp_codec_ctx->stream_name, buffer->vstream_buf.pts / 1000);
+		SC_LOGI("channel %d stream %s recved first frame, and pts is %lld.", pipeline_id,
+			vpp_codec_ctx->stream_name, buffer->vstream_buf.pts / 1000);
 	}
-	if(strcmp(vpp_codec_ctx->stream_name, "main") == 0){
+	if (strcmp(vpp_codec_ctx->stream_name, "main") == 0) {
 		send_video_frame_info(video_id, buffer->vstream_buf.src_idx, buffer->vstream_buf.pts);
 	}
 
-
-	T_SDK_MEDIA_SRV_PUSH_PARAM push_param = {
-		.media = vpp_codec_ctx->media_handler,
-		.data = (const char*)buffer->vstream_buf.vir_ptr,
-		.data_length = buffer->vstream_buf.size,
-		.pts = buffer->vstream_buf.pts /1000,
-		.dts = buffer->vstream_buf.pts /1000,
-		.codec_name = vpp_codec_ctx->media_type
-	};
+	T_SDK_MEDIA_SRV_PUSH_PARAM push_param = {.media = vpp_codec_ctx->media_handler,
+						 .data = (const char *)buffer->vstream_buf.vir_ptr,
+						 .data_length = buffer->vstream_buf.size,
+						 .pts = buffer->vstream_buf.pts / 1000,
+						 .dts = buffer->vstream_buf.pts / 1000,
+						 .codec_name = vpp_codec_ctx->media_type};
 
 	__sync_lock_test_and_set(&vpp_codec_ctx->encode_thread_step, PushStreamToMediaServer);
 	SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_PUSH_DATA, &push_param);
 }
-static void update_osd_info(vp_vflow_contex_t* vp_vflow_contex, uint64_t *next_update_time_ms, int osd_chn){
+static void update_osd_info(vp_vflow_contex_t *vp_vflow_contex, uint64_t *next_update_time_ms, int osd_chn)
+{
 	uint64_t current_time_ms = get_timestamp_ms();
-	if(osd_chn < 0){
+	if (osd_chn < 0) {
 		return;
 	}
-	if(current_time_ms > *next_update_time_ms){
+	if (current_time_ms > *next_update_time_ms) {
 		char world_time_string[100];
 		get_world_time_string(world_time_string, sizeof(world_time_string));
 		vp_osd_draw_world(vp_vflow_contex, osd_chn, world_time_string);
 		*next_update_time_ms = (current_time_ms / 1000) * 1000 + 1000;
 	}
 }
-static void* venc_get_stream_proc(void *ptr)
+
+static void *venc_get_stream_proc(void *ptr)
 {
 	int32_t ret = 0;
-	tsThread *privThread = (tsThread*)ptr;
+	tsThread *privThread = (tsThread *)ptr;
 	vpp_codec_ctx_t *p_vpp_codec_ctx = (vpp_codec_ctx_t *)privThread->pvThreadData;
 	vpp_camera_t *p_vpp_camera = (vpp_camera_t *)p_vpp_codec_ctx->p_vpp_camera;
 
@@ -249,90 +306,81 @@ static void* venc_get_stream_proc(void *ptr)
 		SC_LOGE("vp_allocate_image_frame for encode_stream failed, so exit program.");
 		exit(-1);
 	}
-	teQueueStatus status = E_QUEUE_OK;
-	ImageFrame vse_frame = {0};
-	hbn_vnode_image_t *hbn_vnode_image = NULL;
 
+	teQueueStatus status = E_QUEUE_OK;
+	ImageFrame *p_vse_frame = NULL;
+	ImageFrame *p_last_encoded_frame = NULL;
 	uint8_t is_geted_codec_stream = 0;
 
 	int dequeue_enc_count = 0;
-	int enqueue_vse_count = 0;
-	int vflow_chn = p_vpp_codec_ctx->vflow_chn;
-	//线程退出时，保证hbn_vnode_image 已经处理完, 处理的方式是放到 m_enc_to_vflow_queue
-	while (privThread->eState == E_THREAD_RUNNING){
+
+	// check fps
+	// uint64_t venc_fps_last_ms = get_timestamp_ms();
+	// int venc_fps_count = 0;
+
+	while (privThread->eState == E_THREAD_RUNNING) {
 		__sync_lock_test_and_set(&p_vpp_codec_ctx->encode_thread_step, WaitFrameFromFlowQueue);
 
-		status = mQueueDequeueTimed(&p_vpp_codec_ctx->m_vflow_to_enc_queue, 2000, (void **)&hbn_vnode_image);
-		if(status != E_QUEUE_OK){
-			SC_LOGI("channel %d stream %s dequeue from vse_to_enc_queue failed:%d\n", p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, status);
+		p_vse_frame = NULL;
+		status = mQueuePeekFromRearTimed(&p_vpp_codec_ctx->m_vflow_queue, 2000, (void **)&p_vse_frame);
+		if (status != E_QUEUE_OK || p_vse_frame == NULL) {
+			SC_LOGI("channel %d stream %s peek newest from m_vflow_queue failed:%d\n",
+				p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, status);
+			continue;
+		}
+		if (p_vse_frame == p_last_encoded_frame) {
+			usleep(1000);
 			continue;
 		}
 		dequeue_enc_count++;
 
-		// 送进编码器
 		__sync_lock_test_and_set(&p_vpp_codec_ctx->encode_thread_step, SendToCodec);
-		vse_frame.hbn_vnode_image = hbn_vnode_image;
-		ret = vp_codec_encoder_set_input(&p_vpp_codec_ctx->m_encode_context, &vse_frame);
-		if(ret != 0){
+		ret = vp_codec_encoder_set_input(&p_vpp_codec_ctx->m_encode_context, p_vse_frame);
+		if (ret != 0) {
 			if (privThread->eState == E_THREAD_RUNNING) {
-				SC_LOGE("pipline %d stream %s vp_codec_set_input failed.", p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name);
+				SC_LOGE("pipline %d stream %s vp_codec_set_input failed.", p_vpp_camera->pipline_id,
+					p_vpp_codec_ctx->stream_name);
 			}
 			break;
 		}
+		p_last_encoded_frame = p_vse_frame;
+
+		// for debug
+		int vf_now = (int)__sync_fetch_and_add(&p_vpp_codec_ctx->vflow_frame_counter, 0);
+		vpp_soft_skip_check_after_venc(p_vpp_camera, p_vpp_codec_ctx, vf_now);
+
 		__sync_lock_test_and_set(&p_vpp_codec_ctx->encode_thread_step, WaitDataFromCodec);
 		is_geted_codec_stream = 0;
-		while(privThread->eState == E_THREAD_RUNNING){
+		while (privThread->eState == E_THREAD_RUNNING) {
 			// 从编码器获取码流
 			ret = vp_codec_get_output(&p_vpp_codec_ctx->m_encode_context, &encode_stream, 2000);
-			if(ret != 0){
+			if (ret != 0) {
 				if (privThread->eState == E_THREAD_RUNNING) {
 					SC_LOGE("channel %d stream %s vp_codec_get_output failed %d.",
 						p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, ret);
 				}
-				if(ret == -2){
+				if (ret == -2) {
 					continue;
-				}else{
+				} else {
 					exit(-1);
 				}
-			}else{
+			} else {
 				is_geted_codec_stream = 1;
 				break;
 			}
 		}
 
-		// 编码器用完VSE的数据 就释放
-		__sync_lock_test_and_set(&p_vpp_codec_ctx->encode_thread_step, GiveBackFrameToFlow);
-		ret = vp_vse_release_frame(&p_vpp_camera->vp_vflow_contex, vflow_chn, &vse_frame);
-		if (ret != 0) {
-			SC_LOGE("vp_vse_release_frame failed.");
-			break;
-		}else{
-			int used_count_tmp = __sync_sub_and_fetch(&p_vpp_codec_ctx->vflow_buffer_used_count, 1);
-			if(used_count_tmp < 0 ){
-				SC_LOGE("pipline %d stream %s vse used count %d < 0, should not run here.",
-					p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, p_vpp_codec_ctx->vflow_buffer_used_count);
-			}
-		}
-		// 编码器用完VnodeBuffer,就归还给 VSE
-		__sync_lock_test_and_set(&p_vpp_codec_ctx->encode_thread_step, GiveBackFrameToFlowQueue);
-		while(privThread->eState == E_THREAD_RUNNING){
-			status = mQueueEnqueueEx(&p_vpp_codec_ctx->m_enc_to_vflow_queue, hbn_vnode_image);
-			if (status != E_QUEUE_OK){
-				SC_LOGE("channel %d stream %s enqueue from enc_to_vse_queue failed:%d\n",
-					p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, status);
-				sleep(1);
-				continue;
-			}
-			hbn_vnode_image = NULL;
-			enqueue_vse_count++;
-			break;
-		}
-		if(is_geted_codec_stream){
-			vpp_camera_push_stream(p_vpp_camera->pipline_id, p_vpp_camera->vpp_impl_index, p_vpp_codec_ctx, &encode_stream);
+		if (is_geted_codec_stream) {
+			vpp_camera_push_stream(p_vpp_camera->pipline_id, p_vpp_camera->vpp_impl_index, p_vpp_codec_ctx,
+					       &encode_stream);
+
+			// check fps
+			// vpp_camera_fps_stat_tick(&venc_fps_count, &venc_fps_last_ms, p_vpp_camera->pipline_id,
+			//			 p_vpp_codec_ctx->stream_name, "venc push");
 		}
 
 		__sync_lock_test_and_set(&p_vpp_codec_ctx->encode_thread_step, GiveBackDataToCodec);
-		if(is_geted_codec_stream){
+		if (is_geted_codec_stream) {
 			ret = vp_codec_release_output(&p_vpp_codec_ctx->m_encode_context, &encode_stream);
 			if (ret != 0) {
 				SC_LOGE("vp_codec_release_output failed.");
@@ -340,16 +388,10 @@ static void* venc_get_stream_proc(void *ptr)
 			}
 		}
 		__sync_fetch_and_add(&p_vpp_codec_ctx->codec_thread_run_counter, 1);
-		__sync_sub_and_fetch(&p_vpp_codec_ctx->vflow_frame_counter, 1);
 	}
 
-	int free_dissociate_count = 0;
-	if(hbn_vnode_image != NULL){
-		free(hbn_vnode_image);
-		free_dissociate_count = 1;
-	}
-	SC_LOGI("channel %d stream %s dequeue enc %d = enqueue vse %d + free_dissociate_count %d.\n",
-		p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, dequeue_enc_count, enqueue_vse_count, free_dissociate_count);
+	SC_LOGI("channel %d stream %s dequeue enc %d.\n", p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name,
+		dequeue_enc_count);
 
 	vp_free_image_frame(&encode_stream);
 	mThreadFinish(privThread);
@@ -359,131 +401,243 @@ static void* venc_get_stream_proc(void *ptr)
 /******************************************************************************
  * funciton : get stream from each channels
  ******************************************************************************/
-static void* vlfow_get_stream_proc(void *ptr)
+static void *vlfow_get_stream_proc(void *ptr)
 {
 	int32_t ret = 0;
 
-	tsThread *privThread = (tsThread*)ptr;
+	tsThread *privThread = (tsThread *)ptr;
 	vpp_codec_ctx_t *p_vpp_codec_ctx = (vpp_codec_ctx_t *)privThread->pvThreadData;
 	vpp_camera_t *p_vpp_camera = (vpp_camera_t *)p_vpp_codec_ctx->p_vpp_camera;
 
 	mThreadSetNameWidthIndex(privThread, __func__, p_vpp_camera->pipline_id);
 
 	teQueueStatus status = E_QUEUE_OK;
-	ImageFrame vse_frame = {0};
-	hbn_vnode_image_t *hbn_vnode_image = NULL;
-
 	uint64_t next_update_time_ms = ((get_timestamp_ms() + 999) / 1000) * 1000;
 	struct TimeStatistics time_statistics;
 
 	int dequeue_vse_count = 0;
-	int enqueue_enc_count = 0;
-	uint8_t is_got_vlflow_frame = 0;
-	uint8_t is_saved_vlflow_frame = 0;
+	int enqueue_count = 0;
 	int vflow_chn = p_vpp_codec_ctx->vflow_chn;
-	while (privThread->eState == E_THREAD_RUNNING){
+
+	// check fps
+	// uint64_t vse_fps_last_ms = get_timestamp_ms();
+	// int vse_fps_count = 0;
+
+	while (privThread->eState == E_THREAD_RUNNING) {
 		time_statistics_at_beginning_of_loop(&time_statistics);
-		status = mQueueDequeueTimed(&p_vpp_codec_ctx->m_enc_to_vflow_queue, 2000, (void **)&hbn_vnode_image);
-		if (status != E_QUEUE_OK){
-			SC_LOGI("channel %d stream %s dequeue from enc_to_vse_queue failed:%d\n",
-				p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, status);
+
+		/* 每帧分配一个 ImageFrame：vp_vse_get_frame 需要有效的 hbn_vnode_image 指针 */
+		ImageFrame *p_frame = malloc(sizeof(ImageFrame));
+		if (!p_frame) {
+			SC_LOGE("malloc ImageFrame failed.");
 			continue;
 		}
-		dequeue_vse_count++;
-
+		if (vp_allocate_image_frame(p_frame) == NULL) {
+			SC_LOGE("vp_allocate_image_frame failed.");
+			free(p_frame);
+			continue;
+		}
 
 		int wait_count = 0;
-		vse_frame.hbn_vnode_image = hbn_vnode_image;
-		is_got_vlflow_frame = 0;
-		while(privThread->eState == E_THREAD_RUNNING){
-			ret = vp_vse_get_frame(&p_vpp_camera->vp_vflow_contex, vflow_chn, &vse_frame);
+		while (privThread->eState == E_THREAD_RUNNING) {
+			ret = vp_vse_get_frame(&p_vpp_camera->vp_vflow_contex, vflow_chn, p_frame);
 			if (ret != 0) {
 				wait_count++;
-				// 当线程接收到退出信号时，getframe 接口会立即报超时退出
-				// 所以只有当线程是正常运行状态下的异常才属于真异常
 				if (privThread->eState == E_THREAD_RUNNING) {
-					int used_count_tmp = __sync_fetch_and_add(&p_vpp_codec_ctx->vflow_buffer_used_count, 0);
-					if(used_count_tmp > VPP_VSE_OUTBUFFER_COUNT - VPP_VSE_OUTBUFFER_RELEASE_COUNT){
-						SC_LOGI("[%d] [%s] vp_vse_get_frame chn not geted data(%d), because buffer is not enough, vse used count %d, vse all count %d, wait %d",
-							p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, ret, used_count_tmp, VPP_VSE_OUTBUFFER_COUNT, wait_count);
-					}else{
-						SC_LOGE("[%d] [%s] vp_vse_get_frame chn %d failed(%d), vse used count %d, vse all count %d.",
-							p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, vflow_chn, ret, used_count_tmp, VPP_VSE_OUTBUFFER_COUNT);
-					}
+					SC_LOGI("[%d] [%s] vp_vse_get_frame chn %d failed(%d), wait %d",
+						p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, vflow_chn, ret,
+						wait_count);
 					vp_print_debug_infos_for_multithread(p_vpp_codec_ctx);
 					vp_print_debug_infos_when_error();
 					continue;
 				}
-			}else{
+			} else {
 				__sync_fetch_and_add(&p_vpp_codec_ctx->vflow_frame_counter, 1);
-				int used_count_tmp = __sync_fetch_and_add(&p_vpp_codec_ctx->vflow_buffer_used_count, 1);
-				if(used_count_tmp > VPP_VSE_OUTBUFFER_COUNT){
-					SC_LOGE("pipline %d stream %s vse used count %d > %d, should not run here.", p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name,
-						p_vpp_codec_ctx->vflow_buffer_used_count, VPP_VSE_OUTBUFFER_COUNT);
-				}
-				is_got_vlflow_frame = 1;
+				dequeue_vse_count++;
+
+				// check fps
+				// vpp_camera_fps_stat_tick(&vse_fps_count, &vse_fps_last_ms, p_vpp_camera->pipline_id,
+				//			 p_vpp_codec_ctx->stream_name, "vse getframe");
 				break;
 			}
 		}
 
-		is_saved_vlflow_frame = 0;
-		while(privThread->eState == E_THREAD_RUNNING){
-			status = mQueueEnqueueEx(&p_vpp_codec_ctx->m_vflow_to_enc_queue, hbn_vnode_image);
-			if (status != E_QUEUE_OK){
-				printf("channel %d stream %s enqueue from enc_to_vse_queue failed:%d\n", p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, status);
-				sleep(1);
-				continue;
-			}
-			/**
-			 * 1. 入队成功：编码线程释放VSE
-			 * 2. 入队失败：当前线程释放VSE
-			 */
-			is_saved_vlflow_frame = 1;
-			/**
-			 * 1. 入队成功：编码线程释放 hbn_vnode_image
-			 * 2. 入队失败：当前线程释放 hbn_vnode_image 变量（单纯结构体，不好含视频帧）
-			 */
-			hbn_vnode_image = NULL;
-			enqueue_enc_count++;
+		if (privThread->eState != E_THREAD_RUNNING) {
+			vp_free_image_frame(p_frame);
+			free(p_frame);
 			break;
 		}
 
-		update_osd_info(&p_vpp_camera->vp_vflow_contex, &next_update_time_ms, p_vpp_codec_ctx->osd_chn);
-		if((p_vpp_camera->drm_context != NULL) && (p_vpp_camera->drm_init_succesed != 0)
-			&& (is_got_vlflow_frame != 0) && (p_vpp_codec_ctx->stream_index == 0)){
-			ret = vp_display_set_frame(p_vpp_camera->drm_context, vse_frame.hbn_vnode_image);
-			if(ret != 0){
-				SC_LOGW("vp_display_set_frame chn failed(%d).", ret);
+		// 入队 ImageFrame*，满了则出队最旧一帧并 release，再入队新帧
+		{
+			status = mQueueEnqueueEx(&p_vpp_codec_ctx->m_vflow_queue, p_frame);
+			if (status == E_QUEUE_ERROR_FULL) {
+				ImageFrame *p_old = NULL;
+				status = mQueueDequeue(&p_vpp_codec_ctx->m_vflow_queue, (void **)&p_old);
+				if (status == E_QUEUE_OK && p_old) {
+					vp_vse_release_frame(&p_vpp_camera->vp_vflow_contex, vflow_chn, p_old);
+					vp_free_image_frame(p_old);
+					free(p_old);
+				}
+				status = mQueueEnqueueEx(&p_vpp_codec_ctx->m_vflow_queue, p_frame);
+				if (status != E_QUEUE_OK) {
+					SC_LOGE("m_vflow_queue enqueue new frame failed: %d.", status);
+					vp_vse_release_frame(&p_vpp_camera->vp_vflow_contex, vflow_chn, p_frame);
+					vp_free_image_frame(p_frame);
+					free(p_frame);
+					continue;
+				}
+			} else if (status != E_QUEUE_OK) {
+				SC_LOGE("m_vflow_queue enqueue failed: %d.", status);
+				vp_vse_release_frame(&p_vpp_camera->vp_vflow_contex, vflow_chn, p_frame);
+				vp_free_image_frame(p_frame);
+				free(p_frame);
+				continue;
 			}
+			enqueue_count++;
 		}
-		__sync_fetch_and_add(&p_vpp_codec_ctx->vflow_thread_run_counter, 1);
+
+		// update OSD
+		update_osd_info(&p_vpp_camera->vp_vflow_contex, &next_update_time_ms, p_vpp_codec_ctx->osd_chn);
+
 		time_statistics_at_ending_of_loop(&time_statistics);
 		time_statistics_info_show(&time_statistics, "read_camera", false);
 	}
 
-	//当前线程获取到VSE，但是入队失败
-	if(is_got_vlflow_frame && (is_saved_vlflow_frame == 0)){
-		ret = vp_vse_release_frame(&p_vpp_camera->vp_vflow_contex, vflow_chn, &vse_frame);
-		if (ret != 0) {
-			SC_LOGE("vp_vse_release_frame failed");
+	// 线程退出时清空单队列中残留帧并 release
+	while (!mQueueIsEmpty(&p_vpp_codec_ctx->m_vflow_queue)) {
+		ImageFrame *p_old = NULL;
+		teQueueStatus st = mQueueDequeue(&p_vpp_codec_ctx->m_vflow_queue, (void **)&p_old);
+		if (st != E_QUEUE_OK || !p_old)
+			break;
+		vp_vse_release_frame(&p_vpp_camera->vp_vflow_contex, vflow_chn, p_old);
+		vp_free_image_frame(p_old);
+		free(p_old);
+	}
+
+	SC_LOGI("channel %d stream %s vse dequeue %d, enqueue %d.\n", p_vpp_camera->pipline_id,
+		p_vpp_codec_ctx->stream_name, dequeue_vse_count, enqueue_count);
+
+	mThreadFinish(privThread);
+	return NULL;
+}
+
+static int vpp_drm_try_init_display(vpp_camera_t *p_vpp_camera, vp_drm_context_t *drm_ctx)
+{
+	vp_vse_output_info_t info;
+
+	if (vp_vse_get_output_info(&p_vpp_camera->vp_vflow_contex, 0, &info) != 0)
+		return -1;
+	int32_t hz = (p_vpp_camera->drm_display_fps_cfg >= 0)
+			 ? p_vpp_camera->drm_display_fps_cfg
+			 : p_vpp_camera->vp_vflow_contex.sensor_config->camera_config->fps;
+	if (vp_display_init(drm_ctx, info.width, info.height, hz) != 0)
+		return -1;
+	SC_LOGI("[%d] display initialized (w=%d h=%d)", p_vpp_camera->pipline_id, info.width, info.height);
+	return 0;
+}
+
+/*
+ * DRM 送显主线程 — 一个 poll 同时监听 udev 热插拔与 drm flip 事件。
+ * connected 控制送显：连接→init→送显，断开→deinit→停。
+ * 线程启停由 drm_context != NULL 控制。
+ */
+static void *drm_get_stream_proc(void *ptr)
+{
+	int32_t ret = 0;
+	tsThread *privThread = (tsThread *)ptr;
+	vpp_codec_ctx_t *p_vpp_codec_ctx = (vpp_codec_ctx_t *)privThread->pvThreadData;
+	vpp_camera_t *p_vpp_camera = (vpp_camera_t *)p_vpp_codec_ctx->p_vpp_camera;
+	vp_drm_context_t *drm_ctx = p_vpp_camera->drm_context;
+
+	mThreadSetNameWidthIndex(privThread, __func__, p_vpp_camera->pipline_id);
+
+	vp_display_hotplug_init();
+	int connected = vp_display_check_hdmi_is_connected();
+	int display_ready = 0;
+
+	SC_LOGI("[%d] drm thread started, HDMI %s", p_vpp_camera->pipline_id, connected ? "connected" : "disconnected");
+
+	teQueueStatus status;
+	ImageFrame *p_vse_frame = NULL;
+	ImageFrame *p_last_drm_frame = NULL;
+	int dequeue_count = 0;
+
+	// check fps
+	// int drm_fps_count = 0;
+	// uint64_t drm_fps_last_ms = get_timestamp_ms();
+
+	while (privThread->eState == E_THREAD_RUNNING) {
+		/* --- poll 同时监听 udev 热插拔 + drm flip，内部处理事件 --- */
+		connected = vp_display_poll_events(drm_ctx, display_ready, connected, display_ready ? 50 : 200);
+
+		/* --- 断开 → deinit --- */
+		if (!connected && display_ready) {
+			SC_LOGI("[%d] HDMI disconnected", p_vpp_camera->pipline_id);
+			vp_display_deinit(drm_ctx);
+			display_ready = 0;
+			p_last_drm_frame = NULL;
+			p_vpp_codec_ctx->vflow_snap_last_drm = 0;
+			continue;
+		}
+
+		/* --- 连上但未 init → init --- */
+		if (connected && !display_ready) {
+			SC_LOGI("[%d] HDMI connected", p_vpp_camera->pipline_id);
+			if (vpp_drm_try_init_display(p_vpp_camera, drm_ctx) != 0)
+				continue;
+			display_ready = 1;
+			p_last_drm_frame = NULL;
+			p_vpp_codec_ctx->vflow_snap_last_drm = 0;
+
+			// check fps
+			// drm_fps_count = 0;
+			// drm_fps_last_ms = get_timestamp_ms();
+		}
+
+		/* --- 等 flip 完成 --- */
+		if (!display_ready || drm_ctx->flip_pending)
+			continue;
+
+		/* --- 取最新帧送显 --- */
+		p_vse_frame = NULL;
+		status = mQueuePeekFromRearTimed(&p_vpp_codec_ctx->m_vflow_queue, 0, (void **)&p_vse_frame);
+		if (status != E_QUEUE_OK || p_vse_frame == NULL || p_vse_frame == p_last_drm_frame)
+			continue;
+
+		ret = vp_display_set_frame(drm_ctx, p_vse_frame->hbn_vnode_image);
+		if (ret == 0) {
+			p_last_drm_frame = p_vse_frame;
+			dequeue_count++;
+
+			// for debug
+			int vf_now = (int)__sync_fetch_and_add(&p_vpp_codec_ctx->vflow_frame_counter, 0);
+			vpp_soft_skip_check_after_drm(p_vpp_camera, p_vpp_codec_ctx, vf_now);
+
+			// check fps
+			//vpp_camera_fps_stat_tick(&drm_fps_count, &drm_fps_last_ms, p_vpp_camera->pipline_id,
+			//			 p_vpp_codec_ctx->stream_name, "drm display");
+
+			__sync_fetch_and_add(&p_vpp_codec_ctx->drm_thread_run_counter, 1);
 		}
 	}
 
-	int free_dissociate_count = 0;
-	if(hbn_vnode_image != NULL){
-		free(hbn_vnode_image);
-		free_dissociate_count = 1;
-	}
+	/* ---------- 清理 ---------- */
+	if (display_ready)
+		vp_display_deinit(drm_ctx);
+	vp_display_hotplug_deinit();
 
-	SC_LOGI("channel %d stream %s dequeue vse %d = enqueue enc %d + free_dissociate_count %d.\n",
-		p_vpp_camera->pipline_id, p_vpp_codec_ctx->stream_name, dequeue_vse_count, enqueue_enc_count, free_dissociate_count);
+	SC_LOGI("drm_get_stream_proc exit, channel %d stream %s display frames %d.", p_vpp_camera->pipline_id,
+		p_vpp_codec_ctx->stream_name, dequeue_count);
+
 	mThreadFinish(privThread);
 	return NULL;
 }
 
 // 从vse的chn1获取yuv数据送给bpu进行算法运行
-static void *send_yuv_to_bpu(void *ptr) {
-	tsThread *privThread = (tsThread*)ptr;
+static void *send_yuv_to_bpu(void *ptr)
+{
+	tsThread *privThread = (tsThread *)ptr;
 	int ret = 0;
 	ImageFrame vse_frame = {0};
 	hbn_vnode_image_t *hbn_vnode_image = NULL;
@@ -499,25 +653,25 @@ static void *send_yuv_to_bpu(void *ptr) {
 
 	uint8_t is_got_frame_from_vflow = 0;
 	int32_t vse_channel = vpp_camera->m_vse_for_bpu_channel;
-	while(privThread->eState == E_THREAD_RUNNING) {
-
+	while (privThread->eState == E_THREAD_RUNNING) {
 		__sync_lock_test_and_set(&vpp_camera->bpu_thread_step, BPUWaitFrameFromFlowQueue);
 		is_got_frame_from_vflow = 0;
-		while(privThread->eState == E_THREAD_RUNNING) {
+		while (privThread->eState == E_THREAD_RUNNING) {
 			ret = vp_vse_get_frame(&vpp_camera->vp_vflow_contex, vse_channel, &vse_frame);
 			if (ret != 0) {
 				// 当线程接收到退出信号时，getframe 接口会立即报超时退出
 				// 所以只有当线程是正常运行状态下的异常才属于真异常
 				if (privThread->eState == E_THREAD_RUNNING) {
-					SC_LOGE("channel %d vp_vse_get_frame chn %d failed(%d).", vpp_camera->pipline_id, vse_channel, ret);
+					SC_LOGE("channel %d vp_vse_get_frame chn %d failed(%d).",
+						vpp_camera->pipline_id, vse_channel, ret);
 					vp_print_debug_infos_when_error();
 				}
-			}else{
+			} else {
 				is_got_frame_from_vflow = 1;
 				break;
 			}
 		}
-		if((privThread->eState != E_THREAD_RUNNING) && (is_got_frame_from_vflow == 0)){
+		if ((privThread->eState != E_THREAD_RUNNING) && (is_got_frame_from_vflow == 0)) {
 			break;
 		}
 		hbn_vnode_image = (hbn_vnode_image_t *)vse_frame.hbn_vnode_image;
@@ -545,7 +699,8 @@ static void *send_yuv_to_bpu(void *ptr) {
 	return NULL;
 }
 
-int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
+int32_t vpp_camera_init_param_full(solution_cfg_t *solution_cfg)
+{
 	int32_t i = 0;
 	int32_t ret = 0;
 
@@ -557,31 +712,33 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 
 	int vpp_camera_index = 0;
 	int hdmi_display_channel = -1;
-	int pipeline_count =solution_cfg->cam_solution.pipeline_count;
+	int pipeline_count = solution_cfg->cam_solution.pipeline_count;
 
 	// 根据camera solution的配置设置vin、vse、venc、bpu模块的使能和参数
-	for (i = 0; i <solution_cfg->cam_solution.max_pipeline_count; i++) {
+	for (i = 0; i < solution_cfg->cam_solution.max_pipeline_count; i++) {
 		vpp_camera_t *p_vpp_camera = &g_vpp_camera[i];
 		p_vpp_camera->pipline_id = -1;
 		p_vpp_camera->vpp_impl_index = -1;
 
 		// 1. 配置 vin
-		if(solution_cfg->cam_solution.cam_vpp[i].is_valid == 0){
+		if (solution_cfg->cam_solution.cam_vpp[i].is_valid == 0) {
 			continue;
 		}
-		char* sensor_name =solution_cfg->cam_solution.cam_vpp[i].sensor;
-		if(solution_cfg->cam_solution.cam_vpp[i].is_enable == 0){
+		char *sensor_name = solution_cfg->cam_solution.cam_vpp[i].sensor;
+		if (solution_cfg->cam_solution.cam_vpp[i].is_enable == 0) {
 			SC_LOGI("Ignore camera sensor [%s] [%d/%d].", sensor_name, i, pipeline_count);
 			continue;
 		}
 
 		p_vpp_camera->pipline_id = i;
 		p_vpp_camera->vpp_impl_index = vpp_camera_index;
+		p_vpp_camera->drm_display_fps_cfg = -1;
 
-		//for vflow
-		p_vpp_camera->vp_vflow_contex.mipi_csi_rx_index =solution_cfg->cam_solution.cam_vpp[i].csi_index;
+		// for vflow
+		p_vpp_camera->vp_vflow_contex.mipi_csi_rx_index = solution_cfg->cam_solution.cam_vpp[i].csi_index;
 		p_vpp_camera->vp_vflow_contex.sensor_config = vp_get_sensor_config_by_name(sensor_name);
-		p_vpp_camera->vp_vflow_contex.mclk_is_not_configed =solution_cfg->cam_solution.cam_vpp[i].mclk_is_not_configed;
+		p_vpp_camera->vp_vflow_contex.mclk_is_not_configed = solution_cfg->cam_solution.cam_vpp[i]
+									 .mclk_is_not_configed;
 
 		SC_LOGI("Enable camera sensor [%s] [%d/%d] mclk_is_not_configed:[%d]", sensor_name, i, pipeline_count,
 			p_vpp_camera->vp_vflow_contex.mclk_is_not_configed);
@@ -589,27 +746,28 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			SC_LOGE("sensor name not found(%s)", sensor_name);
 			return -1;
 		}
-		p_vpp_camera->vp_vflow_contex.vin_info.ochn_buffer_count = 3;
-		p_vpp_camera->vp_vflow_contex.isp_info.ochn_buffer_count = 3;
-		p_vpp_camera->vp_vflow_contex.gdc_info.output_buffer_count = 3;
+		p_vpp_camera->vp_vflow_contex.vin_info.ochn_buffer_count = VPP_VNODE_OUTBUFFER_COUNT;
+		p_vpp_camera->vp_vflow_contex.isp_info.ochn_buffer_count = VPP_VNODE_OUTBUFFER_COUNT;
+		p_vpp_camera->vp_vflow_contex.gdc_info.output_buffer_count = VPP_VNODE_OUTBUFFER_COUNT;
 
-		//isp
-		p_vpp_camera->vp_vflow_contex.sensor_config->isp_attr->input_mode = 2; // offline
+		// isp
+		p_vpp_camera->vp_vflow_contex.sensor_config->isp_attr->input_mode = 2;	// offline
 
 		// 2. 配置算法模型
 		if (strlen(solution_cfg->cam_solution.cam_vpp[i].model) > 1
-			&& strcmp(solution_cfg->cam_solution.cam_vpp[i].model, "null") != 0) {
-			//g_vpp_camera 与插入的摄像头的顺序一一对应
-			//m_vpp_id 与使能的摄像头一一对应
+		    && strcmp(solution_cfg->cam_solution.cam_vpp[i].model, "null") != 0) {
+			// g_vpp_camera 与插入的摄像头的顺序一一对应
+			// m_vpp_id 与使能的摄像头一一对应
 			//比如插入了两个摄像头,只使能第二个: g_vpp_camera[0] 是空 g_vpp_camera[1]是有效的
-			// 					  			  m_vpp_id 为0 (决定了算法上报结果的通道号)
+			//  					  			  m_vpp_id 为0
+			//  (决定了算法上报结果的通道号)
 			p_vpp_camera->m_bpu_handle.m_vpp_id = vpp_camera_index;
-			strncpy(p_vpp_camera->m_bpu_handle.m_model_name,
-				solution_cfg->cam_solution.cam_vpp[i].model,
+			strncpy(p_vpp_camera->m_bpu_handle.m_model_name, solution_cfg->cam_solution.cam_vpp[i].model,
 				sizeof(p_vpp_camera->m_bpu_handle.m_model_name) - 1);
-			p_vpp_camera->m_bpu_handle.m_model_name[sizeof(p_vpp_camera->m_bpu_handle.m_model_name) - 1] = '\0';
+			p_vpp_camera->m_bpu_handle
+			    .m_model_name[sizeof(p_vpp_camera->m_bpu_handle.m_model_name) - 1] = '\0';
 
-			//for debug: bpu
+			// for debug: bpu
 			p_vpp_camera->bpu_thread_step = BPUThreadStepSentry;
 			p_vpp_camera->bpu_thread_run_counter = 0;
 		}
@@ -629,16 +787,16 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 
 		vse_config->vse_ochn_buffer_count = VPP_VSE_OUTBUFFER_COUNT;
 
-		for (int j = 0; j < VPP_STEAM_COUNT; j++){
+		for (int j = 0; j < VPP_STEAM_COUNT; j++) {
 			int target_w = input_width;
 			int target_h = input_height;
-			if(j != 0){
+			if (j != 0) {
 				vpp_get_sub_stream_resolution(input_width, input_height, &target_w, &target_h);
 			}
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &p_vpp_camera->vpp_codec_ctxs[j];
 			p_vpp_codec_ctx->vflow_chn = j;
 
-			vse_config->vse_ochn_attr[j].chn_en = CAM_TRUE; //缩小通道: 4K
+			vse_config->vse_ochn_attr[j].chn_en = CAM_TRUE;	 //缩小通道: 4K
 			vse_config->vse_ochn_attr[j].roi.x = 0;
 			vse_config->vse_ochn_attr[j].roi.y = 0;
 			vse_config->vse_ochn_attr[j].roi.w = input_width;
@@ -647,12 +805,11 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			vse_config->vse_ochn_attr[j].target_h = target_h;
 			vse_config->vse_ochn_attr[j].fmt = FRM_FMT_NV12;
 			vse_config->vse_ochn_attr[j].bit_width = 8;
-			if(VPP_STEAM_COUNT > 3 /*VSE输出可以大于1080P的通道：0 1 2*/){
+			if (VPP_STEAM_COUNT > 3 /*VSE输出可以大于1080P的通道：0 1 2*/) {
 				SC_LOGE("vpp stream count max is 3, but %d", VPP_STEAM_COUNT);
 				exit(-1);
 			}
-			SC_LOGI("[%d] VSE channel %d: out_width: %d out_height: %d ",
-				i, j, target_w, target_h);
+			SC_LOGI("[%d] VSE channel %d: out_width: %d out_height: %d ", i, j, target_w, target_h);
 		}
 
 		// 第二个通道的数据给BPU使用
@@ -660,17 +817,20 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 		bpu_model_info->is_enable = 0;
 		int32_t vse_chn_tmp = 0;
 		if (strlen(p_vpp_camera->m_bpu_handle.m_model_name) > 1
-			&& strcmp(p_vpp_camera->m_bpu_handle.m_model_name, "null") != 0) {
+		    && strcmp(p_vpp_camera->m_bpu_handle.m_model_name, "null") != 0) {
 			bpu_model_info->is_enable = 1;
 			ret = bpu_wrap_get_model_user_info(p_vpp_camera->m_bpu_handle.m_model_name, bpu_model_info);
 			if (bpu_model_info->input_width > input_width || bpu_model_info->input_height > input_height)
-				vse_chn_tmp = 5;// 放大通道：4K
+				vse_chn_tmp = 5;  // 放大通道：4K
 			else
-				vse_chn_tmp = 4; //缩小通道: 720P
+				vse_chn_tmp = 4;  //缩小通道: 720P
 
-			SC_LOGI("[%d] VSE channel %d: input_width: %d input_height: %d model_width: %d model_height: %d ", i,
-				vse_chn_tmp, input_width, input_height, bpu_model_info->input_width, bpu_model_info->input_height);
-			// ret = bpu_wrap_get_model_hw(p_vpp_camera->m_bpu_handle.m_model_name, &model_width, &model_height);
+			SC_LOGI("[%d] VSE channel %d: input_width: %d input_height: %d model_width: %d model_height: "
+				"%d ",
+				i, vse_chn_tmp, input_width, input_height, bpu_model_info->input_width,
+				bpu_model_info->input_height);
+			// ret = bpu_wrap_get_model_hw(p_vpp_camera->m_bpu_handle.m_model_name, &model_width,
+			// &model_height);
 			vse_config->vse_ochn_attr[vse_chn_tmp].chn_en = CAM_TRUE;
 			vse_config->vse_ochn_attr[vse_chn_tmp].roi.x = 0;
 			vse_config->vse_ochn_attr[vse_chn_tmp].roi.y = 0;
@@ -687,19 +847,21 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 		//配置OSD
 		osd_user_info_t *osd_info = &p_vpp_camera->vp_vflow_contex.osd_info;
 		int valid_osd_region_count = 0;
-		for (int j = 0; j < VPP_STEAM_COUNT; j++){
+		for (int j = 0; j < VPP_STEAM_COUNT; j++) {
 			int target_w = input_width;
 			int target_h = input_height;
-			if(j != 0){
+			if (j != 0) {
 				vpp_get_sub_stream_resolution(input_width, input_height, &target_w, &target_h);
 			}
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &p_vpp_camera->vpp_codec_ctxs[j];
 			int osd_boundary_w = 320 + 50;
 			int osd_boundary_h = 200 + 50;
 			p_vpp_codec_ctx->osd_chn = -1;
-			if(( osd_boundary_w >= target_w) || (osd_boundary_h >= target_h)){
-				SC_LOGW("pipeline %d stream_index %d resolution is too small ( %d =< %d or %d =< %d), so disable osd.",
-					p_vpp_camera->pipline_id, j, target_w, osd_boundary_w, target_h, osd_boundary_h);
+			if ((osd_boundary_w >= target_w) || (osd_boundary_h >= target_h)) {
+				SC_LOGW("pipeline %d stream_index %d resolution is too small ( %d =< %d or %d =< %d), "
+					"so disable osd.",
+					p_vpp_camera->pipline_id, j, target_w, osd_boundary_w, target_h,
+					osd_boundary_h);
 				continue;
 			}
 			osd_info->handle[valid_osd_region_count] = i * VP_MAX_OSD_REGION + j;
@@ -712,43 +874,53 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			valid_osd_region_count++;
 		}
 		osd_info->valid_osd_region_count = valid_osd_region_count;
-		//gdc
+		// gdc
 		p_vpp_camera->vp_vflow_contex.gdc_info.input_width = input_width;
 		p_vpp_camera->vp_vflow_contex.gdc_info.input_height = input_height;
 		strcpy(p_vpp_camera->vp_vflow_contex.gdc_info.sensor_name, sensor_name);
 		p_vpp_camera->vp_vflow_contex.gdc_info.status = solution_cfg->cam_solution.cam_vpp[i].gdc_status;
 
-		//display
+		// display
 		solution_cfg_display_t *cfg_display = &solution_cfg->cam_solution.display_vpp[0];
-		if((cfg_display->is_valid) && (cfg_display->is_enable)){
-			//hdmi_display_channel = -1: 未初始化 
-			if((hdmi_display_channel == -1) && (p_vpp_camera->pipline_id == cfg_display->data_source)){
-				SC_LOGI("[%d] enable hdmi, so check hdmi.\n", cfg_display->data_source);
-				int hdmi_is_connected = vp_display_check_hdmi_is_connected();
-				if(hdmi_is_connected){
-					p_vpp_camera->drm_context = &g_drm_context;
-					hdmi_display_channel = p_vpp_camera->pipline_id;
-					SC_LOGI("[%d] enable hdmi", hdmi_display_channel);
-				}else{
-					SC_LOGE("[%d] enable hdmi, but hdmi is not connected.\n", cfg_display->data_source);
+		if ((cfg_display->is_valid) && (cfg_display->is_enable)) {
+			if (p_vpp_camera->pipline_id == cfg_display->data_source) {
+				int disp_w = 0, disp_h = 0, is_interval = 0;
+				float disp_fps = 0.f;
+				if (solution_cfg_parser_display_param(cfg_display->resolution, &disp_w, &disp_h, &disp_fps,
+								      &is_interval)
+				    == 0) {
+					p_vpp_camera->drm_display_fps_cfg = (int32_t)(disp_fps + 0.5f);
+					SC_LOGI("[%d] display cfg resolution [%s] -> fps %d", p_vpp_camera->pipline_id,
+						cfg_display->resolution, (int)p_vpp_camera->drm_display_fps_cfg);
+				} else {
+					SC_LOGW("[%d] parse display resolution [%s] failed, drm fps fallback to sensor",
+						p_vpp_camera->pipline_id, cfg_display->resolution);
 				}
+			}
+			// hdmi_display_channel = -1: 未初始化；drm_context 非 NULL 时启动送显线程
+			if ((hdmi_display_channel == -1) && (p_vpp_camera->pipline_id == cfg_display->data_source)) {
+				p_vpp_camera->drm_context = &g_drm_context;
+				hdmi_display_channel = p_vpp_camera->pipline_id;
+				SC_LOGI("[%d] enable hdmi, HDMI %s", hdmi_display_channel,
+					vp_display_check_hdmi_is_connected() ? "connected" : "not connected");
 			}
 		}
 
-		//for codec
-		for (int j = 0; j < VPP_STEAM_COUNT; j++){
+		// for codec
+		for (int j = 0; j < VPP_STEAM_COUNT; j++) {
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &p_vpp_camera->vpp_codec_ctxs[j];
 			camera_config_t *camera_config = p_vpp_camera->vp_vflow_contex.sensor_config->camera_config;
 			int target_w = input_width;
 			int target_h = input_height;
-			if(j != 0){
+			if (j != 0) {
 				vpp_get_sub_stream_resolution(input_width, input_height, &target_w, &target_h);
 			}
 			p_vpp_codec_ctx->stream_index = j;
 
 			media_codec_user_config_t *codec_user_config = &p_vpp_codec_ctx->m_encode_user_config;
 			codec_user_config->bit_rate = solution_cfg->cam_solution.cam_vpp[i].encode_bitrate;
-			codec_user_config->codec_type = VP_GET_MD_CODEC_TYPE(solution_cfg->cam_solution.cam_vpp[i].encode_type);
+			codec_user_config->codec_type = VP_GET_MD_CODEC_TYPE(
+			    solution_cfg->cam_solution.cam_vpp[i].encode_type);
 			codec_user_config->frame_rate = camera_config->fps;
 			codec_user_config->width = target_w;
 			codec_user_config->height = target_h;
@@ -758,20 +930,21 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 			codec_user_config->output_buffer_count = 5;
 
 			ret = vp_encode_config_param(&p_vpp_codec_ctx->m_encode_context, codec_user_config);
-			if (ret != 0){
+			if (ret != 0) {
 				SC_LOGE("Encode config param error");
 				exit(-1);
 			}
-			//for debug: codec
-			p_vpp_codec_ctx->vflow_thread_run_counter = 0;
+			// for debug: codec
 			p_vpp_codec_ctx->codec_thread_run_counter = 0;
+			p_vpp_codec_ctx->drm_thread_run_counter = 0;
 			p_vpp_codec_ctx->vflow_frame_counter = 0;
-			p_vpp_codec_ctx->vflow_buffer_used_count = 0;
+			p_vpp_codec_ctx->vflow_snap_last_venc = 0;
+			p_vpp_codec_ctx->vflow_snap_last_drm = 0;
 
 			p_vpp_codec_ctx->encode_thread_step = EncodeThreadStepSentry;
 			p_vpp_codec_ctx->first_frame_timestamp = 0;
 
-			//for thread param
+			// for thread param
 			p_vpp_codec_ctx->p_vpp_camera = p_vpp_camera;
 		}
 		vpp_camera_index++;
@@ -779,19 +952,22 @@ int32_t vpp_camera_init_param_full(solution_cfg_t* solution_cfg){
 
 	return ret;
 }
-int32_t vpp_camera_init_param(void){
+
+int32_t vpp_camera_init_param(void)
+{
 	return vpp_camera_init_param_full(&g_solution_config);
 }
 
 int32_t vpp_init_ion_pipeline_param_from_vflow_contex(vp_vflow_contex_t *vp_vflow_contex,
-	media_codec_user_config_t *codec_user_config, bpu_model_user_info_t *bpu_config,
-	vp_ion_pipeline_param_t *ion_param){
-
+						      media_codec_user_config_t *codec_user_config,
+						      bpu_model_user_info_t *bpu_config,
+						      vp_ion_pipeline_param_t *ion_param)
+{
 	memset(ion_param, 0, sizeof(vp_ion_pipeline_param_t));
-	//vin
+	// vin
 	vp_ion_buffer_param_t *vin = &ion_param->vin;
 	vp_sensor_config_t *vp_sensor_config = vp_vflow_contex->sensor_config;
-	if(vp_sensor_config == NULL){
+	if (vp_sensor_config == NULL) {
 		SC_LOGE("vp_sensor_config is null.");
 		return -1;
 	}
@@ -802,18 +978,18 @@ int32_t vpp_init_ion_pipeline_param_from_vflow_contex(vp_vflow_contex_t *vp_vflo
 
 	vin->count = vp_vflow_contex->vin_info.ochn_buffer_count;
 
-	//isp
+	// isp
 	vp_ion_buffer_param_t *isp = &ion_param->isp;
 	isp->width = vp_sensor_config->isp_ichn_attr->width;
 	isp->height = vp_sensor_config->isp_ichn_attr->height;
-	isp->format = ION_BUFFER_NV12; //vp_sensor_config->isp_ochn_attr.fmt
+	isp->format = ION_BUFFER_NV12;	// vp_sensor_config->isp_ochn_attr.fmt
 	isp->count = vp_vflow_contex->isp_info.ochn_buffer_count;
 
-	//vse
+	// vse
 	ion_param->vse_valid_count = 0;
 	vse_config_t *vse_config = &vp_vflow_contex->vse_config;
-	for(int i = 0; i< VSE_MAX_CHANNLE; i++){
-		if(vse_config->vse_ochn_attr[i].chn_en == CAM_TRUE){
+	for (int i = 0; i < VSE_MAX_CHANNLE; i++) {
+		if (vse_config->vse_ochn_attr[i].chn_en == CAM_TRUE) {
 			vp_ion_buffer_param_t *vse = &ion_param->vse[ion_param->vse_valid_count];
 			vse->width = vse_config->vse_ochn_attr[i].target_h;
 			vse->height = vse_config->vse_ochn_attr[i].target_w;
@@ -823,9 +999,9 @@ int32_t vpp_init_ion_pipeline_param_from_vflow_contex(vp_vflow_contex_t *vp_vflo
 		}
 	}
 
-	//gdc
+	// gdc
 	gdc_user_info_t *gdc_info = &vp_vflow_contex->gdc_info;
-	if(gdc_info->status == GDC_STATUS_OPEN){
+	if (gdc_info->status == GDC_STATUS_OPEN) {
 		vp_ion_buffer_param_t *gdc = &ion_param->gdc;
 		gdc->width = gdc_info->input_width;
 		gdc->height = gdc_info->input_height;
@@ -833,84 +1009,84 @@ int32_t vpp_init_ion_pipeline_param_from_vflow_contex(vp_vflow_contex_t *vp_vflo
 		gdc->count = gdc_info->output_buffer_count;
 
 		int gdc_file_size = get_gdc_config_file_size(vp_vflow_contex->gdc_info.sensor_name);
-		if(gdc_file_size != -1){
+		if (gdc_file_size != -1) {
 			ion_param->gdc_bin_file_size = gdc_file_size;
 		}
 		ion_param->is_enable_gdc = 1;
-	}else{
+	} else {
 		ion_param->is_enable_gdc = 0;
 	}
 
-	//osd
+	// osd
 	osd_user_info_t *osd_info = &vp_vflow_contex->osd_info;
 	ion_param->osd_valid_count = osd_info->valid_osd_region_count;
-	for(int i = 0; i< ion_param->osd_valid_count; i++){
+	for (int i = 0; i < ion_param->osd_valid_count; i++) {
 		vp_ion_buffer_param_t *osd = &ion_param->osd[i];
 		osd->width = osd_info->position[i].width;
-		osd->height =osd_info->position[i].height;
+		osd->height = osd_info->position[i].height;
 		osd->format = ION_OSD_BUFFER_VGA8;
 		osd->count = 1;
 	}
 
-	//vpu
+	// vpu
 	vp_ion_vpu_param_t *vpu = &ion_param->vpu;
 	vpu->width = codec_user_config->width;
 	vpu->height = codec_user_config->height;
 	vpu->output_buffer_count = codec_user_config->output_buffer_count;
-	if(codec_user_config->input_buffer_is_extrenal){
+	if (codec_user_config->input_buffer_is_extrenal) {
 		vpu->input_buffer_count = 0;
-	}else{
+	} else {
 		vpu->input_buffer_count = codec_user_config->input_buffer_count;
 	}
 
-	if(codec_user_config->codec_type == MEDIA_CODEC_ID_H264){
+	if (codec_user_config->codec_type == MEDIA_CODEC_ID_H264) {
 		vpu->type = ION_H264_ENCODEC;
-	}else if(codec_user_config->codec_type == MEDIA_CODEC_ID_H265){
+	} else if (codec_user_config->codec_type == MEDIA_CODEC_ID_H265) {
 		vpu->type = ION_H265_ENCODEC;
-	}else{
+	} else {
 		SC_LOGE("not support codec type :%d", codec_user_config->codec_type);
 	}
 
-	//bpu
-	if(bpu_config->is_enable){
+	// bpu
+	if (bpu_config->is_enable) {
 		vp_ion_bpu_param_t *bpu = &ion_param->bpu;
 		bpu->input_height = bpu_config->input_height;
 		bpu->input_width = bpu_config->input_width;
 		bpu->input_queue_count = BPU_INPUT_BUFFER_NUM;
 
-		if(strcmp(bpu_config->model_name, "mobilenetv2") == 0){
+		if (strcmp(bpu_config->model_name, "mobilenetv2") == 0) {
 			bpu->output_queue_count = 1;
-		}else{
+		} else {
 			bpu->output_queue_count = BPU_OUTPUT_BUFFER_NUM;
 		}
 		bpu->output_dimensions = bpu_config->output_dimension;
-		for(int i = 0; i< bpu->output_dimensions; i++){
+		for (int i = 0; i < bpu->output_dimensions; i++) {
 			bpu->output_size[i] = bpu_config->output_size[i];
 		}
 
-		const bpu_model_info_t* bpu_model_info = bpu_wrap_model_info(bpu_config->model_name);
-		if(bpu_model_info == NULL){
+		const bpu_model_info_t *bpu_model_info = bpu_wrap_model_info(bpu_config->model_name);
+		if (bpu_model_info == NULL) {
 			SC_LOGE("model %s get info failed", bpu_config->model_name);
 			// return -1;
 		}
-		if(bpu_model_info->ouput_calculator_size_is_fixed){
+		if (bpu_model_info->ouput_calculator_size_is_fixed) {
 			bpu->ouput_calculator_size_dynamic = 0;
-		}else{
+		} else {
 			bpu->ouput_calculator_size_dynamic = bpu_model_info->ouput_calculator_size;
 		}
 	}
 
-	//for camera service
+	// for camera service
 	vp_ion_camera_service_param_t *camera_service = &ion_param->camera_service;
 	camera_service->width = vp_sensor_config->isp_ichn_attr->width;
 	camera_service->height = vp_sensor_config->isp_ichn_attr->height;
 
 	camera_service->format = ION_BUFFER_NV12;
 
-	if(vp_sensor_config->isp_attr->input_mode == 1){
-		camera_service->is_mcm_mode = 1; //vin->isp
-	}else{
-		camera_service->is_mcm_mode = 0; //vin->isp
+	if (vp_sensor_config->isp_attr->input_mode == 1) {
+		camera_service->is_mcm_mode = 1;  // vin->isp
+	} else {
+		camera_service->is_mcm_mode = 0;  // vin->isp
 	}
 	camera_service->is_enable_3dnr = 1;
 	camera_service->is_enable_isp = 1;
@@ -918,44 +1094,45 @@ int32_t vpp_init_ion_pipeline_param_from_vflow_contex(vp_vflow_contex_t *vp_vflo
 	return 0;
 }
 
-int32_t vpp_init_ion_pipeline_fixed_param_from_vflow_contex(
-		vpp_camera_t *vpp, solution_cfg_cam_t* cam_cfg, vp_ion_pipeline_fixed_param_t *fixed_param){
-
+int32_t vpp_init_ion_pipeline_fixed_param_from_vflow_contex(vpp_camera_t *vpp, solution_cfg_cam_t *cam_cfg,
+							    vp_ion_pipeline_fixed_param_t *fixed_param)
+{
 	memset(fixed_param, 0, sizeof(vp_ion_pipeline_fixed_param_t));
-	//for bpu
+	// for bpu
 	vp_ion_bpu_extern_param_t *bpu = &fixed_param->bpu;
 	bpu->is_used_bpu = false;
 
-	for(int i = 0; i< cam_cfg->max_pipeline_count; i++){
-		if(cam_cfg->cam_vpp[i].is_valid == 0){
+	for (int i = 0; i < cam_cfg->max_pipeline_count; i++) {
+		if (cam_cfg->cam_vpp[i].is_valid == 0) {
 			continue;
 		}
-		if(cam_cfg->cam_vpp[i].is_enable == 0){
+		if (cam_cfg->cam_vpp[i].is_enable == 0) {
 			continue;
 		}
 		bpu_model_user_info_t *bpu_model_user_info = &vpp[i].bpu_model_user_info;
-		if(!bpu_model_user_info->is_enable){
+		if (!bpu_model_user_info->is_enable) {
 			continue;
 		}
-		if(!bpu->is_used_bpu){
+		if (!bpu->is_used_bpu) {
 			bpu->is_used_bpu = true;
 		}
 		int is_already_calculated = 0;
 		//查看当前通道的模型，是否已经计算
-		for(int j = 0; j < bpu->item_count; j++){
+		for (int j = 0; j < bpu->item_count; j++) {
 			int cmp_ret = strcmp(bpu->item_param[j].model_name, bpu_model_user_info->model_name);
-			if(cmp_ret == 0){
-				SC_LOGI("pipeline channel[%d] calculate bpu fixed size, found is alread calculated, so ignore it.\n");
+			if (cmp_ret == 0) {
+				SC_LOGI("pipeline channel[%d] calculate bpu fixed size, found is alread calculated, so "
+					"ignore it.\n");
 				is_already_calculated = 1;
 				break;
 			}
 		}
-		if(is_already_calculated){
+		if (is_already_calculated) {
 			continue;
 		}
 
 		const bpu_model_info_t *model_info = bpu_wrap_model_info(vpp[i].bpu_model_user_info.model_name);
-		if(model_info == NULL){
+		if (model_info == NULL) {
 			SC_LOGE("not found model info for: %s", vpp[i].bpu_model_user_info.model_name);
 			continue;
 		}
@@ -964,23 +1141,24 @@ int32_t vpp_init_ion_pipeline_fixed_param_from_vflow_contex(
 
 		item_param->heap_region_size = model_info->heap_region_size;
 		item_param->model_file_sizes = model_info->model_file_size;
-		if(model_info->ouput_calculator_size_is_fixed){
+		if (model_info->ouput_calculator_size_is_fixed) {
 			item_param->ouput_calculator_size_static = model_info->ouput_calculator_size;
-		}else{
+		} else {
 			item_param->ouput_calculator_size_static = 0;
 		}
-		// SC_LOGI("[%s] heap_region_size:%d model_file_sizes:%d ouput_calculator_size_static:%d", item_param->model_name,
-		// 	item_param->heap_region_size, item_param->model_file_sizes, item_param->ouput_calculator_size_static);
+		// SC_LOGI("[%s] heap_region_size:%d model_file_sizes:%d ouput_calculator_size_static:%d",
+		// item_param->model_name, 	item_param->heap_region_size, item_param->model_file_sizes,
+		// item_param->ouput_calculator_size_static);
 		bpu->item_count++;
 	}
 
-	//for camera service
+	// for camera service
 	vp_ion_camera_service_extern_param_t *camera_service = &fixed_param->camera_service;
-	for(int i = 0; i< cam_cfg->max_pipeline_count; i++){
-		if(cam_cfg->cam_vpp[i].is_valid == 0){
+	for (int i = 0; i < cam_cfg->max_pipeline_count; i++) {
+		if (cam_cfg->cam_vpp[i].is_valid == 0) {
 			continue;
 		}
-		if(cam_cfg->cam_vpp[i].is_enable == 0){
+		if (cam_cfg->cam_vpp[i].is_enable == 0) {
 			continue;
 		}
 
@@ -990,36 +1168,39 @@ int32_t vpp_init_ion_pipeline_fixed_param_from_vflow_contex(
 	return 0;
 }
 
-int32_t vpp_camera_ion_param_get(solution_cfg_t* solution_cfg, solution_ion_param_info_t *solution_param_info){
+int32_t vpp_camera_ion_param_get(solution_cfg_t *solution_cfg, solution_ion_param_info_t *solution_param_info)
+{
 	int ret = 0;
 
-	//1. 预初始化，根据web参数，得到运行参数
+	// 1. 预初始化，根据web参数，得到运行参数
 	vpp_camera_init_param_full(solution_cfg);
 
-	//2. 程序运行参数 ==> vp_ion 动态参数
-	solution_cfg_cam_t* cam_cfg = &solution_cfg->cam_solution;
+	// 2. 程序运行参数 ==> vp_ion 动态参数
+	solution_cfg_cam_t *cam_cfg = &solution_cfg->cam_solution;
 	vp_ion_pipeline_param_t *vp_ion_param = solution_param_info->pipeline_params;
 	solution_param_info->pipeline_param_vaild_count = 0;
-	for(int i = 0; i< cam_cfg->max_pipeline_count; i++){
-		if(cam_cfg->cam_vpp[i].is_valid == 0){
+	for (int i = 0; i < cam_cfg->max_pipeline_count; i++) {
+		if (cam_cfg->cam_vpp[i].is_valid == 0) {
 			continue;
 		}
-		if(cam_cfg->cam_vpp[i].is_enable == 0){
+		if (cam_cfg->cam_vpp[i].is_enable == 0) {
 			continue;
 		}
-		ret = vpp_init_ion_pipeline_param_from_vflow_contex(
-				&g_vpp_camera[i].vp_vflow_contex,
-				&g_vpp_camera[i].vpp_codec_ctxs[0].m_encode_user_config,
-				&g_vpp_camera[i].bpu_model_user_info,
-				&vp_ion_param[solution_param_info->pipeline_param_vaild_count]);
-		if(ret != 0){
+		ret = vpp_init_ion_pipeline_param_from_vflow_contex(&g_vpp_camera[i].vp_vflow_contex,
+								    &g_vpp_camera[i]
+									 .vpp_codec_ctxs[0]
+									 .m_encode_user_config,
+								    &g_vpp_camera[i].bpu_model_user_info,
+								    &vp_ion_param[solution_param_info
+										      ->pipeline_param_vaild_count]);
+		if (ret != 0) {
 			SC_LOGE("vpp_init_ion_pipeline_param_from_vflow_contex failed for channel %d.", i);
 			continue;
 		}
 		solution_param_info->pipeline_param_vaild_count++;
 	}
 
-	//3. 程序运行参数 ==> vp_ion 静态参数
+	// 3. 程序运行参数 ==> vp_ion 静态参数
 	vpp_init_ion_pipeline_fixed_param_from_vflow_contex(g_vpp_camera, cam_cfg, &solution_param_info->extern_param);
 	return 0;
 }
@@ -1029,7 +1210,6 @@ int32_t vpp_camera_init(void)
 	int32_t ret = 0;
 	int32_t i = 0;
 	vp_vflow_contex_t *vp_vflow_contex = NULL;
-
 
 	hb_mem_module_open();
 
@@ -1045,41 +1225,20 @@ int32_t vpp_camera_init(void)
 		ret |= vp_osd_init(vp_vflow_contex);
 		ret |= vp_gdc_init(vp_vflow_contex);
 		ret |= vp_vflow_init(vp_vflow_contex);
-		if (ret != 0){
+		if (ret != 0) {
 			SC_LOGE("pipeline init failed for channel %d error", i);
 			continue;
 		}
 
-		g_vpp_camera[i].drm_init_succesed = 0;
-		if(g_vpp_camera[i].drm_context != NULL){
-			vp_vse_output_info_t vp_vse_output_info;
-			int vse_ret = vp_vse_get_output_info(vp_vflow_contex, 0, &vp_vse_output_info);
-			if(vse_ret != 0){
-				SC_LOGE("vp_vse_get_output_info failed for channel %d error", i);
-			}else{
-				int width = vp_vse_output_info.width;
-				int height = vp_vse_output_info.height;
-				SC_LOGI("channel %d init hdmi display width:%d height %d",
-					g_vpp_camera[i].pipline_id, width, height);
-				//g_vpp_camera[i].vp_vflow_contex.sensor_config->camera_config
-				vse_ret = vp_display_init(g_vpp_camera[i].drm_context, width, height);
-				if(vse_ret != 0){
-					SC_LOGW("channel %d init hdmi display width:%d height %d failed.",
-					g_vpp_camera[i].pipline_id, width, height);
-				}else{
-					g_vpp_camera[i].drm_init_succesed = 1;
-				}
-			}
-		}
-
-		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+		for (int j = 0; j < VPP_STEAM_COUNT; j++) {
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_camera[i].vpp_codec_ctxs[j];
 			ret = vp_codec_init(&p_vpp_codec_ctx->m_encode_context);
-			if (ret != 0){
+			if (ret != 0) {
 				SC_LOGE("Encode vp_codec_init error for channel %d stream %d", i, j);
 				continue;
 			}
-			SC_LOGI("Init video encode instance %d successful",p_vpp_codec_ctx->m_encode_context.instance_index);
+			SC_LOGI("Init video encode instance %d successful",
+				p_vpp_codec_ctx->m_encode_context.instance_index);
 		}
 
 		// 初始化算法模块， 从vse的chn1通道get yuv数据
@@ -1104,16 +1263,16 @@ int32_t vpp_camera_init(void)
 		int image_width = g_vpp_camera[i].vpp_codec_ctxs[0].m_encode_context.video_enc_params.width;
 		int image_height = g_vpp_camera[i].vpp_codec_ctxs[0].m_encode_context.video_enc_params.height;
 
-		if((VPP_STEAM_COUNT >= 2) &&
-			(g_vpp_camera[i].vpp_codec_ctxs[0].m_encode_user_config.codec_type == MEDIA_CODEC_ID_H265)){
+		if ((VPP_STEAM_COUNT >= 2)
+		    && (g_vpp_camera[i].vpp_codec_ctxs[0].m_encode_user_config.codec_type == MEDIA_CODEC_ID_H265)) {
 			image_width = g_vpp_camera[i].vpp_codec_ctxs[1].m_encode_context.video_enc_params.width;
 			image_height = g_vpp_camera[i].vpp_codec_ctxs[1].m_encode_context.video_enc_params.height;
 		}
 		// 设置bpu后处理的原始图像大小为推流图像大小
 		bpu_wrap_set_ori_hw(&g_vpp_camera[i].m_bpu_handle, image_width, image_height);
 		// 注册算法结果回调函数
-		bpu_wrap_callback_register(&g_vpp_camera[i].m_bpu_handle,
-			bpu_wrap_general_result_handle, &g_vpp_camera[i].m_bpu_handle.m_vpp_id);
+		bpu_wrap_callback_register(&g_vpp_camera[i].m_bpu_handle, bpu_wrap_general_result_handle,
+					   &g_vpp_camera[i].m_bpu_handle.m_vpp_id);
 	}
 
 	return 0;
@@ -1130,7 +1289,7 @@ int32_t vpp_camera_uninit(void)
 
 		vp_vflow_contex = &g_vpp_camera[i].vp_vflow_contex;
 
-		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+		for (int j = 0; j < VPP_STEAM_COUNT; j++) {
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_camera[i].vpp_codec_ctxs[j];
 			ret = vp_codec_deinit(&p_vpp_codec_ctx->m_encode_context);
 		}
@@ -1141,12 +1300,9 @@ int32_t vpp_camera_uninit(void)
 		ret |= vp_isp_deinit(vp_vflow_contex);
 		ret |= vp_vin_deinit(vp_vflow_contex);
 
-		if(g_vpp_camera[i].drm_context != NULL){
-			if(g_vpp_camera[i].drm_init_succesed){
-				SC_LOGI("channel %d deinit hdmi display", g_vpp_camera[i].pipline_id);
-				ret |= vp_display_deinit(g_vpp_camera[i].drm_context);
-			}
-
+		if (g_vpp_camera[i].drm_context != NULL && g_vpp_camera[i].drm_context->drm_fd >= 0) {
+			SC_LOGI("channel %d deinit hdmi display", g_vpp_camera[i].pipline_id);
+			ret |= vp_display_deinit(g_vpp_camera[i].drm_context);
 		}
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_uninit");
 
@@ -1179,58 +1335,43 @@ int32_t vpp_camera_start(void)
 
 		char meida_name[64];
 		sprintf(meida_name, "ch%d", g_vpp_camera[i].vpp_impl_index);
-		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+		for (int j = 0; j < VPP_STEAM_COUNT; j++) {
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_camera[i].vpp_codec_ctxs[j];
-			p_vpp_codec_ctx->media_type = vp_codec_get_codec_type_string(p_vpp_codec_ctx->m_encode_context.codec_id);
+			p_vpp_codec_ctx->media_type = vp_codec_get_codec_type_string(
+			    p_vpp_codec_ctx->m_encode_context.codec_id);
 
-			if(j == 0){
+			if (j == 0) {
 				sprintf(p_vpp_codec_ctx->stream_name, "main");
-			}else{
+			} else {
 				sprintf(p_vpp_codec_ctx->stream_name, "sub%d", j);
 			}
 
 			T_SDK_MEDIA_SRV_CREATE_PARAM create_param = {
-				.media_name = meida_name,
-				.stream_name = p_vpp_codec_ctx->stream_name,
-				.codec_type_name = p_vpp_codec_ctx->media_type,
-				.media = NULL,
+			    .media_name = meida_name,
+			    .stream_name = p_vpp_codec_ctx->stream_name,
+			    .codec_type_name = p_vpp_codec_ctx->media_type,
+			    .media = NULL,
 			};
 
 			SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_CREATE, &create_param);
-		 		p_vpp_codec_ctx->media_handler = create_param.media;
+			p_vpp_codec_ctx->media_handler = create_param.media;
 
-			//队列的个数根据 vse 输出buffer的个数设置
-			teQueueStatus status = mQueueCreate(&p_vpp_codec_ctx->m_vflow_to_enc_queue, VPP_VSE_OUTBUFFER_COUNT + 1); //必须是加1：mqueue 为了判断空和满的区别，保留了一个item
-			if(status != E_QUEUE_OK){
+			/* m_vflow_queue 仅支持同时持有 VPP_VSE_QUEUE_DEPTH 帧；
+			 * 环形队列保留 1 个空位用来区分空/满，因此长度=深度+1
+			 */
+			teQueueStatus status = mQueueCreate(&p_vpp_codec_ctx->m_vflow_queue, VPP_VSE_QUEUE_DEPTH + 1);
+			if (status != E_QUEUE_OK) {
 				SC_LOGE("mqueue create failed %d, for channle:%d stream:%d.", status, i, j);
 				continue;
 			}
 
-			status = mQueueCreate(&p_vpp_codec_ctx->m_enc_to_vflow_queue, VPP_VSE_OUTBUFFER_COUNT + 1); //必须是加1：mqueue 为了判断空和满的区别，保留了一个item
-			if(status != E_QUEUE_OK){
-				SC_LOGE("mqueue create failed %d, for channle:%d stream:%d.", status, i, j);
-				continue;
-			}
-			for (size_t k = 0; k < VPP_VSE_OUTBUFFER_COUNT; k++){
-				hbn_vnode_image_t *hbn_vnode_image = (hbn_vnode_image_t *)malloc(sizeof(hbn_vnode_image_t));
-				if (hbn_vnode_image == NULL){
-					SC_LOGE("malloc failed\n");
-					exit(-1);
-				}
-				memset(hbn_vnode_image, 0, sizeof(hbn_vnode_image_t));
-
-				teQueueStatus status = mQueueEnqueue(&p_vpp_codec_ctx->m_enc_to_vflow_queue, (void *)hbn_vnode_image);
-				if (status != E_QUEUE_OK){
-					printf("mqueue enqueue failed:%d\n", status);
-					return -1;
-				}
-			}
 			ret = vp_codec_start(&p_vpp_codec_ctx->m_encode_context);
-			if (ret != 0){
+			if (ret != 0) {
 				SC_LOGE("Encode vp_codec_start error");
 				return -1;
 			}
-			SC_LOGI("Start video encode instance %d successful", p_vpp_codec_ctx->m_encode_context.instance_index);
+			SC_LOGI("Start video encode instance %d successful",
+				p_vpp_codec_ctx->m_encode_context.instance_index);
 		}
 		ret = vp_vin_start(vp_vflow_contex);
 		ret |= vp_isp_start(vp_vflow_contex);
@@ -1240,13 +1381,19 @@ int32_t vpp_camera_start(void)
 		ret |= vp_vflow_start(vp_vflow_contex);
 		SC_ERR_CON_EQ(ret, 0, "vpp_camera_start");
 
-		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+		for (int j = 0; j < VPP_STEAM_COUNT; j++) {
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_camera[i].vpp_codec_ctxs[j];
-			p_vpp_codec_ctx->m_vflow_thread.pvThreadData = (void*)p_vpp_codec_ctx;
+			p_vpp_codec_ctx->m_vflow_thread.pvThreadData = (void *)p_vpp_codec_ctx;
 			mThreadStart(vlfow_get_stream_proc, &p_vpp_codec_ctx->m_vflow_thread, E_THREAD_JOINABLE);
 
-			p_vpp_codec_ctx->m_venc_thread.pvThreadData = (void*)p_vpp_codec_ctx;
+			p_vpp_codec_ctx->m_venc_thread.pvThreadData = (void *)p_vpp_codec_ctx;
 			mThreadStart(venc_get_stream_proc, &p_vpp_codec_ctx->m_venc_thread, E_THREAD_JOINABLE);
+
+			/* drm_context 非 NULL 时启动送显线程（仅 main 流） */
+			if (j == 0 && g_vpp_camera[i].drm_context != NULL) {
+				p_vpp_codec_ctx->m_drm_thread.pvThreadData = (void *)p_vpp_codec_ctx;
+				mThreadStart(drm_get_stream_proc, &p_vpp_codec_ctx->m_drm_thread, E_THREAD_JOINABLE);
+			}
 		}
 
 		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) == 0)
@@ -1259,7 +1406,7 @@ int32_t vpp_camera_start(void)
 		}
 
 		// 启动一个线程从 vse 获取 yuv 数据给 bpu 进行算法运算
-		g_vpp_camera[i].m_bpu_thread.pvThreadData = (void*)&g_vpp_camera[i];
+		g_vpp_camera[i].m_bpu_thread.pvThreadData = (void *)&g_vpp_camera[i];
 		mThreadStart(send_yuv_to_bpu, &g_vpp_camera[i].m_bpu_thread, E_THREAD_JOINABLE);
 		SC_LOGI("Start BPU %d process successful, %s", i, g_vpp_camera[i].m_bpu_handle.m_model_name);
 	}
@@ -1278,45 +1425,40 @@ int32_t vpp_camera_stop(void)
 			continue;
 
 		vp_vflow_contex = &g_vpp_camera[i].vp_vflow_contex;
-		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+		for (int j = 0; j < VPP_STEAM_COUNT; j++) {
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_camera[i].vpp_codec_ctxs[j];
-			mThreadStop(&p_vpp_codec_ctx->m_vflow_thread); //必须在m_venc_thread的前面：
+			mThreadStop(&p_vpp_codec_ctx->m_vflow_thread);	//必须在m_venc_thread的前面：
 			mThreadStop(&p_vpp_codec_ctx->m_venc_thread);
-			int enc_remain_count = 0;
+			if (j == 0 && g_vpp_camera[i].drm_context != NULL)
+				mThreadStop(&p_vpp_codec_ctx->m_drm_thread);
+
 			int vse_remain_count = 0;
 			teQueueStatus status = E_QUEUE_OK;
-			while(!mQueueIsEmpty(&p_vpp_codec_ctx->m_vflow_to_enc_queue)){
-				hbn_vnode_image_t *hbn_vnode_image = NULL;
-				status = mQueueDequeueTimed(&p_vpp_codec_ctx->m_vflow_to_enc_queue, 0, (void **)&hbn_vnode_image);
-				if(status != E_QUEUE_OK){
+			while (!mQueueIsEmpty(&p_vpp_codec_ctx->m_vflow_queue)) {
+				ImageFrame *p_old = NULL;
+				status = mQueueDequeueTimed(&p_vpp_codec_ctx->m_vflow_queue, 0, (void **)&p_old);
+				if (status != E_QUEUE_OK) {
 					SC_LOGE("mqueue clear failed %d, for channle:%d stream %d.", status, i, j);
 					break;
 				}
-				free(hbn_vnode_image);
-				enc_remain_count++;
-			}
-			status = mQueueDestroy(&p_vpp_codec_ctx->m_vflow_to_enc_queue);
-			if(status != E_QUEUE_OK){
-				SC_LOGE("mqueue destroy failed %d, for channle:%d stream %d.", status, i, j);
-			}
-
-			while(!mQueueIsEmpty(&p_vpp_codec_ctx->m_enc_to_vflow_queue)){
-				hbn_vnode_image_t *hbn_vnode_image = NULL;
-				status = mQueueDequeueTimed(&p_vpp_codec_ctx->m_enc_to_vflow_queue, 0, (void **)&hbn_vnode_image);
-				if(status != E_QUEUE_OK){
-					SC_LOGE("mqueue clear failed %d, for channle:%d stream %d.", status, i, j);
-					break;
+				if (p_old) {
+					vp_vse_release_frame(&g_vpp_camera[i].vp_vflow_contex,
+							     p_vpp_codec_ctx->vflow_chn, p_old);
+					vp_free_image_frame(p_old);
+					free(p_old);
 				}
-				free(hbn_vnode_image);
 				vse_remain_count++;
+			}
+			status = mQueueDestroy(&p_vpp_codec_ctx->m_vflow_queue);
+			if (status != E_QUEUE_OK) {
+				SC_LOGE("mqueue destroy failed %d, for channle:%d stream %d.", status, i, j);
 			}
 			SDK_Cmd_Impl(SDK_CMD_MEDIA_SERVER_DESTROY, p_vpp_codec_ctx->media_handler);
 			// media_server_destroy_media(p_vpp_codec_ctx->media);
 			p_vpp_codec_ctx->media_handler = NULL;
 			p_vpp_codec_ctx->media_type = NULL;
-			SC_LOGI("channel %d stream %d enc queue remain %d, vse queue remain %d .\n",
-					g_vpp_camera[i].pipline_id, j, enc_remain_count, vse_remain_count);
-
+			SC_LOGI("channel %d stream %d vse queue remain %d .\n", g_vpp_camera[i].pipline_id, j,
+				vse_remain_count);
 		}
 
 		if (strlen(g_vpp_camera[i].m_bpu_handle.m_model_name) == 0)
@@ -1329,7 +1471,7 @@ int32_t vpp_camera_stop(void)
 			continue;
 
 		vp_vflow_contex = &g_vpp_camera[i].vp_vflow_contex;
-		for(int j = 0; j< VPP_STEAM_COUNT; j++){
+		for (int j = 0; j < VPP_STEAM_COUNT; j++) {
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_camera[i].vpp_codec_ctxs[j];
 			ret = vp_codec_stop(&p_vpp_codec_ctx->m_encode_context);
 		}
@@ -1368,37 +1510,36 @@ static int32_t get_pipeline_id_by_video_id(int32_t video_id)
 	exit(-1);
 	return -1;
 }
-//
-int32_t vpp_camera_param_set(SOLUTION_PARAM_E type, char* val, uint32_t length)
+
+int32_t vpp_camera_param_set(SOLUTION_PARAM_E type, char *val, uint32_t length)
 {
 	int32_t ret = 0;
-	switch(type){
+	switch (type) {
 		case SOLUTION_SET_ISP_PARAM:
-			{
-				ret = vp_set_isp_param(val, length);
-				break;
-			}
+		{
+			ret = vp_set_isp_param(val, length);
+			break;
+		}
 		default:
-			{
-				ret= -1;
-				break;
-			}
+		{
+			ret = -1;
+			break;
+		}
 	}
 	return ret;
 }
 
-int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
+int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char *val, uint32_t *length)
 {
 	int32_t i = 0, ret = 0;
 	mc_video_codec_enc_params_t *enc_params;
 	ImageFrame image_frame = {0};
 	char file_name[256] = {0};
 	hbn_vnode_image_t *hbn_vnode_image = NULL;
-	switch(type)
-	{
-	case SOLUTION_VENC_CHN_PARAM_GET: // 获取某个编码通道的配置
+	switch (type) {
+		case SOLUTION_VENC_CHN_PARAM_GET:  // 获取某个编码通道的配置
 		{
-			venc_info_t* param = (venc_info_t*)val;
+			venc_info_t *param = (venc_info_t *)val;
 			param->enable = 0;
 			SC_LOGI("param->channel: %d", param->channel);
 			for (i = 0; i < VPP_CAM_MAX_CHANNELS; i++) {
@@ -1421,17 +1562,18 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 						param->type = 265;
 						param->bitrate = enc_params->rc_params.h265_cbr_params.bit_rate;
 						param->framerate = enc_params->rc_params.h265_cbr_params.frame_rate;
-					}else{
-						SC_LOGE("unsupport codec id %d.", p_vpp_codec_ctx->m_encode_context.codec_id);
+					} else {
+						SC_LOGE("unsupport codec id %d.",
+							p_vpp_codec_ctx->m_encode_context.codec_id);
 						exit(-1);
 					}
 					vp_codec_get_user_buffer_param(enc_params, &param->suggest_buffer_region_size,
-						&param->suggest_buffer_item_count);
+								       &param->suggest_buffer_item_count);
 				}
 			}
 			break;
 		}
-	case SOLUTION_GET_VENC_CHN_STATUS: // 获取哪些编码通道被使能了
+		case SOLUTION_GET_VENC_CHN_STATUS:  // 获取哪些编码通道被使能了
 		{
 			// 32位的整形，每个通道的状态占其中一个bit
 			// 注： 64bit的值位与会有异常，待查
@@ -1448,7 +1590,7 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			SC_LOGI("venc status: 0x%x", *status);
 			break;
 		}
-	case SOLUTION_GET_RAW_FRAME:
+		case SOLUTION_GET_RAW_FRAME:
 		{
 			// video_id 代表web上的第几个 video 控件，从1开始计数
 			// 需要结合当前使能了多少路pipeline来获取到对应的 pipeline id
@@ -1468,26 +1610,20 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			hbn_vnode_image = (hbn_vnode_image_t *)image_frame.hbn_vnode_image;
 
 			snprintf(file_name, sizeof(file_name),
-				"/tmp/pipeline_%d_vin_chn0_%dx%d_stride_%d_frameid_%d_ts_%ld.raw",
-				pipeline_id,
-				hbn_vnode_image->buffer.width,
-				hbn_vnode_image->buffer.height,
-				hbn_vnode_image->buffer.stride,
-				hbn_vnode_image->info.frame_id,
-				hbn_vnode_image->info.timestamps);
+				 "/tmp/pipeline_%d_vin_chn0_%dx%d_stride_%d_frameid_%d_ts_%ld.raw", pipeline_id,
+				 hbn_vnode_image->buffer.width, hbn_vnode_image->buffer.height,
+				 hbn_vnode_image->buffer.stride, hbn_vnode_image->info.frame_id,
+				 hbn_vnode_image->info.timestamps);
 
 			SC_LOGI("pipeline %d vin dump raw %dx%d(stride:%d), buffer size: %ld frame id: %d,"
 				" timestamp: %ld",
-				pipeline_id,
-				hbn_vnode_image->buffer.width, hbn_vnode_image->buffer.height,
-				hbn_vnode_image->buffer.stride,
-				hbn_vnode_image->buffer.size[0],
-				hbn_vnode_image->info.frame_id,
-				hbn_vnode_image->info.timestamps);
+				pipeline_id, hbn_vnode_image->buffer.width, hbn_vnode_image->buffer.height,
+				hbn_vnode_image->buffer.stride, hbn_vnode_image->buffer.size[0],
+				hbn_vnode_image->info.frame_id, hbn_vnode_image->info.timestamps);
 
 			delete_files_with_extension("/tmp", ".raw");
 			vp_dump_1plane_image_to_file(file_name, hbn_vnode_image->buffer.virt_addr[0],
-				hbn_vnode_image->buffer.size[0]);
+						     hbn_vnode_image->buffer.size[0]);
 
 			vp_vin_release_frame(&g_vpp_camera[pipeline_id].vp_vflow_contex, &image_frame);
 			if (ret != 0) {
@@ -1497,10 +1633,10 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			}
 			vp_free_image_frame(&image_frame);
 			// 通知浏览器下载文件
-			SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_UPLOAD_FILE, (void*)file_name);
+			SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_UPLOAD_FILE, (void *)file_name);
 			break;
 		}
-	case SOLUTION_GET_ISP_FRAME:
+		case SOLUTION_GET_ISP_FRAME:
 		{
 			// video_id 代表web上的第几个 video 控件，从1开始计数
 			// 需要结合当前使能了多少路pipeline来获取到对应的 pipeline id
@@ -1520,29 +1656,21 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			hbn_vnode_image = (hbn_vnode_image_t *)image_frame.hbn_vnode_image;
 
 			snprintf(file_name, sizeof(file_name),
-				"/tmp/pipeline_%d_isp_chn0_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
-				pipeline_id,
-				hbn_vnode_image->buffer.width,
-				hbn_vnode_image->buffer.height,
-				hbn_vnode_image->buffer.stride,
-				hbn_vnode_image->info.frame_id,
-				hbn_vnode_image->info.timestamps);
+				 "/tmp/pipeline_%d_isp_chn0_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv", pipeline_id,
+				 hbn_vnode_image->buffer.width, hbn_vnode_image->buffer.height,
+				 hbn_vnode_image->buffer.stride, hbn_vnode_image->info.frame_id,
+				 hbn_vnode_image->info.timestamps);
 
 			SC_LOGI("pipeline %d isp dump yuv %dx%d(stride:%d), buffer size: %ld frame id: %d,"
 				" timestamp: %ld",
-				pipeline_id,
-				hbn_vnode_image->buffer.width, hbn_vnode_image->buffer.height,
-				hbn_vnode_image->buffer.stride,
-				hbn_vnode_image->buffer.size[0],
-				hbn_vnode_image->info.frame_id,
-				hbn_vnode_image->info.timestamps);
+				pipeline_id, hbn_vnode_image->buffer.width, hbn_vnode_image->buffer.height,
+				hbn_vnode_image->buffer.stride, hbn_vnode_image->buffer.size[0],
+				hbn_vnode_image->info.frame_id, hbn_vnode_image->info.timestamps);
 
 			delete_files_with_extension("/tmp", ".yuv");
-			vp_dump_2plane_yuv_to_file(file_name,
-				hbn_vnode_image->buffer.virt_addr[0],
-				hbn_vnode_image->buffer.virt_addr[1],
-				hbn_vnode_image->buffer.size[0],
-				hbn_vnode_image->buffer.size[1]);
+			vp_dump_2plane_yuv_to_file(file_name, hbn_vnode_image->buffer.virt_addr[0],
+						   hbn_vnode_image->buffer.virt_addr[1],
+						   hbn_vnode_image->buffer.size[0], hbn_vnode_image->buffer.size[1]);
 
 			vp_isp_release_frame(&g_vpp_camera[pipeline_id].vp_vflow_contex, &image_frame);
 			if (ret != 0) {
@@ -1552,10 +1680,10 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			}
 			vp_free_image_frame(&image_frame);
 			// 通知浏览器下载文件
-			SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_UPLOAD_FILE, (void*)file_name);
+			SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_UPLOAD_FILE, (void *)file_name);
 			break;
 		}
-	case SOLUTION_GET_VSE_FRAME:
+		case SOLUTION_GET_VSE_FRAME:
 		{
 			// video_id 代表web上的第几个 video 控件，从1开始计数
 			// 需要结合当前使能了多少路pipeline来获取到对应的 pipeline id
@@ -1575,29 +1703,21 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			hbn_vnode_image = (hbn_vnode_image_t *)image_frame.hbn_vnode_image;
 
 			snprintf(file_name, sizeof(file_name),
-				"/tmp/pipeline_%d_vse_ochn0_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv",
-				pipeline_id,
-				hbn_vnode_image->buffer.width,
-				hbn_vnode_image->buffer.height,
-				hbn_vnode_image->buffer.stride,
-				hbn_vnode_image->info.frame_id,
-				hbn_vnode_image->info.timestamps);
+				 "/tmp/pipeline_%d_vse_ochn0_%dx%d_stride_%d_frameid_%d_ts_%ld.yuv", pipeline_id,
+				 hbn_vnode_image->buffer.width, hbn_vnode_image->buffer.height,
+				 hbn_vnode_image->buffer.stride, hbn_vnode_image->info.frame_id,
+				 hbn_vnode_image->info.timestamps);
 
 			SC_LOGI("pipeline %d vse dump yuv %dx%d(stride:%d), buffer size: %ld frame id: %d,"
 				" timestamp: %ld",
-				pipeline_id,
-				hbn_vnode_image->buffer.width, hbn_vnode_image->buffer.height,
-				hbn_vnode_image->buffer.stride,
-				hbn_vnode_image->buffer.size[0],
-				hbn_vnode_image->info.frame_id,
-				hbn_vnode_image->info.timestamps);
+				pipeline_id, hbn_vnode_image->buffer.width, hbn_vnode_image->buffer.height,
+				hbn_vnode_image->buffer.stride, hbn_vnode_image->buffer.size[0],
+				hbn_vnode_image->info.frame_id, hbn_vnode_image->info.timestamps);
 
 			delete_files_with_extension("/tmp", ".yuv");
-			vp_dump_2plane_yuv_to_file(file_name,
-				hbn_vnode_image->buffer.virt_addr[0],
-				hbn_vnode_image->buffer.virt_addr[1],
-				hbn_vnode_image->buffer.size[0],
-				hbn_vnode_image->buffer.size[1]);
+			vp_dump_2plane_yuv_to_file(file_name, hbn_vnode_image->buffer.virt_addr[0],
+						   hbn_vnode_image->buffer.virt_addr[1],
+						   hbn_vnode_image->buffer.size[0], hbn_vnode_image->buffer.size[1]);
 
 			vp_vse_release_frame(&g_vpp_camera[pipeline_id].vp_vflow_contex, 0, &image_frame);
 			if (ret != 0) {
@@ -1607,17 +1727,17 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 			}
 			vp_free_image_frame(&image_frame);
 			// 通知浏览器下载文件
-			SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_UPLOAD_FILE, (void*)file_name);
+			SDK_Cmd_Impl(SDK_CMD_WEBSOCKET_UPLOAD_FILE, (void *)file_name);
 			break;
 		}
-	case SOLUTION_GET_ISP_PARAM:
+		case SOLUTION_GET_ISP_PARAM:
 		{
 			ret = vp_get_isp_param(val, *length);
 			break;
 		}
-	default:
+		default:
 		{
-			ret= -1;
+			ret = -1;
 			break;
 		}
 	}
@@ -1629,7 +1749,8 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 	*result：字符数组的起始地址
 	length: 字符串数组的长度
 */
-static int vp_get_isp_param(char* result, uint32_t length){
+static int vp_get_isp_param(char *result, uint32_t length)
+{
 	int ret = 0;
 	vp_isp_all_param_t isp_all_param = {0};
 	cJSON *root_json = NULL;
@@ -1677,8 +1798,7 @@ static int vp_get_isp_param(char* result, uint32_t length){
 	// 检查JSON字符串长度是否适合存储到result缓冲区
 	size_t json_len = strlen(json_result_str);
 	if (json_len >= length) {  // 预留1字节给终止符'\0'
-		SC_LOGE("[%d] JSON result too long (%zu bytes), buffer size is %u bytes",
-				video_id, json_len, length);
+		SC_LOGE("[%d] JSON result too long (%zu bytes), buffer size is %u bytes", video_id, json_len, length);
 		free(json_result_str);
 		return -1;
 	}
@@ -1692,8 +1812,9 @@ static int vp_get_isp_param(char* result, uint32_t length){
 	return ret;
 }
 
-static int vp_set_isp_param(char *param, uint32_t length){
- 	int ret = 0;
+static int vp_set_isp_param(char *param, uint32_t length)
+{
+	int ret = 0;
 	cJSON *root_json = NULL;
 	if (param == NULL || length == 0) {
 		SC_LOGE("Invalid input parameters: result is NULL or length is 0");
@@ -1704,7 +1825,7 @@ static int vp_set_isp_param(char *param, uint32_t length){
 		SC_LOGE("Failed to parse input JSON");
 		return -1;
 	}
-	//video_id
+	// video_id
 	cJSON *video_id_item = cJSON_GetObjectItem(root_json, "video_id");
 	if (video_id_item == NULL || !cJSON_IsNumber(video_id_item)) {
 		SC_LOGE("Invalid or missing [video_id] in input JSON");
@@ -1716,7 +1837,7 @@ static int vp_set_isp_param(char *param, uint32_t length){
 
 	int32_t pipeline_id = get_pipeline_id_by_video_id(video_id);
 	hbn_vnode_handle_t handle = g_vpp_camera[pipeline_id].vp_vflow_contex.isp_node_handle;
-	//params
+	// params
 	cJSON *params = cJSON_GetObjectItem(root_json, "params");
 	if (params == NULL || !cJSON_IsObject(params)) {
 		SC_LOGE("Invalid or missing [params] in input JSON");
@@ -1724,7 +1845,7 @@ static int vp_set_isp_param(char *param, uint32_t length){
 		return -1;
 	}
 
-	//group key
+	// group key
 	cJSON *group_key = cJSON_GetObjectItem(params, "groupKey");
 	if (group_key == NULL || !cJSON_IsString(group_key)) {
 		SC_LOGE("Invalid or missing [groupKey] in input JSON");
@@ -1732,7 +1853,7 @@ static int vp_set_isp_param(char *param, uint32_t length){
 		return -1;
 	}
 
-	//configs
+	// configs
 	cJSON *configs = cJSON_GetObjectItem(params, "configs");
 	if (configs == NULL || !cJSON_IsObject(configs)) {
 		SC_LOGE("Invalid or missing [configs] in input JSON");
@@ -1742,44 +1863,44 @@ static int vp_set_isp_param(char *param, uint32_t length){
 
 	hbn_isp_mode_e mode;
 	char *group_key_str = group_key->valuestring;
-	if(strcmp(group_key_str, "image") == 0){
+	if (strcmp(group_key_str, "image") == 0) {
 		vp_isp_image_param_t image_param;
 		ret = vp_isp_json_to_image_param(configs, &mode, &image_param);
-		if(ret == 0){
+		if (ret == 0) {
 			ret = vp_isp_set_image_param(handle, mode, &image_param);
-		}else{
+		} else {
 			SC_LOGE("Invalid or missing [image params] in input JSON");
 		}
-	}else if(strcmp(group_key_str, "exposure") == 0){
+	} else if (strcmp(group_key_str, "exposure") == 0) {
 		vp_isp_exposure_param_t exposure_param;
 		ret = vp_isp_json_to_exposure_param(configs, &mode, &exposure_param);
-		if(ret == 0){
+		if (ret == 0) {
 			ret = vp_isp_set_exposure_param(handle, mode, &exposure_param);
-		}else{
+		} else {
 			SC_LOGE("Invalid or missing [exposure params] in input JSON");
 		}
-	}else if(strcmp(group_key_str, "whiteBalance") == 0){
+	} else if (strcmp(group_key_str, "whiteBalance") == 0) {
 		vp_isp_awb_param_t awb_param;
 		ret = vp_isp_json_to_awb_param(configs, &mode, &awb_param);
-		if(ret == 0){
+		if (ret == 0) {
 			ret = vp_isp_set_awb_param(handle, mode, &awb_param);
-		}else{
+		} else {
 			SC_LOGE("Invalid or missing [awb params] in input JSON");
 		}
-	}else if(strcmp(group_key_str, "nr2d") == 0){
+	} else if (strcmp(group_key_str, "nr2d") == 0) {
 		vp_isp_image_enhancement_param_t nr2d_param;
 		ret = vp_isp_json_to_2dnr_or_3dnr_param(configs, &mode, &nr2d_param);
-		if(ret == 0){
+		if (ret == 0) {
 			ret = vp_isp_set_image_enhancement_2dnr_param(handle, mode, &nr2d_param);
-		}else{
+		} else {
 			SC_LOGE("Invalid or missing [nr2d params] in input JSON");
 		}
-	}else if(strcmp(group_key_str, "nr3d") == 0){
+	} else if (strcmp(group_key_str, "nr3d") == 0) {
 		vp_isp_image_enhancement_param_t nr3d_param;
 		ret = vp_isp_json_to_2dnr_or_3dnr_param(configs, &mode, &nr3d_param);
-		if(ret == 0){
+		if (ret == 0) {
 			ret = vp_isp_set_image_enhancement_3dnr_param(handle, mode, &nr3d_param);
-		}else{
+		} else {
 			SC_LOGE("Invalid or missing [nr3d params] in input JSON");
 		}
 	}

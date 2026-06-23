@@ -19,8 +19,8 @@ static mipi_config_t ov50h40_mipi_config = {
 		.linelenth = 9216,
 		.framelenth = 4337,
 		.settle = 0,
-		.channel_num = 1,
-		.channel_sel = {0},
+		.channel_num = 2,
+		.channel_sel = {0,1},
 		.hsdTime = 0,
 		.hsaTime = 0,
 		.hbpTime = 0,
@@ -49,7 +49,7 @@ static vin_node_attr_t ov50h40_vin_node_attr = {
 	.cim_attr = {
 		.mipi_rx = 0,
 		.vc_index = 0,
-		.ipi_channel = 1,
+		.ipi_channel = 2,
 		.cim_isp_flyby = 0,
 		.func = {
 			.enable_frame_id = 1,
@@ -88,8 +88,31 @@ static vin_ochn_attr_t ov50h40_vin_ochn_attr = {
 	},
 };
 
+static vin_ochn_attr_t ov50h40_vin_pdaf_ochn_attr = {
+	.ddr_en = 1,
+	.ochn_attr_type = VIN_PDAF_ATTR,
+	.pdaf_en = 1,
+	.vin_basic_attr = {
+		.format = RAW10,
+		// 硬件 stride 跟格式匹配，通过行像素根据raw数据bit位数计算得来
+		// 8bit：x1, 10bit: x2 12bit: x2 16bit: x2,例raw10，1920 x 2 = 3840
+		.wstride = (SENSOR_WIDTH) * 2,
+	},
+	.pdaf_attr = {
+		.pdaf_en = 1,
+		.pd_format = RAW10,
+		.pd_width = SENSOR_WIDTH,
+		.pd_height = 768,
+		.pd_ipi_channel = 1,
+	},
+};
+
 static isp_attr_t ov50h40_isp_attr = {
 	.input_mode = DDR_MODE, // PASSTHROUGH_MODE : online, MCM_MODE: 用于调试，DDR_MODE: offline
+	.af_mode =  1,
+	.pd_format = RAW10,
+	.pd_width = SENSOR_WIDTH,
+	.pd_height = 768,
 	.sensor_mode= ISP_NORMAL_M,
 	.crop = {
 		.x = 0,
@@ -124,6 +147,7 @@ vp_sensor_config_t ov50h40_linear_4096x3072_raw10_30fps_4lane = {
 	.vin_node_attr = &ov50h40_vin_node_attr,
 	.vin_attr_ex   = &ov50h40_vin_attr_ex,
 	.vin_ochn_attr = &ov50h40_vin_ochn_attr,
+	.vin_pdaf_ochn_attr = &ov50h40_vin_pdaf_ochn_attr,
 	.isp_attr      = &ov50h40_isp_attr,
 	.isp_ichn_attr = &ov50h40_isp_ichn_attr,
 	.isp_ochn_attr = &ov50h40_isp_ochn_attr,

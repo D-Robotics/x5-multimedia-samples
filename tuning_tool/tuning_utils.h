@@ -137,7 +137,7 @@ typedef struct {
 
 void tuning_get_filename(char *name, char *path, hbn_vnode_image_t *out_img, df_nmi_t mni);
 int32_t tuning_send_raw_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf,
-				enum RAW_BIT format, int32_t pipe_id);
+				enum RAW_BIT format, int32_t pipe_id, int32_t chn_id);
 int32_t tuning_send_yuv_to_hbplayer(tool_event_t *event, const hbn_vnode_image_t *normal_buf, int32_t pipe_id);
 int32_t tuning_dump_raw_file(char *filename, hbn_vnode_image_t *out_img);
 int32_t tuning_dump_yuv_file(char *filename, hbn_vnode_image_t *out_img);

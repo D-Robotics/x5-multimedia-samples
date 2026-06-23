@@ -16,10 +16,13 @@
 #include <fcntl.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdlib.h>
+#include "cjson/cJSON.h"
 
 #include "common_utils.h"
 #include "hb_media_codec.h"
 #include "hb_media_error.h"
+#include "vp_display.h"
 
 // 由于不需要预览多路，一次只需要初始化一个 channel， 默认使用 vse channel 0 ，如果需要使用 channel 1 ，那就更改 VSE_CHANNELS_USED 为 1 。
 #define VSE_CHANNELS_USED 0
@@ -34,20 +37,178 @@ static void print_help() {
 	printf("  -r 1                   Send raw to hbplayer\n");
 	printf("  -w 2                   Dump 20 yuv from the start\n");
 	printf("  -f -H -W -F            feedback raw file xx with specified height, width, and format(raw8/raw10/raw12)\n");
+	printf("  -J file                set feedback json file for dummy sensor\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
 }
 
 tuning_context_t *global_ctx;
 static int settle = -1;
+static int pdaf_en = 0;
 static uint32_t sensor_mode = 0; // 1: NORMAL_M; 2: DOL2_M; 6: SLAVE_M
 static uint32_t pipelinemode = 2; // 0: Online ; 1: MCM; 2: Offline
 static uint32_t enable_vse = 0; // 0: disable_vse ; 1: enable_vse
-static uint32_t feedback_raw_hight;
-static uint32_t feedback_raw_width;
-static char feedback_raw_format[32] = {0};
+static uint32_t enable_hdmi = 0; // 0: disable ; 1: enable hdmi preview (via VSE->DRM)
+static uint32_t feedback_raw_hight = 1080;
+static uint32_t feedback_raw_width = 1920;
+static char feedback_raw_format[32] = "raw10";
+static char feedback_param_file[256] = {0};
+static char feedback_calib_lname[128] = {0};
 static int32_t used_mipi_host = 0;
 static uint32_t link_port = 0;
+
+static vp_drm_context_t g_drm_context;
+static int32_t g_drm_inited = 0;
+static uint32_t g_hdmi_width = 0;
+static uint32_t g_hdmi_height = 0;
+static int32_t g_hdmi_modes_printed = 0;
+
+static int32_t parse_feedback_param_from_file(const char *file_path, char *sensor_param_buf, size_t sensor_param_buf_size)
+{
+	FILE *fp = NULL;
+	long file_size = 0;
+	size_t read_size = 0;
+	char *json_str = NULL;
+	cJSON *root = NULL;
+	cJSON *item = NULL;
+	char *sensor_param_compact = NULL;
+
+	if (file_path == NULL || file_path[0] == '\0') {
+		return RET_FAILURE;
+	}
+
+	fp = fopen(file_path, "r");
+	if (fp == NULL) {
+		printf("Failed to open feedback json file: %s\n", file_path);
+		return RET_FAILURE;
+	}
+	fseek(fp, 0, SEEK_END);
+	file_size = ftell(fp);
+	if (file_size <= 0) {
+		fclose(fp);
+		printf("Invalid feedback json file size: %ld\n", file_size);
+		return RET_FAILURE;
+	}
+	fseek(fp, 0, SEEK_SET);
+
+	json_str = (char *)malloc((size_t)file_size + 1);
+	if (json_str == NULL) {
+		fclose(fp);
+		return RET_FAILURE;
+	}
+	read_size = fread(json_str, 1, (size_t)file_size, fp);
+	fclose(fp);
+	if (read_size != (size_t)file_size) {
+		free(json_str);
+		return RET_FAILURE;
+	}
+	json_str[file_size] = '\0';
+
+	root = cJSON_Parse(json_str);
+	free(json_str);
+	if (root == NULL) {
+		printf("Invalid json format in feedback file: %s\n", file_path);
+		return RET_FAILURE;
+	}
+
+	item = cJSON_GetObjectItem(root, "height");
+	if (cJSON_IsNumber(item)) {
+		feedback_raw_hight = (uint32_t)item->valueint;
+	}
+	item = cJSON_GetObjectItem(root, "width");
+	if (cJSON_IsNumber(item)) {
+		feedback_raw_width = (uint32_t)item->valueint;
+	}
+	item = cJSON_GetObjectItem(root, "format");
+	if (cJSON_IsString(item) && item->valuestring) {
+		strncpy(feedback_raw_format, item->valuestring, sizeof(feedback_raw_format) - 1);
+		feedback_raw_format[sizeof(feedback_raw_format) - 1] = '\0';
+	}
+	item = cJSON_GetObjectItem(root, "calib_lname");
+	if (cJSON_IsString(item) && item->valuestring) {
+		strncpy(feedback_calib_lname, item->valuestring, sizeof(feedback_calib_lname) - 1);
+		feedback_calib_lname[sizeof(feedback_calib_lname) - 1] = '\0';
+	}
+
+	sensor_param_compact = cJSON_PrintUnformatted(root);
+	if (sensor_param_compact != NULL) {
+		strncpy(sensor_param_buf, sensor_param_compact, sensor_param_buf_size - 1);
+		sensor_param_buf[sensor_param_buf_size - 1] = '\0';
+		cJSON_free(sensor_param_compact);
+	}
+	cJSON_Delete(root);
+	return RET_SUCCESS;
+}
+
+static int32_t tuning_pick_hdmi_resolution(int32_t input_width, int32_t input_height,
+	int32_t *out_width, int32_t *out_height)
+{
+	int32_t ret;
+
+	ret = vp_display_get_fit_smaller_resolution(input_width, input_height, out_width, out_height);
+	if (ret >= 0) {
+		return ret;
+	}
+
+	/* 若 HDMI 只支持比输入更大的分辨率，则选择“最小的可用模式”，避免直接失败 */
+	int drm_fd = drmOpen("vs-drm", NULL);
+	if (drm_fd < 0) {
+		perror("drmOpen failed");
+		return -1;
+	}
+
+	drmModeRes *resources = drmModeGetResources(drm_fd);
+	if (!resources) {
+		perror("drmModeGetResources failed");
+		close(drm_fd);
+		return -1;
+	}
+
+	drmModeConnector *best_conn = NULL;
+	int best_area = 0;
+	int best_w = 0;
+	int best_h = 0;
+
+	for (int i = 0; i < resources->count_connectors; i++) {
+		drmModeConnector *conn = drmModeGetConnector(drm_fd, resources->connectors[i]);
+		if (!conn) {
+			continue;
+		}
+		if (conn->connector_type != DRM_MODE_CONNECTOR_HDMIA ||
+			conn->connection != DRM_MODE_CONNECTED ||
+			conn->count_modes <= 0) {
+			drmModeFreeConnector(conn);
+			continue;
+		}
+
+		for (int m = 0; m < conn->count_modes; m++) {
+			int w = conn->modes[m].hdisplay;
+			int h = conn->modes[m].vdisplay;
+			int area = w * h;
+			if (best_area == 0 || area < best_area) {
+				best_area = area;
+				best_w = w;
+				best_h = h;
+			}
+		}
+		best_conn = conn;
+		break;
+	}
+
+	if (best_conn) {
+		drmModeFreeConnector(best_conn);
+	}
+	drmModeFreeResources(resources);
+	close(drm_fd);
+
+	if (best_area > 0) {
+		*out_width = best_w;
+		*out_height = best_h;
+		return 0;
+	}
+
+	return -1;
+}
 
 unsigned short lut3d_map[LUT_SIZE][LUT_SIZE][LUT_SIZE][3];
 
@@ -200,6 +361,11 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 				printf("VSE enabled!!!\n");
 				enable_vse = 1;
 			}
+			if (strcmp(long_options[option_index].name, "hdmi") == 0) {
+				printf("HDMI preview enabled!!!\n");
+				enable_hdmi = 1;
+				enable_vse = 1; // HDMI 预览依赖 VSE 输出到适配的分辨率
+			}
 			break;
 		case 'f':
 			ctx->feedback_times = atoi(optarg);
@@ -213,6 +379,10 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 		case 'F':
 			strncpy(feedback_raw_format, optarg, sizeof(feedback_raw_format) - 1);
 			feedback_raw_format[sizeof(feedback_raw_format) - 1] = '\0';
+			break;
+		case 'J':
+			strncpy(feedback_param_file, optarg, sizeof(feedback_param_file) - 1);
+			feedback_param_file[sizeof(feedback_param_file) - 1] = '\0';
 			break;
 		case 'a':
 			bit_mask(ctx->work_mode, LUT3D_MASK);
@@ -232,17 +402,36 @@ static int parse_opts(int argc, char *argv[], tuning_context_t *ctx)
 		printf("\tSensor index: %d\n", ctx->pipe_contex_info[i].select_sensor_id);
 		printf("\tSensor name: %s\n", ctx->pipe_contex_info[i].pipe_contex.sensor_config->sensor_name);
 		printf("\tUse mipi host: %d\n", ctx->pipe_contex_info[i].active_mipi_host);
-		raw_type = (!strcmp(feedback_raw_format, "raw8")) ? 0x2A :
-			(!strcmp(feedback_raw_format, "raw10")) ? 0x2B :
-			(!strcmp(feedback_raw_format, "raw12")) ? 0x2C : 0x2B;
-		bit_width = (!strcmp(feedback_raw_format, "raw8")) ? 8 :
-			(!strcmp(feedback_raw_format, "raw10")) ? 10 :
-			(!strcmp(feedback_raw_format, "raw12")) ? 12 : 10;
 		if(strcmp(ctx->pipe_contex_info[i].pipe_contex.sensor_config->sensor_name, "dummy") == 0){
-			printf("feedback_raw_width: %d feedback_raw_hight:  %d raw_type: %#X\n",feedback_raw_width, feedback_raw_hight,raw_type);
+			static char feedback_sensor_param_json[2048] = {0};
+			if (feedback_param_file[0] != '\0') {
+				parse_feedback_param_from_file(feedback_param_file, feedback_sensor_param_json, sizeof(feedback_sensor_param_json));
+			}
+			raw_type = (!strcmp(feedback_raw_format, "raw8")) ? 0x2A :
+				(!strcmp(feedback_raw_format, "raw10")) ? 0x2B :
+				(!strcmp(feedback_raw_format, "raw12")) ? 0x2C :
+				(!strcmp(feedback_raw_format, "raw14")) ? 0x2D :
+				(!strcmp(feedback_raw_format, "raw16")) ? 0x2E :0x2B;
+			bit_width = (!strcmp(feedback_raw_format, "raw8")) ? 8 :
+				(!strcmp(feedback_raw_format, "raw10")) ? 10 :
+				(!strcmp(feedback_raw_format, "raw12")) ? 12 :
+				(!strcmp(feedback_raw_format, "raw14")) ? 14 :
+				(!strcmp(feedback_raw_format, "raw16")) ? 16 : 10;
+			printf("feedback_raw_width: %d feedback_raw_hight:  %d raw_type: %#X\n",
+				feedback_raw_width, feedback_raw_hight, raw_type);
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->format = raw_type;
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->height = feedback_raw_hight;
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->width = feedback_raw_width;
+			if (feedback_sensor_param_json[0] != '\0') {
+				ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->sensor_param = feedback_sensor_param_json;
+			}
+			if (feedback_calib_lname[0] != '\0') {
+				strncpy(ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->calib_lname,
+					feedback_calib_lname,
+					sizeof(ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->calib_lname) - 1);
+				ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->calib_lname[
+					sizeof(ctx->pipe_contex_info[i].pipe_contex.sensor_config->camera_config->calib_lname) - 1] = '\0';
+			}
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->vin_ichn_attr->format = raw_type;
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->vin_ichn_attr->height = feedback_raw_hight;
 			ctx->pipe_contex_info[i].pipe_contex.sensor_config->vin_ichn_attr->width = feedback_raw_width;
@@ -298,7 +487,8 @@ static void *tuning_main_worker_thread(void *arg)
 {
 	int i = 0;
 	int ret;
-	hbn_vnode_image_t raw_img = {0};
+	hbn_vnode_image_t raw_img_pdaf = {0};
+	hbn_vnode_image_t raw_img_main = {0};
 	hbn_vnode_image_t yuv_img = {0};
 	hbn_vnode_image_t vse_img[VSE_CHANNELS_USED + 1] = {0};
 	static int32_t yuv_stream_cnt = 0;
@@ -336,21 +526,48 @@ static void *tuning_main_worker_thread(void *arg)
 		vse_node_handle = ctx->pipe_contex_info[i].pipe_contex.vse_node_handle;
 
 		if (ctx->send_raw) {
-			ret = hbn_vnode_getframe(vin_node_handle, 0, 1500, &raw_img);
-			if (ret) {
-				pr_tuning("Sensor-%d get buffer from sif fail\n", i);
-				goto out;
-			}
+			raw_type = (ctx->pipe_contex_info[i].vin_format == 0x2A) ? RAW_8 :
+				(ctx->pipe_contex_info[i].vin_format == 0x2B) ? RAW_10 :
+				(ctx->pipe_contex_info[i].vin_format == 0x2C) ? RAW_12 :
+				(ctx->pipe_contex_info[i].vin_format == 0x2D) ? RAW_14 : RAW_10;
 
-			if (HBPLAYER_EN) {
-				raw_type = (ctx->pipe_contex_info[i].vin_format == 0x2A) ? RAW_8 :
-					(ctx->pipe_contex_info[i].vin_format == 0x2B) ? RAW_10 :
-					(ctx->pipe_contex_info[i].vin_format == 0x2C) ? RAW_12 : RAW_10;
-				ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img, raw_type, i);
-				if (ret)
-					pr_tuning("send to hbplayer failed for sensor %d, skip it\n", i);
+			if (pdaf_en) {
+				ret = hbn_vnode_getframe(vin_node_handle, VIN_PDAF, 1500, &raw_img_pdaf);
+				if (ret) {
+					pr_tuning("Sensor-%d get PDAF buffer from vin fail\n", i);
+					goto out;
+				}
+				if (HBPLAYER_EN) {
+					ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img_pdaf, raw_type, i, 1);
+					if (ret)
+						pr_tuning("send PDAF to hbplayer failed for sensor %d, skip it\n", i);
+				}
+				hbn_vnode_releaseframe(vin_node_handle, VIN_PDAF, &raw_img_pdaf);
+
+				ret = hbn_vnode_getframe(vin_node_handle, VIN_MAIN_FRAME, 1500, &raw_img_main);
+				if (ret) {
+					pr_tuning("Sensor-%d get MAIN_FRAME buffer from vin fail\n", i);
+					goto out;
+				}
+				if (HBPLAYER_EN) {
+					ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img_main, raw_type, i, 0);
+					if (ret)
+						pr_tuning("send MAIN_FRAME to hbplayer failed for sensor %d, skip it\n", i);
+				}
+				hbn_vnode_releaseframe(vin_node_handle, VIN_MAIN_FRAME, &raw_img_main);
+			} else {
+				ret = hbn_vnode_getframe(vin_node_handle, VIN_MAIN_FRAME, 1500, &raw_img_main);
+				if (ret) {
+					pr_tuning("Sensor-%d get MAIN_FRAME buffer from vin fail\n", i);
+					goto out;
+				}
+				if (HBPLAYER_EN) {
+					ret = tuning_send_raw_to_hbplayer(ctx->hbplayer_event, &raw_img_main, raw_type, i, 0);
+					if (ret)
+						pr_tuning("send MAIN_FRAME to hbplayer failed for sensor %d, skip it\n", i);
+				}
+				hbn_vnode_releaseframe(vin_node_handle, VIN_MAIN_FRAME, &raw_img_main);
 			}
-			hbn_vnode_releaseframe(vin_node_handle, 0, &raw_img);
 		}
 
 		if (BIT_ENABLE(ctx->work_mode, FEEDBACK_MASK)) {
@@ -433,6 +650,60 @@ static void *tuning_main_worker_thread(void *arg)
 			}
 			if (ret)
 				pr_tuning("send to hbplayer failed, skip it\n");
+		}
+
+		if (enable_hdmi && enable_vse) {
+			if (!g_drm_inited) {
+				int32_t drm_w = (int32_t)g_hdmi_width;
+				int32_t drm_h = (int32_t)g_hdmi_height;
+
+				if (!g_hdmi_modes_printed) {
+					vp_display_print_supported_resolutions();
+					g_hdmi_modes_printed = 1;
+				}
+
+				ret = vp_display_check_hdmi_is_connected();
+				if (ret < 0) {
+					printf("\n\nFailed: output form is hdmi, but not found hdmi connector.\n\n");
+				} else {
+					/*
+					 * 优先使用 create_vse_node() 已经选好的 HDMI 输出分辨率；
+					 * 避免 img_width/img_height 尚未就绪时传入 0 导致反复失败。
+					 */
+					if (drm_w <= 0 || drm_h <= 0) {
+						int32_t input_width = (int32_t)ctx->pipe_contex_info[i].img_width;
+						int32_t input_height = (int32_t)ctx->pipe_contex_info[i].img_height;
+						if (input_width > 0 && input_height > 0) {
+							int32_t out_w = 0, out_h = 0;
+							if (tuning_pick_hdmi_resolution(input_width, input_height, &out_w, &out_h) >= 0) {
+								drm_w = out_w;
+								drm_h = out_h;
+								g_hdmi_width = (uint32_t)out_w;
+								g_hdmi_height = (uint32_t)out_h;
+							}
+						}
+					}
+
+					if (drm_w > 0 && drm_h > 0) {
+						ret = vp_display_init(&g_drm_context, drm_w, drm_h);
+						if (ret == 0) {
+							g_drm_inited = 1;
+							printf("vp_display_init ok: %dx%d\n", drm_w, drm_h);
+						} else {
+							printf("hdmi init failed.\n");
+						}
+					} else {
+						printf("hdmi resolution not ready, skip init this round\n");
+					}
+				}
+			}
+
+			if (g_drm_inited) {
+				ret = vp_display_set_frame(&g_drm_context, &vse_img[VSE_CHANNELS_USED].buffer);
+				if (ret) {
+					printf("vp_display_set_frame for hdmi failed %d.\n", ret);
+				}
+			}
 		}
 #ifdef TUNING_DEBUG
 		// pr_tuning("get buffer size %ld-%ld\n", yuv_img.buffer.size[0], yuv_img.buffer.size[1]);
@@ -830,7 +1101,9 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	vin_node_attr_t *vin_node_attr = NULL;
 	vin_ichn_attr_t *vin_ichn_attr = NULL;
 	vin_ochn_attr_t *vin_ochn_attr = NULL;
+	vin_ochn_attr_t *vin_pdaf_ochn_attr = NULL;
 	hbn_vnode_handle_t *vin_node_handle = NULL;
+	hbn_buf_alloc_attr_t alloc_pdaf_attr = {0};
 	vin_attr_ex_t vin_attr_ex;
 	uint32_t hw_id = 0;
 	uint32_t ichn_id = 0;
@@ -841,6 +1114,7 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	vin_node_attr = sensor_config->vin_node_attr;
 	vin_ichn_attr = sensor_config->vin_ichn_attr;
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
+	vin_pdaf_ochn_attr = sensor_config->vin_pdaf_ochn_attr;
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 	link_port = vin_node_attr->cim_attr.vc_index;
@@ -876,6 +1150,10 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	FUNC_EQ(hbn_vnode_set_attr(*vin_node_handle, vin_node_attr), 0, return RET_FAILURE);
 	FUNC_EQ(hbn_vnode_set_ichn_attr(*vin_node_handle, ichn_id, vin_ichn_attr), 0, return RET_FAILURE);
 	FUNC_EQ(hbn_vnode_set_ochn_attr(*vin_node_handle, ochn_id, vin_ochn_attr), 0, return RET_FAILURE);
+	if (vin_pdaf_ochn_attr && vin_pdaf_ochn_attr->pdaf_en == 1) {
+		pdaf_en = vin_pdaf_ochn_attr->pdaf_en;
+		FUNC_EQ(hbn_vnode_set_ochn_attr(*vin_node_handle, VIN_PDAF, vin_pdaf_ochn_attr), 0, return RET_FAILURE);
+	}
 
 	if (vin_attr_ex_mask) {
 		for (uint8_t i = 0; i < VIN_ATTR_EX_INVALID; i ++) {
@@ -898,6 +1176,14 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 				| HB_MEM_USAGE_HW_CIM
 				| HB_MEM_USAGE_GRAPHIC_CONTIGUOUS_BUF;
 		FUNC_EQ(hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr), 0, return RET_FAILURE);
+	}
+
+	if (vin_pdaf_ochn_attr && vin_pdaf_ochn_attr->pdaf_en == 1) {
+		memset(&alloc_pdaf_attr, 0, sizeof(hbn_buf_alloc_attr_t));
+		alloc_pdaf_attr.buffers_num = 6;
+		alloc_pdaf_attr.is_contig   = 1;
+		alloc_pdaf_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN | HB_MEM_USAGE_CPU_WRITE_OFTEN | HB_MEM_USAGE_CACHED;
+		FUNC_EQ(hbn_vnode_set_ochn_buf_attr(*vin_node_handle, VIN_PDAF, &alloc_pdaf_attr), 0, return RET_FAILURE);
 	}
 	return RET_SUCCESS;
 }
@@ -936,8 +1222,11 @@ static int32_t create_isp_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	FUNC_EQ(hbn_vnode_set_attr(*isp_node_handle, isp_attr), 0, return RET_FAILURE);
 	FUNC_EQ(hbn_vnode_set_ochn_attr(*isp_node_handle, ochn_id, isp_ochn_attr), 0, return RET_FAILURE);
 	FUNC_EQ(hbn_vnode_set_ichn_attr(*isp_node_handle, ichn_id, isp_ichn_attr), 0, return RET_FAILURE);
+	if (isp_attr->af_mode) {
+		FUNC_EQ(hbn_vnode_set_ichn_attr(*isp_node_handle, ISP_PDAF_DATA, isp_ichn_attr), 0, return RET_FAILURE);
+	}
 
-	alloc_attr.buffers_num = 3;
+	alloc_attr.buffers_num = 6;
 	alloc_attr.is_contig = 1;
 	alloc_attr.flags = HB_MEM_USAGE_CPU_READ_OFTEN
 			| HB_MEM_USAGE_CPU_WRITE_OFTEN
@@ -983,10 +1272,36 @@ static int32_t create_vse_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	vse_ochn_attr[VSE_CHANNELS_USED].fmt = FRM_FMT_NV12;
 	vse_ochn_attr[VSE_CHANNELS_USED].bit_width = 8;
 	// 全部设置到宽为 640 的像素，保证流畅，但是要注意，每个通道的功能和限制不同，如果修改 VSE_CHANNELS_USED 的数值，可能导致功能异常，需要参考 VSE 文档，了解每个通道的功能再进行修改。
-	ratio = input_width / VSE_WIDTH_TARGET;
-	global_ctx->vse_ratio = ratio;
-	vse_ochn_attr[VSE_CHANNELS_USED].target_w = VSE_WIDTH_TARGET;
-	vse_ochn_attr[VSE_CHANNELS_USED].target_h = input_height / ratio;
+	if (enable_hdmi) {
+		int32_t hdmi_output_width = 0;
+		int32_t hdmi_output_height = 0;
+
+		if (vp_display_check_hdmi_is_connected() < 0) {
+			printf("\n\nFailed: output form is hdmi, but not found hdmi connector.\n\n");
+			printf("Please run insmode_driver.sh to load HDMI related drivers before using --hdmi.\n");
+			printf("（使用 HDMI 功能前，请先执行 insmode_driver.sh 加载显示相关驱动。）\n\n");
+			return RET_FAILURE;
+		}
+
+		ret = tuning_pick_hdmi_resolution((int32_t)input_width, (int32_t)input_height,
+			&hdmi_output_width, &hdmi_output_height);
+		if (ret < 0) {
+			printf("hdmi not found appropriate resolution\n");
+			goto vse_default_target;
+		}
+
+		g_hdmi_width = (uint32_t)hdmi_output_width;
+		g_hdmi_height = (uint32_t)hdmi_output_height;
+		global_ctx->vse_ratio = 1;
+		vse_ochn_attr[VSE_CHANNELS_USED].target_w = (uint32_t)hdmi_output_width;
+		vse_ochn_attr[VSE_CHANNELS_USED].target_h = (uint32_t)hdmi_output_height;
+	} else {
+vse_default_target:
+		ratio = input_width / VSE_WIDTH_TARGET;
+		global_ctx->vse_ratio = ratio;
+		vse_ochn_attr[VSE_CHANNELS_USED].target_w = VSE_WIDTH_TARGET;
+		vse_ochn_attr[VSE_CHANNELS_USED].target_h = input_height / ratio;
+	}
 
 
 	// 创建 VSE 节点
@@ -1054,6 +1369,14 @@ static int32_t multi_pipe_create(tuning_context_t *ctx, uint32_t pipelinemode)
 				ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 					pipe_contex->vin_node_handle, 1,
 					pipe_contex->isp_node_handle, 0);
+					if (pdaf_en) {
+						ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->vin_node_handle,
+								VIN_PDAF,
+								pipe_contex->isp_node_handle,
+								ISP_PDAF_DATA);
+						ERR_CON_EQ(ret, 0);
+					}
 					if(enable_vse)
 					{
 						ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
@@ -1067,6 +1390,14 @@ static int32_t multi_pipe_create(tuning_context_t *ctx, uint32_t pipelinemode)
 				ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
 					pipe_contex->vin_node_handle, 0,
 					pipe_contex->isp_node_handle, 0);
+					if (pdaf_en) {
+						ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,
+								pipe_contex->vin_node_handle,
+								VIN_PDAF,
+								pipe_contex->isp_node_handle,
+								ISP_PDAF_DATA);
+						ERR_CON_EQ(ret, 0);
+					}
 					if(enable_vse)
 					{
 						ret = hbn_vflow_bind_vnode(pipe_contex->vflow_fd,

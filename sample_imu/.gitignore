@@ -5,5 +5,5 @@
 *.patch
 *.vscode
 
-sample_imu
-
+sample_imu_iio/sample_imu_iio
+sample_imu_input/sample_imu_input

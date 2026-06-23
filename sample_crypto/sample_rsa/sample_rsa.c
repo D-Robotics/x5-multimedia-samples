@@ -132,7 +132,7 @@ int main(int argc, char **argv)
 	// 可选：显式设置填充（默认是 PKCS#1 v1.5）
     // EVP_PKEY_CTX_set_rsa_padding(enc_ctx, RSA_PKCS1_OAEP_PADDING);
 
-	size_t outlen;
+	size_t outlen = sizeof(ciphertext);
 	if (EVP_PKEY_encrypt(enc_ctx, ciphertext, &outlen, plaintext, strlen((char *)plaintext)) <= 0) {
 		handleErrors("EVP_PKEY_encrypt Failed");
 	}
@@ -156,7 +156,7 @@ int main(int argc, char **argv)
 	// 填充必须与加密一致（默认 PKCS#1 v1.5）
     // EVP_PKEY_CTX_set_rsa_padding(dec_ctx, RSA_PKCS1_OAEP_PADDING);
 
-	size_t decrypted_len;
+	size_t decrypted_len = sizeof(decryptedtext);
 	if (EVP_PKEY_decrypt(dec_ctx, decryptedtext, &decrypted_len, ciphertext, ciphertext_len) <= 0) {
 		handleErrors("EVP_PKEY_decrypt Failed");
 	}

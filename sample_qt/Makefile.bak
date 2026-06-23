@@ -1,0 +1,52 @@
+# Qt 简单示例 - aarch64 交叉编译 Makefile
+include ../Makefile.in
+
+CUR_DIR       := $(shell pwd)
+RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DIR))
+
+TARGET  ?= sample_qt
+SRCS    := main.cpp
+OBJS    := $(SRCS:.cpp=.o)
+
+SYSROOT ?= $(HR_BUILD_OUTPUT_DIR)/deploy/system
+QT_INC    := $(SYSROOT)/usr/include/qt5
+QT_LIB    := $(SYSROOT)/usr/lib
+
+HBRE_BUILD_LIB  := $(HR_BUILD_OUTPUT_DIR)/build/hbre_deps/usr/lib
+HBRE_DEPLOY_LIB := $(HR_BUILD_OUTPUT_DIR)/deploy/hbre/lib
+
+CXXFLAGS  += -Wall -fPIC -std=c++11
+CXXFLAGS  += -I$(QT_INC) -I$(QT_INC)/QtCore -I$(QT_INC)/QtGui -I$(QT_INC)/QtWidgets
+
+LDFLAGS   += -L$(QT_LIB)          -Wl,-rpath-link,$(QT_LIB)
+LDFLAGS   += -L$(HBRE_BUILD_LIB)  -Wl,-rpath-link,$(HBRE_BUILD_LIB)
+LDFLAGS   += -L$(HBRE_DEPLOY_LIB) -Wl,-rpath-link,$(HBRE_DEPLOY_LIB)
+
+ifneq ($(OUTPUT_HBROOTFS_DIR),)
+LDFLAGS   += -L$(OUTPUT_HBROOTFS_DIR)/usr/lib -Wl,-rpath-link,$(OUTPUT_HBROOTFS_DIR)/usr/lib
+endif
+
+LDFLAGS   += -Wl,-rpath,/usr/hobot/lib
+LIBS      := -lQt5Widgets -lQt5Gui -lQt5Core -lGLESv2 -lGAL -lVSC -lpthread
+
+.PHONY: all clean install
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	@echo "  LINK    $@"
+	$(CXX) $(LDFLAGS) -o $@ $^ $(LIBS)
+
+$(OBJS): %.o: %.cpp
+	@echo "  COMPILE $<"
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+clean:
+	rm -f $(OBJS) $(TARGET)
+
+install: all
+	$(Q)install -d $(PLATFORM_SAMPLES_DEPLOY_DIR)/$(RELATIVE_PATH)
+	$(Q)install -m 0775 $(TARGET) \
+		$(PLATFORM_SAMPLES_DEPLOY_DIR)/$(RELATIVE_PATH)/
+	$(Q)install -m 0775 run.sh eglfs_kms_config.json \
+		$(PLATFORM_SAMPLES_DEPLOY_DIR)/$(RELATIVE_PATH)/

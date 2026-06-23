@@ -18,7 +18,7 @@ typedef struct tuning_cmd_func {
 } tuning_cmd_func_t;
 
 /* app cmd */
-#define PARSE_SHORT_OPTS "s:t:m:w:f:l:d:r:H:W:F:h:a:"
+#define PARSE_SHORT_OPTS "s:t:m:w:f:l:d:r:H:W:F:J:h:a:"
 #define PARSE_LONG_OPTS {\
 		{"sensor_index", required_argument, 0, 's'},\
 		{"settle_value", optional_argument, 0, 't'},\
@@ -29,11 +29,13 @@ typedef struct tuning_cmd_func {
 		{"offline", no_argument, 0, 0},\
 		{"mcm", no_argument, 0, 0},\
 		{"enable_vse", no_argument, 0, 0},\
+		{"hdmi", no_argument, 0, 0},\
 		{"work_mode", required_argument, 0, 'w'},\
 		{"feedback_times", required_argument, 0, 'f'},\
 		{"hight", required_argument, 0, 'H'},\
 		{"width", required_argument, 0, 'W'},\
 		{"format", required_argument, 0, 'F'},\
+		{"feedback_param_file", required_argument, 0, 'J'},\
 		{"lut3d", required_argument, 0, 'a'},\
 		{"help", no_argument, 0, 'h'},\
 		{ NULL, 0, 0, 0 },\
@@ -48,6 +50,7 @@ typedef struct tuning_cmd_func {
 			"-w        work mode mask\n"\
 			"-a        run with opencl for 3dlut func\n"\
 			"-f -H -W -F       feedback raw file xx with specified height, width, and format(raw8/raw10/raw12)\n"\
+			"-J        set feedback json file for dummy sensor\n"\
 			"-h        usage help\n"
 
 #define parse_opts_print(prog) do {\

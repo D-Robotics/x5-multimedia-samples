@@ -50,7 +50,7 @@ typedef struct {
 	struct timeval tv; // 送入数据对应的时间戳，在视频和算法结果同步时需要使用
 } bpu_tensor_info_t;
 
-#define BPU_INPUT_BUFFER_NUM 5
+#define BPU_INPUT_BUFFER_NUM 3
 
 typedef struct {
 	int32_t				m_vpp_id; // vedio pipeline id
@@ -59,7 +59,7 @@ typedef struct {
 	hbDNNHandle_t		m_dnn_handle;
 	bpu_image_info_t	m_image_info;
 	tsThread 			m_run_model_thread; // 运算模型的线程
-	bpu_tensor_info_t	m_input_tensors[BPU_INPUT_BUFFER_NUM]; // 给bpu输入tensor预分配内存，避免每一帧数据都进行内存的申请和释放
+	bpu_tensor_info_t	m_input_tensors[BPU_INPUT_BUFFER_NUM]; // BPU input tensor，直接映射 VSE buffer 地址，无内存拷贝
 	int32_t				m_cur_input_tensor; // 当前使用的 bpu input 内存序号
 	tsQueue				m_input_queue; // 用于算法预测的yuv数据
 	tsThread 			m_post_process_thread; // 算法后处理线程

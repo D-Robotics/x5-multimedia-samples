@@ -27,7 +27,13 @@ static camera_config_t camera_config = {
 		"\"tuning_data\": {"
 			"\"enable\": 1,"
 			"\"bayer_start\": 3,"  /* BAYER_START_B */
-			"\"bayer_pattern\": 0" /* BAYER_PATTERN_RGGB */
+			"\"bayer_pattern\": 0," /* BAYER_PATTERN_RGGB */
+			"\"lines_per_second\": 33750,"
+			"\"exposure_time_max\": 1012,"
+			"\"exposure_time_min\": 1,"
+			"\"exposure_time_long_max\": 2242,"
+			"\"analog_gain_max\": 251,"
+			"\"digital_gain_max\": 0"
 		"}"
 	"}",
 	.end_flag = CAMERA_CONFIG_END_FLAG,

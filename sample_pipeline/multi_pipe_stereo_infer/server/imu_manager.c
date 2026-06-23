@@ -134,7 +134,7 @@ static int validate_iio_device(const char *dev_path, const char *expected_name) 
     for (int i = 0; i < 3; i++) {
         snprintf(test_path, sizeof(test_path), "%s/in_accel_%s_raw",
                 dev_path, axes[i]);
-        if (check_file_access(test_path))
+        if (0 == check_file_access(test_path))
             accel_found += 1;
     }
 
@@ -142,7 +142,7 @@ static int validate_iio_device(const char *dev_path, const char *expected_name) 
     for (int i = 0; i < 3; i++) {
         snprintf(test_path, sizeof(test_path), "%s/in_anglvel_%s_raw",
                 dev_path, axes[i]);
-        if (check_file_access(test_path))
+        if (0 == check_file_access(test_path))
             gyro_found += 1;
     }
 

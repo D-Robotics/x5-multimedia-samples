@@ -22,8 +22,9 @@
 #define SENSOR_TYPE_GMSL_RGBIR	3
 #define SENSOR_TYPE_HSMT_RAW 4
 
-#define SENSOR_DATA_TYPE_RAW12 0x2C
 #define SENSOR_DATA_TYPE_RAW10 0x2B
+#define SENSOR_DATA_TYPE_RAW12 0x2C
+#define SENSOR_DATA_TYPE_RAW14 0x2D
 #define SENSOR_DATA_TYPE_YUV422 0x1E
 
 #define N2D_SCALE 		0
@@ -97,6 +98,7 @@ typedef struct vp_sensor_config_s {
 	vin_node_attr_t *vin_node_attr;
 	vin_ichn_attr_t *vin_ichn_attr;
 	vin_ochn_attr_t *vin_ochn_attr;
+	vin_ochn_attr_t *vin_pdaf_ochn_attr;
 	vin_attr_ex_t   *vin_attr_ex;
 	isp_attr_t      *isp_attr;
 	isp_ichn_attr_t *isp_ichn_attr;

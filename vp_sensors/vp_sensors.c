@@ -204,7 +204,9 @@ void vp_show_sensors_list_vse_limit(uint32_t width_limit, uint32_t height_limit)
 
 vp_sensor_config_t *vp_get_sensor_config_by_name(char *sensor_name)
 {
-	for (int i = 0; vp_sensor_config_list[i]->sensor_name != NULL; i++) {
+	uint32_t sensor_count = vp_get_sensors_list_number();
+
+	for (uint32_t i = 0; i < sensor_count; i++) {
 		if (strcmp(vp_sensor_config_list[i]->sensor_name, sensor_name) == 0) {
 			return vp_sensor_config_list[i];
 		}

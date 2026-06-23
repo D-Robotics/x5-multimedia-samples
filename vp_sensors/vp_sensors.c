@@ -265,12 +265,19 @@ static int gpio_unexport(int gpio_number) {
 static int gpio_set_direction(int gpio_number, const char *direction) {
 	char filename[256];
 	FILE *fp;
+	int elapsed_time = 0;
+
 	snprintf(filename, sizeof(filename), "/sys/class/gpio/gpio%d/direction", gpio_number);
-	fp = fopen(filename, "w");
-	if (fp == NULL) {
-		printf("Error opening GPIO direction file for writing\n");
-		return -1;
-	}
+
+	while ((fp = fopen(filename, "w")) == NULL) {
+        if (elapsed_time >= 100) {
+            fprintf(stderr, "Timeout: Failed to open %s after 100ms: %s\n", filename, strerror(errno));
+            return -1;
+        }
+        usleep(1000);
+        elapsed_time += 1;
+    }
+
 	fprintf(fp, "%s", direction);
 	fclose(fp);
 	return 0;
@@ -743,7 +750,8 @@ static void should_used_csi(int *is_need_used_csi)
 			printf("[INFO] board_id is %s, so skip csi test for index 1\n", board_id);
 			is_need_used_csi[1] = false;// board 201 not use csi1
 		}
-		if (strncmp(board_id, "0x03", 4) == 0 || strncmp(board_id, "0x05", 4) == 0) {
+		if (strncmp(board_id, "0x03", 4) == 0 || strncmp(board_id, "0x05", 4) == 0 || 
+			board_id[0] == '3' || board_id[0] == '5') {
 			printf("[INFO] RDK board_id is %s, so skip csi test for index 1 and index 3\n", board_id);
 			is_need_used_csi[1] = false;
 			is_need_used_csi[3] = false;

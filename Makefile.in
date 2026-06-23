@@ -1,4 +1,10 @@
 CROSS_COMPILE ?= /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
+BOARD_BUILD := 0
+
+ifeq ($(wildcard $(CROSS_COMPILE)gcc),)
+CROSS_COMPILE := aarch64-linux-gnu-
+BOARD_BUILD := 1
+endif
 
 ifeq ($(BUILD_VERBOSE),1)
 	Q =
@@ -28,6 +34,7 @@ LDFLAGS =
 # Get the absolute path of the directory where Makefile.in is located
 PLATFORM_SAMPLES_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
+ifeq ($(BOARD_BUILD),0)
 HR_TOP_DIR = $(shell realpath ${PLATFORM_SAMPLES_DIR}/../../../)
 ifeq ($(HR_BUILD_OUTPUT_DIR),)
 HR_BUILD_OUTPUT_DIR = ${HR_TOP_DIR}/out
@@ -46,6 +53,12 @@ else
     $(info HR_BUILD_OUTPUT_DIR directory is exit: [$(HR_BUILD_OUTPUT_DIR)])
 endif
 endif
+else
+HR_TOP_DIR = /usr/hobot
+ifeq ($(HR_BUILD_OUTPUT_DIR),)
+HR_BUILD_OUTPUT_DIR = ${HR_TOP_DIR}
+endif
+endif
 
 
 ifeq ($(APP_DEPLOY_DIR),)
@@ -54,6 +67,7 @@ endif
 
 PLATFORM_SAMPLES_DEPLOY_DIR = ${APP_DEPLOY_DIR}/platform_samples
 
+ifeq ($(BOARD_BUILD),0)
 INCS += -I . \
 	-I ${HR_BUILD_OUTPUT_DIR}/build/hbre_deps/include/ \
 	-I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/ \
@@ -77,6 +91,20 @@ LIBSDIR += -L${DEPLOY_SYSTEM_DIR}/usr/lib/aarch64-linux-gnu
 LIBSDIR += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/lib/aarch64-linux-gnu
 LIBSDIR += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/lib
 LIBSDIR += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/lib/aarch64-linux-gnu
+endif
+else
+INCS += -I . \
+	-I ${HR_BUILD_OUTPUT_DIR}/include/ \
+	-I ${HR_BUILD_OUTPUT_DIR}/include/HAL/ \
+	-I ${PLATFORM_SAMPLES_DIR}/include/ \
+	-I ${PLATFORM_SAMPLES_DIR}/utils/ \
+	-I /usr/include/drm/ \
+	-I /usr/include/GC820/ \
+	-I /usr/include/dnn/ \
+	-I ${PLATFORM_SAMPLES_DIR}/vp_sensors
+
+LIBSDIR = 	-L ${HR_BUILD_OUTPUT_DIR}/lib \
+		-L ${PLATFORM_SAMPLES_DIR}/lib
 endif
 
 LIBS = 	-lcam \

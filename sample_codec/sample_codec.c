@@ -22,6 +22,8 @@
 atomic_int running = 1;
 static int verbose = 0;
 static int decode_output_exit = 0;
+static int input_timeout_ms = 2000; // default input_timeout_ms , if reslution more than 1920x1080, input_timeout_ms need change to more than default
+static int output_timeout_ms = 2000; // default output_timeout_ms , if reslution more than 1920x1080, output_timeout_ms need change to more than default
 
 static struct option const long_options[] = {
 	{"config_file", required_argument, NULL, 'f'},
@@ -1093,7 +1095,7 @@ int32_t vp_codec_set_input(media_codec_context_t *context,
 	buffer = frame_buffer;
 
 	buffer->type = (context->encoder) ? MC_VIDEO_FRAME_BUFFER : MC_VIDEO_STREAM_BUFFER;
-	ret = hb_mm_mc_dequeue_input_buffer(context, buffer, 2000);
+	ret = hb_mm_mc_dequeue_input_buffer(context, buffer, input_timeout_ms);
 	if (ret != 0)
 	{
 		printf("hb_mm_mc_dequeue_input_buffer failed ret = %d\n", ret);
@@ -1105,7 +1107,7 @@ int32_t vp_codec_set_input(media_codec_context_t *context,
 		if (buffer->vstream_buf.size < data_size)
 		{
 			printf("The input stream/frame data is larger than the stream buffer size\n");
-			hb_mm_mc_queue_input_buffer(context, buffer, 3000);
+			hb_mm_mc_queue_input_buffer(context, buffer, input_timeout_ms);
 			return -1;
 		}
 
@@ -1128,7 +1130,7 @@ int32_t vp_codec_set_input(media_codec_context_t *context,
 		memcpy(buffer->vstream_buf.vir_ptr, data, data_size);
 	}
 
-	ret = hb_mm_mc_queue_input_buffer(context, buffer, 2000);
+	ret = hb_mm_mc_queue_input_buffer(context, buffer, input_timeout_ms);
 	if (ret != 0)
 	{
 		printf("hb_mm_mc_queue_input_buffer failed, ret = 0x%x\n", ret);
@@ -1302,7 +1304,7 @@ int32_t encode_video(media_codec_context_t *context, EncodeParams *params) {
 		usleep(30*1000);
 		memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
 		// input_buffer.type = MC_VIDEO_FRAME_BUFFER;
-		ret = hb_mm_mc_dequeue_input_buffer(context, &input_buffer, 2000);
+		ret = hb_mm_mc_dequeue_input_buffer(context, &input_buffer, input_timeout_ms);
 		if (ret != 0)
 		{
 			printf("hb_mm_mc_dequeue_input_buffer failed ret = %d\n", ret);
@@ -1332,7 +1334,7 @@ int32_t encode_video(media_codec_context_t *context, EncodeParams *params) {
 		printf("%s idx: %d, frame= %d\n",
 			context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
 
-		ret = hb_mm_mc_queue_input_buffer(context, &input_buffer, 2000);
+		ret = hb_mm_mc_queue_input_buffer(context, &input_buffer, input_timeout_ms);
 		if (ret != 0)
 		{
 			printf("hb_mm_mc_queue_input_buffer failed, ret = 0x%x\n", ret);
@@ -1346,7 +1348,7 @@ int32_t encode_video(media_codec_context_t *context, EncodeParams *params) {
 
 		memset(&ouput_buffer, 0x0, sizeof(media_codec_buffer_t));
 		memset(&info, 0x0, sizeof(media_codec_output_buffer_info_t));
-		ret = hb_mm_mc_dequeue_output_buffer(context, &ouput_buffer, &info, 2000);
+		ret = hb_mm_mc_dequeue_output_buffer(context, &ouput_buffer, &info, output_timeout_ms);
 		if (ret != 0)
 		{
 			printf("%s idx: %d, hb_mm_mc_dequeue_output_buffer failed ret = %d\n",
@@ -1363,7 +1365,7 @@ int32_t encode_video(media_codec_context_t *context, EncodeParams *params) {
 			fwrite(ouput_buffer.vstream_buf.vir_ptr, ouput_buffer.vstream_buf.size, 1, fp_output);
 		}
 
-		ret = hb_mm_mc_queue_output_buffer(context, &ouput_buffer, 2000);
+		ret = hb_mm_mc_queue_output_buffer(context, &ouput_buffer, output_timeout_ms);
 		if (ret != 0)
 		{
 			printf("idx: %d, hb_mm_mc_queue_output_buffer failed ret = %d \n", context->instance_index, ret);
@@ -1478,7 +1480,7 @@ int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParam
 		usleep(30*1000);
 		memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
 		// input_buffer.type = MC_VIDEO_FRAME_BUFFER;
-		ret = hb_mm_mc_dequeue_input_buffer(context, &input_buffer, 2000);
+		ret = hb_mm_mc_dequeue_input_buffer(context, &input_buffer, input_timeout_ms);
 		if (ret != 0)
 		{
 			printf("hb_mm_mc_dequeue_input_buffer failed ret = %d\n", ret);
@@ -1510,7 +1512,7 @@ int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParam
 		printf("%s idx: %d, frame= %d\n",
 			context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
 
-		ret = hb_mm_mc_queue_input_buffer(context, &input_buffer, 2000);
+		ret = hb_mm_mc_queue_input_buffer(context, &input_buffer, input_timeout_ms);
 		if (ret != 0)
 		{
 			printf("hb_mm_mc_queue_input_buffer failed, ret = 0x%x\n", ret);
@@ -1524,7 +1526,7 @@ int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParam
 
 		memset(&ouput_buffer, 0x0, sizeof(media_codec_buffer_t));
 		memset(&info, 0x0, sizeof(media_codec_output_buffer_info_t));
-		ret = hb_mm_mc_dequeue_output_buffer(context, &ouput_buffer, &info, 2000);
+		ret = hb_mm_mc_dequeue_output_buffer(context, &ouput_buffer, &info, output_timeout_ms);
 		if (ret != 0)
 		{
 			printf("%s idx: %d, hb_mm_mc_dequeue_output_buffer failed ret = %d\n",
@@ -1541,7 +1543,7 @@ int32_t encode_video_external_buffer(media_codec_context_t *context, EncodeParam
 			fwrite(ouput_buffer.vstream_buf.vir_ptr, ouput_buffer.vstream_buf.size, 1, fp_output);
 		}
 
-		ret = hb_mm_mc_queue_output_buffer(context, &ouput_buffer, 2000);
+		ret = hb_mm_mc_queue_output_buffer(context, &ouput_buffer, output_timeout_ms);
 		if (ret != 0)
 		{
 			printf("idx: %d, hb_mm_mc_queue_output_buffer failed ret = %d \n", context->instance_index, ret);
@@ -1695,7 +1697,7 @@ int32_t encode_video_performance_test(media_codec_context_t *context, EncodePara
 
 		//2. init media_codec_buffer_t
 		memset(&input_buffer, 0x00, sizeof(media_codec_buffer_t));
-		ret = hb_mm_mc_dequeue_input_buffer(context, &input_buffer, 2000);
+		ret = hb_mm_mc_dequeue_input_buffer(context, &input_buffer, input_timeout_ms);
 		if (ret != 0)
 		{
 			printf("hb_mm_mc_dequeue_input_buffer failed ret = %d\n", ret);
@@ -1717,7 +1719,7 @@ int32_t encode_video_performance_test(media_codec_context_t *context, EncodePara
 		printf("%s idx: %d, frame= %d\n",
 			context->encoder ? "Encode" : "Decode", context->instance_index, frame_count);
 
-		ret = hb_mm_mc_queue_input_buffer(context, &input_buffer, 2000);
+		ret = hb_mm_mc_queue_input_buffer(context, &input_buffer, input_timeout_ms);
 		if (ret != 0)
 		{
 			printf("hb_mm_mc_queue_input_buffer failed, ret = 0x%x\n", ret);
@@ -1731,7 +1733,7 @@ int32_t encode_video_performance_test(media_codec_context_t *context, EncodePara
 
 		memset(&ouput_buffer, 0x0, sizeof(media_codec_buffer_t));
 		memset(&info, 0x0, sizeof(media_codec_output_buffer_info_t));
-		ret = hb_mm_mc_dequeue_output_buffer(context, &ouput_buffer, &info, 2000);
+		ret = hb_mm_mc_dequeue_output_buffer(context, &ouput_buffer, &info, output_timeout_ms);
 		if (ret != 0)
 		{
 			printf("%s idx: %d, hb_mm_mc_dequeue_output_buffer failed ret = %d\n",
@@ -1748,7 +1750,7 @@ int32_t encode_video_performance_test(media_codec_context_t *context, EncodePara
 			fwrite(ouput_buffer.vstream_buf.vir_ptr, ouput_buffer.vstream_buf.size, 1, fp_output);
 		}
 
-		ret = hb_mm_mc_queue_output_buffer(context, &ouput_buffer, 2000);
+		ret = hb_mm_mc_queue_output_buffer(context, &ouput_buffer, output_timeout_ms);
 		if (ret != 0)
 		{
 			printf("idx: %d, hb_mm_mc_queue_output_buffer failed ret = %d \n", context->instance_index, ret);
@@ -1794,7 +1796,7 @@ int32_t decode_output_video(media_codec_context_t *context, DecodeParams *params
 	}
 
 	while(decode_output_exit) {
-		ret = vp_codec_get_output(context, &ouput_buffer, &info, 2000);
+		ret = vp_codec_get_output(context, &ouput_buffer, &info, output_timeout_ms);
 		if (ret != 0) {
 			// wait for each frame for decoding
 			// usleep(30 * 1000);
@@ -2112,6 +2114,45 @@ void *decode_thread(void *arg) {
 	pthread_exit(NULL);
 }
 
+static void update_timeout_based_on_active_streams(int encode_streams, int decode_streams,
+                                                  EncodeParams *encode_params, 
+                                                  DecodeParams *decode_params) {
+    int max_width = 0, max_height = 0;
+
+    for (int i = 0; i < MAX_STREAMS; i++) {
+        if (encode_streams & (1 << i)) {
+            if (encode_params[i].width > max_width) max_width = encode_params[i].width;
+            if (encode_params[i].height > max_height) max_height = encode_params[i].height;
+            printf("Active encode stream %d: %dx%d\n", i, encode_params[i].width, encode_params[i].height);
+        }
+    }
+
+    for (int i = 0; i < MAX_STREAMS; i++) {
+        if (decode_streams & (1 << i)) {
+            if (decode_params[i].width > max_width) max_width = decode_params[i].width;
+            if (decode_params[i].height > max_height) max_height = decode_params[i].height;
+            printf("Active decode stream %d: %dx%d\n", i, decode_params[i].width, decode_params[i].height);
+        }
+    }
+
+    if (max_width >= 3840 && max_height >= 2160) { // 4K
+        input_timeout_ms = 6000;
+		output_timeout_ms = 6000;
+    } else if (max_width >= 2560 && max_height >= 1440) { // 2K
+        input_timeout_ms = 4000;
+		output_timeout_ms = 4000;
+    } else if (max_width >= 1920 && max_height >= 1080) { // 1080p
+        input_timeout_ms = 3000;
+		output_timeout_ms = 3000;
+    } else {
+        input_timeout_ms = 2000;
+		output_timeout_ms = 2000;
+    }
+
+    printf("Global input_timeout_ms set to %d ms , input_timeout_ms set to %d ms ,for active max resolution %dx%d\n", 
+		input_timeout_ms , output_timeout_ms , max_width, max_height);
+}
+
 int main(int argc, char *argv[]) {
 	int32_t ret = 0;
 	int opt;
@@ -2187,6 +2228,9 @@ int main(int argc, char *argv[]) {
 
 	printf("encode_streams: 0x%x\n", encode_streams);
 	printf("decode_streams: 0x%x\n", decode_streams);
+
+	update_timeout_based_on_active_streams(encode_streams, decode_streams, 
+		encode_params, decode_params);
 
 	// 创建编码线程
 	pthread_t encode_threads[MAX_STREAMS];

@@ -592,7 +592,8 @@ When destroying a Display Window, if a player is in the startup state, stop it."
 					if (closestDiff <= errorTime)
 						closestElement = (timeDiff < prevDiff) ? currElement : display_window.alogResultQueue[i - 1];
 				}
-				break; // 跳出循环，因为已经找到了最接近的元素
+				if (timeDiff <= errorTime)
+					break; // 跳出循环，因为已经找到了最接近的元素
 			}
 
 			// 情况3（其他情况）：如果遍历到了队列的最后一个元素，选择该元素作为最接近的元素

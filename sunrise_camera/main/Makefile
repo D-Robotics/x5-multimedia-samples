@@ -20,6 +20,11 @@ LIB += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/lib
 LIB += -Wl,-rpath-link=${DEPLOY_SYSTEM_DIR}/usr/lib/aarch64-linux-gnu
 endif
 
+ifeq ($(BOARD_BUILD),1)
+INC += -I/usr/include/drm/
+LIB += -L/usr/hobot/lib/
+endif
+
 SRC := $(wildcard *.cpp *.c $(patsubst %,%/src/*.cpp,$(INC_DIR)) $(patsubst %,%/src/*.c,$(INC_DIR)))
 OBJ := $(patsubst %.cpp,%.obj,$(patsubst %.c,%.o,$(SRC)))
 DEP := $(patsubst %.obj,%.dep,$(patsubst %.o,%.d,$(OBJ)))
@@ -67,10 +72,19 @@ endif
 CC := $(COMPILE_PREFIX)gcc
 CFLAGS := $(INC) -Werror -O0 -DBSD=1 -fPIC $(CFLAGS_EX)
 #CFLAGS := $(INC) -O0 -Wall -DBSD=1 -fPIC
+
+$(info BOARD_BUILD = $(BOARD_BUILD))
+ifeq ($(BOARD_BUILD),0)
 CXX := $(COMPILE_PREFIX)c++
 CXXFLAGS := $(CFLAGS)
 LINK := $(COMPILE_PREFIX)gcc -o
 LIBRARY_LINK := $(COMPILE_PREFIX)c++ -shared -o
+else
+CXX := $(COMPILE_PREFIX)g++
+CXXFLAGS := $(CFLAGS)
+LINK := $(COMPILE_PREFIX)gcc -o
+LIBRARY_LINK := $(COMPILE_PREFIX)g++ -shared -o
+endif
 LIBRARY_LINK_STATIC := $(COMPILE_PREFIX)ar cr
 LIBRARY_LINK_OPTS =	$(LDFLAGS_EX) $(BASIC_LIB) $(MODULE_LIB) $(UTILS_LIB) $(PLATFORM_LIBS) -lpthread -lm -ldl -lrt $(LIB)
 STRIP := $(COMPILE_PREFIX)strip

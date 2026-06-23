@@ -31,6 +31,7 @@ all: ${TARGET}
 $(TARGET):$(OBJ_FILES)
 	@$(shell mkdir -p ${TUNING_BUILD_DIR})
 	@$(CC) -O0 -o $@ $(OBJ_FILES) $(CFLAGS) ${LIBSDIR} $(LIBS)
+	cp ${TARGET} $(CUR_DIR)
 
 $(TUNING_BUILD_DIR)/%.o: %.c
 	@mkdir -p $(abspath $(dir $@))

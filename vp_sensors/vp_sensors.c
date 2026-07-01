@@ -76,6 +76,10 @@ extern vp_sensor_config_t sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc1;
 extern vp_sensor_config_t sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc2;
 extern vp_sensor_config_t sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc3;
 extern vp_sensor_config_t imx415_dol2_3840x2160_raw10_30fps_4lane;
+extern vp_sensor_config_t isx031_linear_1920x1536_yuv422_30fps_4lane_vc0;
+extern vp_sensor_config_t isx031_linear_1920x1536_yuv422_30fps_4lane_vc1;
+extern vp_sensor_config_t isx031_linear_1920x1536_yuv422_30fps_4lane_vc2;
+extern vp_sensor_config_t isx031_linear_1920x1536_yuv422_30fps_4lane_vc3;
 
 vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc1330t_linear_1280x960_raw10_30fps_1lane,
@@ -139,6 +143,10 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc2,
 	&sc132gsstd_linear_1088x1280_raw10_10fps_1lane_vc3,
 	&imx415_dol2_3840x2160_raw10_30fps_4lane,
+	&isx031_linear_1920x1536_yuv422_30fps_4lane_vc0,
+	&isx031_linear_1920x1536_yuv422_30fps_4lane_vc1,
+	&isx031_linear_1920x1536_yuv422_30fps_4lane_vc2,
+	&isx031_linear_1920x1536_yuv422_30fps_4lane_vc3,
 };
 uint32_t vp_get_sensors_list_number() {
 	return sizeof(vp_sensor_config_list) / sizeof(vp_sensor_config_list[0]);

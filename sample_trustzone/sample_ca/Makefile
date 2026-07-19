@@ -7,7 +7,7 @@ TARGET = sample_ca
 SRCS := $(wildcard *.c)
 OBJS := $(SRCS:.c=.o)
 LIBS += -lteec
-INCS += -I../../../../../out/deploy/system/usr/include/
+INCS += -I${DEPLOY_SYSTEM_DIR}/usr/include/
 
 .PHONY: all clean install
 

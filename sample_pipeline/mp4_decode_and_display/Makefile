@@ -8,9 +8,9 @@ TARGET = mp4_decode_and_display
 SRCS := mp4_decode_and_display.c codec_helper.c vp_codec.c vp_display.c circular_queue_with_timestamp.c
 OBJS := $(SRCS:.c=.o)
 
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
-LIBSDIR += -L ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/lib/
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
+LIBSDIR += -L ${DEPLOY_SYSTEM_DIR}/usr/lib/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/libdrm/
 LIBS += -lmultimedia -lavformat -lavcodec -lavutil -lssl -lcrypto -ldrm -lz -lpthread -lm
 
 .PHONY: all clean install

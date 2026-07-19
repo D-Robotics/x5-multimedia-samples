@@ -39,8 +39,8 @@ HDMI_OBJ := $(HDMI_MAIN_SRC:.c=.o)
 LIBS += -lm -ldrm -lmultimedia
 INCS += -I $(CUR_DIR)/../common/
 INCS += -I $(CUR_DIR)
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/libdrm/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 
 %.o: %.c
 	@mkdir -p $(abspath $(dir $@))

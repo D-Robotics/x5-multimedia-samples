@@ -21,8 +21,8 @@ LIBS += -lOpenCL -lVDK -lGAL -lEGL -lVSC -lCLC -lGLESv2 -lSPIRV_viv -ldrm_vivant
 # CFLAGS += -D TUNING_API_DELAY_DEBUG
 
 INCS += -I../sample_pipeline/common
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/libdrm/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 
 .PHONY: all clean install
 

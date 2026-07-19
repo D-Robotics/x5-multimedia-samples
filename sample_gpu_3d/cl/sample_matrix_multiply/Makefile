@@ -14,8 +14,8 @@ OBJS :=  $(SRCS:.c=.o)
 
 INCS += -I $(CUR_DIR)/../common/
 LIBS = -lOpenCL -lm -lGAL -lCLC -lEGL -lGLESv2 -lSPIRV_viv -lCLC -lVSC -lgbm -lgbm_viv -ldrm_vivante -ldrm
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/libdrm/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 
 
 %.o:%.c

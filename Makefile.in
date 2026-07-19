@@ -1,3 +1,18 @@
+# SDK/BSP routing: detect APPSDK_ROOT (set by the SDK environment-setup).
+# SDK mode  -> HR_BUILD_OUTPUT_DIR points to the SDK root (bypasses the
+#             HR_BUILD_OUTPUT_DIR existence check below);
+#             OUTPUT_HBROOTFS_DIR/DEPLOY_SYSTEM_DIR already point to the
+#             sysroot via environment-setup.
+# BSP mode  -> exported by mk_app.sh, pointing to out/build/hbre_deps and
+#             out/deploy/system.
+ifeq ($(APPSDK_ROOT),)
+SDK_MODE = 0
+else
+SDK_MODE = 1
+HR_BUILD_OUTPUT_DIR = ${APPSDK_ROOT}
+$(info SDK mode: APPSDK_ROOT=${APPSDK_ROOT})
+endif
+
 CROSS_COMPILE ?= /opt/arm-gnu-toolchain-11.3.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-
 
 ifeq ($(BUILD_VERBOSE),1)
@@ -6,6 +21,24 @@ else
 	Q = @
 endif
 
+# Toolchain: SDK mode uses ?= to honor $CC from environment-setup (with
+#            --sysroot/-mcpu); BSP mode uses = to force CROSS_COMPILE (guards
+#            against host CC pollution; make's built-in CC=cc cannot be
+#            overridden by ?=).
+ifeq ($(SDK_MODE),1)
+CC ?= ${CROSS_COMPILE}gcc
+CXX ?= ${CROSS_COMPILE}g++
+AR ?= ${CROSS_COMPILE}ar
+AS ?= ${CROSS_COMPILE}as
+LD ?= ${CROSS_COMPILE}ld
+
+STRIP ?= ${CROSS_COMPILE}strip
+RANLIB ?= ${CROSS_COMPILE}ranlib
+OBJCOPY ?= ${CROSS_COMPILE}objcopy
+OBJDUMP ?= ${CROSS_COMPILE}objdump
+READELF ?= ${CROSS_COMPILE}readelf
+NM ?= ${CROSS_COMPILE}nm
+else
 CC = ${CROSS_COMPILE}gcc
 CXX = ${CROSS_COMPILE}g++
 AR = ${CROSS_COMPILE}ar
@@ -18,6 +51,7 @@ OBJCOPY = ${CROSS_COMPILE}objcopy
 OBJDUMP = ${CROSS_COMPILE}objdump
 READELF = ${CROSS_COMPILE}readelf
 NM = ${CROSS_COMPILE}nm
+endif
 
 CFLAGS = -Wall -Werror
 CXXFLAGS = -Wall -Werror
@@ -52,17 +86,32 @@ ifeq ($(APP_DEPLOY_DIR),)
 APP_DEPLOY_DIR = ${HR_BUILD_OUTPUT_DIR}/deploy/app
 endif
 
+ifeq ($(SDK_MODE),1)
+PLATFORM_SAMPLES_DEPLOY_DIR ?= $(CURDIR)/deploy/platform_samples
+else
 PLATFORM_SAMPLES_DEPLOY_DIR = ${APP_DEPLOY_DIR}/platform_samples
+endif
+
+# Default OUTPUT_HBROOTFS_DIR/DEPLOY_SYSTEM_DIR when unset, so a bare `make`
+# works in BSP mode: derived from HR_BUILD_OUTPUT_DIR (default ${HR_TOP_DIR}/out).
+# SDK mode: environment-setup already sets OUTPUT_HBROOTFS_DIR=SDKTARGETSYSROOT;
+# BSP mode: mk_app.sh already sets both -- the defaults below do not override.
+ifeq ($(OUTPUT_HBROOTFS_DIR),)
+OUTPUT_HBROOTFS_DIR = ${HR_BUILD_OUTPUT_DIR}/build/hbre_deps
+endif
+ifeq ($(DEPLOY_SYSTEM_DIR),)
+DEPLOY_SYSTEM_DIR = ${HR_BUILD_OUTPUT_DIR}/deploy/system
+endif
 
 INCS += -I . \
-	-I ${HR_BUILD_OUTPUT_DIR}/build/hbre_deps/include/ \
-	-I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/ \
+	-I ${OUTPUT_HBROOTFS_DIR}/include/ \
+	-I ${DEPLOY_SYSTEM_DIR}/usr/include/ \
 	-I ${PLATFORM_SAMPLES_DIR}/include/ \
 	-I ${PLATFORM_SAMPLES_DIR}/utils/ \
 	-I ${PLATFORM_SAMPLES_DIR}/vp_sensors
 
-LIBSDIR = 	-L ${HR_BUILD_OUTPUT_DIR}/build/hbre_deps/usr/lib \
-		-L ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/lib \
+LIBSDIR = 	-L ${OUTPUT_HBROOTFS_DIR}/usr/lib \
+		-L ${DEPLOY_SYSTEM_DIR}/usr/lib \
 		-L ${PLATFORM_SAMPLES_DIR}/lib
 
 ifeq (${HR_SYSTEM_TYPE},ubuntu)

@@ -14,8 +14,8 @@ DEP := $(patsubst %.obj,%.dep,$(patsubst %.o,%.d,$(OBJS)))
 
 LIBS += -lNano2Dutil -lNano2D -lm -ldrm -ldnn -lcnn_intf -lhbrt_bayes_aarch64 -lstdc++
 INCS += -I $(CUR_DIR)/../common/
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/libdrm/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 
 %.o:%.c
 	@mkdir -p $(abspath $(dir $@))

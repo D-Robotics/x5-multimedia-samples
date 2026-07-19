@@ -7,7 +7,7 @@ TARGET = sample_codec
 SRCS := $(foreach cf, $(CUR_DIR), $(wildcard $(cf)/*.c))
 OBJS :=  $(SRCS:.c=.o)
 
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 LIBS += -lmultimedia -lavformat -lavcodec -lavutil -lssl -lcrypto -ldrm -lz
 
 .PHONY: all clean install

@@ -13,8 +13,8 @@ OBJS :=  $(SRCS:.c=.o)
 
 INCS += -I $(CUR_DIR)/../common/
 LIBS = -lGLESv2 -lGLSLC -lGAL -lVSC -lEGL -lgbm -lgbm_viv -ldrm_vivante -ldrm -lVDK -lm
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/libdrm/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 
 %.o:%.c
 	@mkdir -p $(abspath $(dir $@))

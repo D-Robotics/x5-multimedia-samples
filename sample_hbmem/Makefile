@@ -8,7 +8,7 @@ SRC_PATH := $(CUR_DIR)
 SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
 OBJS :=  $(SRCS:.c=.o)
 
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 LIBS += -lhbmem -lpthread -lalog -ldl -lstdc++
 
 .PHONY: all clean install

@@ -1,7 +1,6 @@
 include ../../Makefile.in
 CUR_DIR := $(shell pwd)
 RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DIR))
-DEPLOY_SYSTEM_DIR = ${HR_BUILD_OUTPUT_DIR}/deploy/system
 INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/include
 

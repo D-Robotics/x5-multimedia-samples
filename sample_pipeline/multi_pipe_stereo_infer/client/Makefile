@@ -28,8 +28,6 @@ PLATFORM_SAMPLES_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST)))
 
 HR_TOP_DIR = $(shell realpath ${PLATFORM_SAMPLES_DIR}/../../../)
 
-HR_BUILD_OUTPUT_DIR = ${HR_TOP_DIR}/out
-$(info HR_BUILD_OUTPUT_DIR not set so use default path: [$(HR_BUILD_OUTPUT_DIR)])
 
 CUR_DIR := $(shell pwd)
 RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DIR))

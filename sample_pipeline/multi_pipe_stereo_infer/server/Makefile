@@ -25,7 +25,7 @@ DEP := $(patsubst %.obj,%.dep,$(patsubst %.o,%.d,$(OBJS)))
 LIB_3RDPART_DIR := $(CUR_DIR)/$(HOBOT_STEREONET_DIR)/DStereo_X5/3rdparty
 INCS += -I$(CUR_DIR)/../common \
 		-I$(CUR_DIR)/../../common \
-		-I${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/ \
+		-I${DEPLOY_SYSTEM_DIR}/usr/include/ \
 		-I$(LIB_3RDPART_DIR)/eigen3 \
 		-I$(LIB_3RDPART_DIR)/lib_opencv4.5.4/include/opencv4 \
 		-I$(CUR_DIR)/$(HOBOT_STEREONET_DIR)/include \
@@ -35,13 +35,13 @@ INCS += -I$(CUR_DIR)/../common \
 LIBS += -ldnn -lcnn_intf -lhbrt_bayes_aarch64 -lstdc++ -lopencv_core \
 		-lopencv_imgcodecs -lopencv_imgproc -lopencv_features2d -lopencv_flann -lopencv_calib3d
 LIBSDIR += -L${LIB_3RDPART_DIR}/eigen3 \
-		-L${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/lib \
+		-L${DEPLOY_SYSTEM_DIR}/usr/lib \
 		-L${LIB_3RDPART_DIR}/lib_opencv4.5.4/lib
 
 # libdrm
 LIBS += -lm -ldrm
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/libdrm/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 
 CXXFLAGS += -Wno-class-memaccess -Wno-sign-compare -O3 -DNDEBUG -Wno-unused-function -DPLATFORM_X5
 

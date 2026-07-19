@@ -7,7 +7,7 @@ AUDIO_FILE = audio/count10_48K_chn2_s16le.pcm
 
 SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
 OBJS :=  $(SRCS:.c=.o)
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 
 .PHONY: all clean install
 

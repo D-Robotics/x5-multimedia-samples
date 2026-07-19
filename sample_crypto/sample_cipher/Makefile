@@ -9,7 +9,7 @@ OBJS :=  $(SRCS:.c=.o)
 
 # -lssl
 LIBS += -lcrypto -lssl
-INCS += -I../../../../../out/deploy/system/usr/include/
+INCS += -I${DEPLOY_SYSTEM_DIR}/usr/include/
 
 .PHONY: all clean install
 

@@ -10,8 +10,8 @@ SRCS := $(foreach cf, $(SRC_PATH), $(wildcard $(cf)/*.c))
 LIBS += -lm -ldrm
 INCS += -I $(CUR_DIR)/
 INCS += -I $(CUR_DIR)/../common/
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/libdrm/
-INCS += -I ${HR_BUILD_OUTPUT_DIR}/deploy/system/usr/include/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/libdrm/
+INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
 
 OBJS :=  $(SRCS:.c=.o)
 

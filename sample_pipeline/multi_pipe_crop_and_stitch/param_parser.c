@@ -157,8 +157,9 @@ void parse_config(int chn, sensor_param_config_t *sensor_param_config, const cha
 				}
 				sensor_param_config->select_sensor_id = sensor_idx;
 				// active_mipi_host 的配置在 create_vin_node 函数中需要再配置一下
-				sensor_param_config->active_mipi_host = sensor_param_config->sensor_config->vin_node_attr->cim_attr.mipi_rx;
-				used_mipi_host |= (1 << sensor_param_config->sensor_config->vin_node_attr->cim_attr.mipi_rx);
+				/* 用各路独立的 csi_config.index，避免被多路覆盖 */
+				sensor_param_config->active_mipi_host = sensor_param_config->csi_config.index;
+				used_mipi_host |= (1 << sensor_param_config->csi_config.index);
 			}
 			printf("mipi host %d\n", sensor_param_config->active_mipi_host);
 

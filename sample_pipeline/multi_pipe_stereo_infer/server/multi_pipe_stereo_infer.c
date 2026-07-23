@@ -368,8 +368,9 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 					exit(0);
 				}
 				pipeline_info->select_sensor_id = sensor_idx;
-				pipeline_info->active_mipi_host = pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx;
-				used_mipi_host |= (1 << pipeline_info->pipe_contexts.sensor_config->vin_node_attr->cim_attr.mipi_rx);
+				/* 用各路独立的 csi_config.index，避免被多路覆盖 */
+				pipeline_info->active_mipi_host = pipeline_info->pipe_contexts.csi_config.index;
+				used_mipi_host |= (1 << pipeline_info->pipe_contexts.csi_config.index);
 			}
 		} else {
 			fprintf(stderr, "Unknown key: %s\n", key_value[0]);
@@ -397,17 +398,21 @@ int32_t vflow_fd_start(pipe_contex_t *pipe_contex)
 
 static int create_camera_node(pipe_contex_t *pipe_contex, uint32_t sensor_mode)
 {
-	camera_config_t *camera_config = NULL;
+	camera_config_t camera_config_copy = {0};
 	vp_sensor_config_t *sensor_config = NULL;
 	int32_t ret = 0;
 
 	sensor_config = pipe_contex->sensor_config;
-	camera_config = sensor_config->camera_config;
+	/* camera_config 全局共享，值拷贝避免多路覆盖 */
+	camera_config_copy = *sensor_config->camera_config;
+	/* 用各路独立探测到的 i2c 地址 */
+	if (pipe_contex->csi_config.sensor_addr != 0)
+		camera_config_copy.addr = pipe_contex->csi_config.sensor_addr;
 	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
-		camera_config->sensor_mode = sensor_mode;
+		camera_config_copy.sensor_mode = sensor_mode;
 		sensor_config->vin_node_attr->lpwm_attr.enable = 1;
 	}
-	ret = hbn_camera_create(camera_config, &pipe_contex->cam_fd);
+	ret = hbn_camera_create(&camera_config_copy, &pipe_contex->cam_fd);
 	ERR_CON_EQ(ret, 0);
 
 	return 0;

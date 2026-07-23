@@ -78,6 +78,7 @@ typedef struct mipi_properties {
 
 typedef struct vp_csi_config_s{
 	int index;
+	int sensor_addr;
 	int mclk_is_not_configed;
 }vp_csi_config_t;
 

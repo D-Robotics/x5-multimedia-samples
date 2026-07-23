@@ -283,8 +283,9 @@ void parse_config(pipe_contex_info_t *pipe_contex_info, const char *config, int 
 			}
 			pipe_contex_info->select_sensor_id = sensor_idx;
 			// active_mipi_host 的配置在create_vin_node函数中需要再配置一下
-			pipe_contex_info->active_mipi_host = pipe_contex_info->pipe_contex.sensor_config->vin_node_attr->cim_attr.mipi_rx;
-			used_mipi_host |= (1 << pipe_contex_info->pipe_contex.sensor_config->vin_node_attr->cim_attr.mipi_rx);
+			/* 用各路独立的 csi_config.index，避免被多路覆盖 */
+			pipe_contex_info->active_mipi_host = pipe_contex_info->pipe_contex.csi_config.index;
+			used_mipi_host |= (1 << pipe_contex_info->pipe_contex.csi_config.index);
 		} else {
 			fprintf(stderr, "Unknown key: %s\n", key_value[0]);
 			exit(0);
@@ -1076,21 +1077,24 @@ void lut3d_map_init()
 
 static int32_t create_camera_node(pipe_contex_t *pipe_contex)
 {
-	camera_config_t *camera_config = NULL;
-	vp_sensor_config_t *sensor_config = NULL;
+	camera_config_t camera_config_copy = {0};
+	vp_sensor_config_t *sensor_config = pipe_contex->sensor_config;
 
-	sensor_config = pipe_contex->sensor_config;
-	camera_config = sensor_config->camera_config;
+	/* camera_config 全局共享，值拷贝避免多路覆盖 */
+	camera_config_copy = *sensor_config->camera_config;
+	/* 用各路独立探测到的 i2c 地址 */
+	if (pipe_contex->csi_config.sensor_addr != 0)
+		camera_config_copy.addr = pipe_contex->csi_config.sensor_addr;
 	/* Debug settle */
 	if (settle >= 0 && settle <= 127) {
-		camera_config->mipi_cfg->rx_attr.settle = settle;
+		camera_config_copy.mipi_cfg->rx_attr.settle = settle;
 	}
 	if (sensor_mode >= NORMAL_M && sensor_mode < INVALID_MOD) {
-		camera_config->sensor_mode = sensor_mode;
+		camera_config_copy.sensor_mode = sensor_mode;
 		sensor_config->vin_node_attr->lpwm_attr.enable = 1;
 	}
 
-	FUNC_EQ(hbn_camera_create(camera_config, &pipe_contex->cam_fd), 0, return RET_FAILURE);
+	FUNC_EQ(hbn_camera_create(&camera_config_copy, &pipe_contex->cam_fd), 0, return RET_FAILURE);
 
 	return RET_SUCCESS;
 }
@@ -1115,6 +1119,8 @@ static int32_t create_vin_node(pipe_contex_t *pipe_contex, uint32_t pipelinemode
 	vin_ichn_attr = sensor_config->vin_ichn_attr;
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
 	vin_pdaf_ochn_attr = sensor_config->vin_pdaf_ochn_attr;
+	/* vin_node_attr 全局共享，用各路独立的 csi_config.index 回写避免被覆盖 */
+	vin_node_attr->cim_attr.mipi_rx = pipe_contex->csi_config.index;
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 	link_port = vin_node_attr->cim_attr.vc_index;

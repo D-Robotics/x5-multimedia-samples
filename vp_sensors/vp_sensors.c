@@ -591,7 +591,7 @@ static int32_t read_chip_id(vcon_propertie_t vcon_props, vp_sensor_config_t *sen
 
 // Function to check sensor register value
 static int32_t check_sensor_reg_value(vcon_propertie_t vcon_props,
-		vp_sensor_config_t *sensor_config) {
+		vp_sensor_config_t *sensor_config, uint32_t *out_addr) {
 	int i = 0;
 	// Read sensor chip ID register
 	int32_t chip_id = 0;
@@ -614,6 +614,8 @@ static int32_t check_sensor_reg_value(vcon_propertie_t vcon_props,
 			continue;
 		if (read_chip_id(vcon_props, sensor_config, addr, &chip_id) == 0) {
 			// Update sensor address to the one successfully read from
+			if (out_addr != NULL)
+				*out_addr = addr;
 			sensor_config->camera_config->addr = addr;
 			// Update mipi rx phy
 			// 修正配置中的 sensor 使用的 mipi rx phy
@@ -911,10 +913,10 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 						}
 					}
 					if(last_reset_config != NULL){
-						printf("INFO: [csi%d]reset sensor pin for sensor name:%s, because [reset: %d <-> %d] [freq enable: %lx <-> %lx] [freq: %d <-> %d]\n", 
-							i, vp_sensor_config_ptr->sensor_name, 
-							vp_sensor_config_ptr->camera_config->gpio_enable_bit, last_reset_config->camera_config->gpio_enable_bit, 
-							vp_sensor_config_ptr->vin_attr_ex->vin_attr_ex_mask, last_reset_config->vin_attr_ex->vin_attr_ex_mask, 
+						printf("INFO: [csi%d]reset sensor pin for sensor name:%s, because [reset: %d <-> %d] [freq enable: %lx <-> %lx] [freq: %d <-> %d]\n",
+							i, vp_sensor_config_ptr->sensor_name,
+							vp_sensor_config_ptr->camera_config->gpio_enable_bit, last_reset_config->camera_config->gpio_enable_bit,
+							vp_sensor_config_ptr->vin_attr_ex->vin_attr_ex_mask, last_reset_config->vin_attr_ex->vin_attr_ex_mask,
 							vp_sensor_config_ptr->vin_attr_ex->mclk_ex_attr.mclk_freq, last_reset_config->vin_attr_ex->mclk_ex_attr.mclk_freq);
 					}else{
 						printf("INFO: [csi%d]reset sensor pin for sensor name:%s, because last is null.\n", i, vp_sensor_config_ptr->sensor_name);
@@ -922,15 +924,16 @@ void vp_sensor_detect_structed(csi_list_info_t *csi_list_info)
 
 					last_reset_config = vp_sensor_config_ptr;
 				}
-			
-				int ret = check_sensor_reg_value(vcon_props_array[i], vp_sensor_config_ptr);
+
+				uint32_t sensor_addr = 0;
+				int ret = check_sensor_reg_value(vcon_props_array[i], vp_sensor_config_ptr, &sensor_addr);
 				if (ret == 0) {
 
 					printf("INFO: Support sensor name:%s on mipi rx csi %d, "
 							"i2c addr 0x%x, config_file:%s\n",
 						vp_sensor_config_ptr->sensor_name,
 						vcon_props_array[i].rx_phy[1],
-						vp_sensor_config_ptr->camera_config->addr,
+						sensor_addr,
 						vp_sensor_config_ptr->config_file);
 
 					csi_info_tmp.index = i;
@@ -1011,14 +1014,16 @@ int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int u
 			}
 
 			// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
-			ret = check_sensor_reg_value(vcon_props_array[i], sensor_config);
+			uint32_t sensor_addr = 0;
+			ret = check_sensor_reg_value(vcon_props_array[i], sensor_config, &sensor_addr);
 			if (ret == 0) {
 				csi_config->index = i;
+				csi_config->sensor_addr = sensor_addr;
 				csi_config->mclk_is_not_configed = mclk_is_not_configed;
 				// 检测到 sensor，保存 sensor 信息
 				printf("INFO: Found sensor_name:%s on mipi rx csi %d, i2c addr 0x%x, config_file:%s\n",
 					sensor_config->sensor_name, vcon_props_array[i].rx_phy[1],
-					sensor_config->camera_config->addr, sensor_config->config_file);
+					sensor_addr, sensor_config->config_file);
 				break;
 			}
 		}
@@ -1078,15 +1083,17 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 			}
 
 			// 从指定的vcon关联的i2c bus上读取 vp_sensor_config_list 中指定的 chip_id_reg 对应的寄存器值
-			ret = check_sensor_reg_value(vcon_props_array[i], sensor_config);
+			uint32_t sensor_addr = 0;
+			ret = check_sensor_reg_value(vcon_props_array[i], sensor_config, &sensor_addr);
 			if (ret == 0) {
 				csi_config->index = i;
+				csi_config->sensor_addr = sensor_addr;
 				csi_config->mclk_is_not_configed = mclk_is_not_configed;
 				// sensor_config->csi_index = vcon_props_array[i].rx_phy[1];
 				// 检测到 sensor，保存 sensor 信息
 				printf("INFO: Found sensor_name:%s on mipi rx csi %d, i2c addr 0x%x, config_file:%s\n",
 					sensor_config->sensor_name, vcon_props_array[i].rx_phy[1],
-					sensor_config->camera_config->addr, sensor_config->config_file);
+					sensor_addr, sensor_config->config_file);
 
 				break;
 			}

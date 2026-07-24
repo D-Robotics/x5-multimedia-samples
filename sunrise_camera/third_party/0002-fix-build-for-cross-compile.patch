@@ -1,0 +1,65 @@
+From bf5b3bfc529f8dca4a5a4d5596867f8933cee612 Mon Sep 17 00:00:00 2001
+From: "lei01.song" <lei01.song@d-robotics.cc>
+Date: Wed, 22 Jul 2026 11:07:14 +0800
+Subject: [PATCH] fix(build): cross-compile wepoll.c and jsoncpp header
+ conflicts
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+交叉编译 aarch64 Linux 时 ZL 构建报两个错:
+
+1) wepoll.c: windows.h 缺失
+   主仓库 3rdpart/CMakeLists.txt 用 file(GLOB) 收集 ZLToolKit/src/*/*.c(含
+   win32/wepoll.c), 原仅 if(NOT WIN32) 移除 win32/getopt.c, 但交叉编译时
+   CMake 误判 WIN32=ON 导致未移除, wepoll.c(Windows 专用 epoll 模拟)被编译
+   报 windows.h 缺失。无条件 list(REMOVE_ITEM) 移除 win32/wepoll.c 与 getopt.c
+   (路径须含 src/, 与 GLOB 收集一致)。
+
+2) json_value.cpp: findNull no declaration matches
+   toolchain 全局 include_directories 把 sysroot(out/deploy/system) 旧版
+   jsoncpp 头(无 findNull) 提前于 ZL 自带版本。target_include_directories
+   加 BEFORE 让 ZL 自带 jsoncpp 头优先。
+
+Signed-off-by: chengyu.he <chengyu.he@horizon.cc>
+---
+ 3rdpart/CMakeLists.txt | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/3rdpart/CMakeLists.txt b/3rdpart/CMakeLists.txt
+index f55fc6c7..e6f1ae80 100644
+--- a/3rdpart/CMakeLists.txt
++++ b/3rdpart/CMakeLists.txt
+@@ -33,10 +33,14 @@ add_library(jsoncpp STATIC ${JSONCPP_SRC_LIST})
+ target_compile_options(jsoncpp
+   PRIVATE ${COMPILE_OPTIONS_DEFAULT})
+ target_include_directories(jsoncpp
++  BEFORE
+   PRIVATE
+     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/jsoncpp/include"
+   PUBLIC
+     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/jsoncpp/include")
++# [X5] 交叉编译 toolchain 全局 include_directories 把 sysroot(out/deploy/system) 的旧版 jsoncpp
++# 头文件(json/value.h, 无 findNull) 提前于 ZL 自带版本, 导致 json_value.cpp 定义 findNull 时
++# "no declaration matches"。BEFORE 让 ZL 自带 jsoncpp 头优先。
+
+ update_cached_list(MK_LINK_LIBRARIES jsoncpp)
+
+@@ -197,6 +201,14 @@ else()
+     _CRT_SECURE_NO_WARNINGS _WINSOCK_DEPRECATED_NO_WARNINGS)
+ endif()
+
++# [X5] 交叉编译 aarch64 Linux 时 CMake 误判 WIN32=ON，导致上面 NOT WIN32 分支未执行，
++# win32/wepoll.c(Windows 专用 epoll 模拟) 与 getopt.c 未被移除，编译报 windows.h 缺失。
++# 此处无条件再移除一次，确保 Linux 构建不编译 win32 下的文件。
++# 注意: file(GLOB) 收集路径含 src/ (ToolKit_ROOT/src/win32/xxx.c)，REMOVE_ITEM 路径须一致。
++list(REMOVE_ITEM ToolKit_SRC_LIST
++  ${ToolKit_ROOT}/src/win32/wepoll.c
++  ${ToolKit_ROOT}/src/win32/getopt.c)
++
+ # 添加库
+ add_library(zltoolkit STATIC ${ToolKit_SRC_LIST})
+ add_library(ZLMediaKit::ToolKit ALIAS zltoolkit)
+--
+2.34.1
+

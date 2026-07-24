@@ -156,17 +156,19 @@ static void *get_decode_and_vse_process_thread_func(void *ptr) {
 			continue;
 		}
 
-		//构造 hbn_vnode_image_t， 解码器输出的是 common_buffer_t, 所以这里使用内存拷贝的方式
+		//解码器输出的是 common_buffer_t, 按其平面布局拷贝/交织到 NV12 的 src_img。
 		media_codec_buffer_t*decode_frame_buffer = (media_codec_buffer_t *)decode_frame.frame_buffer;
-		memcpy((char *)(src_img.buffer.virt_addr[0]),
-			decode_frame_buffer->vframe_buf.vir_ptr[0],
-			decode_frame_buffer->vframe_buf.width * decode_frame_buffer->vframe_buf.height);
-		memcpy((char *)(src_img.buffer.virt_addr[1]),
-			decode_frame_buffer->vframe_buf.vir_ptr[1],
-			decode_frame_buffer->vframe_buf.width * decode_frame_buffer->vframe_buf.height / 2);
-		src_img.info.tv.tv_sec = decode_frame_buffer->vframe_buf.pts / 1000000;
-		src_img.info.tv.tv_usec = decode_frame_buffer->vframe_buf.pts % 1000000;
-		src_img.info.timestamps = decode_frame_buffer->vframe_buf.pts;
+		mc_video_frame_buffer_info_t *vf = &decode_frame_buffer->vframe_buf;
+
+		uint32_t dst_w = (uint32_t)vpp_box->vp_vflow_contex.vse_config.vse_ichn_attr.width;
+		uint32_t dst_h = (uint32_t)vpp_box->vp_vflow_contex.vse_config.vse_ichn_attr.height;
+		if (vp_codec_convert_frame_to_nv12(&src_img, vf, dst_w, dst_h) != 0) {
+			vp_codec_release_output(&vpp_box->m_decode_context, &decode_frame);
+			continue;
+		}
+		src_img.info.tv.tv_sec = vf->pts / 1000000;
+		src_img.info.tv.tv_usec = vf->pts % 1000000;
+		src_img.info.timestamps = vf->pts;
 
 		ret = vp_vse_send_frame(&vpp_box->vp_vflow_contex, &src_img);
 		if (ret != 0) {
@@ -468,7 +470,8 @@ int32_t vpp_box_decode_param_get(solution_cfg_t* solution_cfg, solution_decode_p
 			param_single->codec_type = "h264";
 		}else if(cfg_box_vpp->decode_type == MEDIA_CODEC_ID_H265){
 			param_single->codec_type = "h265";
-		}else if(cfg_box_vpp->decode_type == MEDIA_CODEC_ID_JPEG){
+		}else if(cfg_box_vpp->decode_type == MEDIA_CODEC_ID_JPEG
+			|| cfg_box_vpp->decode_type == MEDIA_CODEC_ID_MJPEG){
 			param_single->codec_type = "jpeg";
 		}else{
 			SC_LOGI("%d recv unsupport codec type %d, so exit.", cfg_box_vpp->decode_type);
@@ -614,7 +617,7 @@ int32_t vpp_box_uninit(void)
 				SC_LOGE("bpu_wrap_model_init failed");
 				return -1;
 			}
-		}	
+		}
 	}
 	hb_mem_module_close();
 	vp_print_debug_infos();
@@ -726,20 +729,19 @@ int32_t vpp_box_stop(void)
 		if (strlen(g_vpp_box[i].m_stream_path) == 0)
 			continue;
 
-		// 线程: 读取VSE 送入编码器
+		mThreadStop(&g_vpp_box[i].m_vdec_thread);
+		mThreadStop(&g_vpp_box[i].m_vflow_thread);
 		for(int j = 0; j< VPP_STEAM_COUNT; j++){
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
 			p_vpp_codec_ctx->m_venc_thread.pvThreadData = (void*)p_vpp_codec_ctx;
 			mThreadStop(&p_vpp_codec_ctx->m_venc_thread);
 		}
-		mThreadStop(&g_vpp_box[i].m_vflow_thread);
-		mThreadStop(&g_vpp_box[i].m_vdec_thread);
 	}
 
 	for (i = 0; i < VPP_BOX_MAX_CHANNELS; i++) {
 		if (strlen(g_vpp_box[i].m_stream_path) == 0)
 			continue;
-		
+
 		for(int j = 0; j< VPP_STEAM_COUNT; j++){
 			vpp_codec_ctx_t *p_vpp_codec_ctx = &g_vpp_box[i].vpp_codec_ctxs[j];
 			ret = vp_codec_stop(&p_vpp_codec_ctx->m_encode_context);
@@ -822,20 +824,24 @@ int32_t vpp_box_param_get(SOLUTION_PARAM_E type, char* val, uint32_t* length)
 				SC_LOGE("box solutions channel %d is not enable, can't get encode param .", param->channel);
 				return -1;
 			}
-			
+
 			enc_params = &p_vpp_codec_ctx->m_encode_context.video_enc_params;
 			param->enable = 1;
 			param->width = enc_params->width;
 			param->height = enc_params->height;
 			param->stream_buf_size = enc_params->bitstream_buf_size;
 			if (p_vpp_codec_ctx->m_encode_context.codec_id == MEDIA_CODEC_ID_H264) {
-				param->type = 96;
+				param->type = SOLUTION_VENC_TYPE_H264;
 				param->bitrate = enc_params->rc_params.h264_cbr_params.bit_rate;
 				param->framerate = enc_params->rc_params.h264_cbr_params.frame_rate;
 			} else if (p_vpp_codec_ctx->m_encode_context.codec_id == MEDIA_CODEC_ID_H265) {
-				param->type = 265;
+				param->type = SOLUTION_VENC_TYPE_H265;
 				param->bitrate = enc_params->rc_params.h265_cbr_params.bit_rate;
 				param->framerate = enc_params->rc_params.h265_cbr_params.frame_rate;
+			} else if (p_vpp_codec_ctx->m_encode_context.codec_id == MEDIA_CODEC_ID_MJPEG) {
+				param->type = SOLUTION_VENC_TYPE_MJPEG;
+				param->bitrate = 0;
+				param->framerate = enc_params->rc_params.mjpeg_fixqp_params.frame_rate;
 			} else {
 				SC_LOGE("unsupport codec_id %d, so exit.", p_vpp_codec_ctx->m_encode_context.codec_id);
 				exit(-1);

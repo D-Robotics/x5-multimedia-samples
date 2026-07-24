@@ -1,0 +1,39 @@
+From 0e2847c9a7721cd01fdfd2f71a7df2a9485c266b Mon Sep 17 00:00:00 2001
+From: "lei01.song" <lei01.song@d-robotics.cc>
+Date: Wed, 22 Jul 2026 11:06:56 +0800
+Subject: [PATCH] fix(build): exclude win32/wepoll.c for Linux cross-compile
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+交叉编译 aarch64 Linux 时，某些 CMake 版本误将 WIN32 判为 ON，
+导致 ZLToolKit CMakeLists 未能按 NOT WIN32 条件排除 wepoll.c，
+编译 win32/wepoll.c 时报 windows.h 缺失。
+
+wepoll.c 为 Windows 专用 epoll 模拟，Linux 目标绝不需要。
+在原有条件排除之外，无条件再排除一次 win32/wepoll.c。
+
+Signed-off-by: chengyu.he <chengyu.he@horizon.cc>
+---
+ CMakeLists.txt | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 169cece..7de35df 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -94,6 +94,11 @@ else ()
+     update_cached_list(TK_INC_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/src/win32/)
+ endif ()
+
++# [X5] 交叉编译 Linux 目标绝不需要 wepoll.c(Windows 专用 epoll 模拟)。
++# 某些 CMake 版本交叉编译时 WIN32 误判为 ON 导致 wepoll.c 未被上述条件排除、编译报 windows.h 缺失。
++# 此处无条件再排除一次，确保 Linux 构建不编译 win32/wepoll.c。
++list(FILTER SRC_LIST EXCLUDE REGEX "win32/wepoll.c$")
++
+ #非苹果平台移除.mm类型的文件
+ if (NOT APPLE)
+     list(FILTER SRC_LIST EXCLUDE REGEX "Socket_ios.mm$")
+--
+2.34.1
+

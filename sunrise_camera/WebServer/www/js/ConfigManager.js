@@ -1,5 +1,8 @@
 
 
+// encode_type 枚举：0=H264, 1=H265, 2=MJPEG
+const ENCODE_TYPE = { H264: 0, H265: 1, MJPEG: 2 };
+
 const configFieldInfoTable = {
 	"pipeline_count": {
 		chinese_name: "视频通路数",
@@ -76,7 +79,7 @@ const configFieldInfoTable = {
 		type: "int",
 		value: 30 // Placeholder for encode_frame_rate value
 	},
-	
+
 	"display_status": {
 		chinese_name: "使能显示",
 		type: "int",
@@ -93,7 +96,7 @@ const configFieldInfoTable = {
 		options: "display_resolution_list",
 		value_is_index: false
 	},
-	"display_data_source":{
+	"display_data_source": {
 		chinese_name: "Camera接口",
 		type: "stringlist",
 		options: "CSI_X",
@@ -105,22 +108,22 @@ class ConfigManager {
 		this.serverConfig = {};
 		this.userCallbacks = {}; // 存储用户定义的回调函数
 		this.configFieldInfoTable = configFieldInfoTable;
-		this.isConfigVisibility= 0;
+		this.isConfigVisibility = 0;
 	}
 
-	init(callbacks = {}){
+	init(callbacks = {}) {
 		this.userCallbacks = callbacks;
 	}
 
-	updateConfig(config){
+	updateConfig(config) {
 		this.serverConfig = config;
 	}
-	getConfigWithJson(){
+	getConfigWithJson() {
 		return JSON.stringify(this.serverConfig);
 	}
-	getStreamCodecType(){
+	getStreamCodecType() {
 		let codec_types = [];
-		const { solution_name, cam_solution, box_solution} = this.serverConfig;
+		const { solution_name, cam_solution, box_solution } = this.serverConfig;
 		if (solution_name === 'cam_solution') {
 			for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
 				const cam_vpp = cam_solution.cam_vpp[i];
@@ -143,7 +146,7 @@ class ConfigManager {
 				}
 				codec_types.push(codec_type_string);
 			}
-		}else{
+		} else {
 			console.warn(`not support soulution name [${solution_name}]`);
 			return [];
 		}
@@ -184,10 +187,10 @@ class ConfigManager {
 		this.bindConfigureDescribeEvent()
 
 
-		if(this.userCallbacks.onChange){
+		if (this.userCallbacks.onChange) {
 			let stream_count = this._streamCount();
 			this.userCallbacks.onChange(stream_count, isFourceUpdateWindow); //更新视频区域的布局
-		}else{
+		} else {
 			console.log("not listen html change event.");
 		}
 		console.log("html updated.");
@@ -252,7 +255,7 @@ class ConfigManager {
 
 		for (let i = 0; i < pipeline_count; i++) {
 			html += `<div class="channel-header"><strong> 第${i}路的码流链接 : </strong></div>`;
-			
+
 			// 主码流（缩进）
 			html += `<div class="stream-url">`;
 			html += `<span class="stream-type">主码流：</span>`;
@@ -273,7 +276,7 @@ class ConfigManager {
 	}
 
 	// ==================== [2. 选择应用方案] ====================
-	generateSelectAppSolutionHTML(solutions_config){
+	generateSelectAppSolutionHTML(solutions_config) {
 		const { solution_name } = solutions_config;
 
 		let html = `<h2>选择应用方案</h2>
@@ -291,7 +294,7 @@ class ConfigManager {
 		</form>`;
 		return html;
 	}
-	buildSelectAppSolutionEvents(){
+	buildSelectAppSolutionEvents() {
 		const camSolutionInfo = document.getElementById('info-cam');
 		if (camSolutionInfo) {
 			camSolutionInfo.addEventListener('click', (e) => {
@@ -319,8 +322,8 @@ class ConfigManager {
 	_generateDisplayModuleHtml(cam_solution, display_dev_list, cam_vpp_list) {
 		const display_vpp_list = cam_solution.display_vpp || [];
 		let displayHtml = '';
-		displayHtml += `<div style="margin-top: 20px;"><ul>`; 
-		displayHtml += `<li style="display: inline-block;"><strong>显示器接口:</strong><ul>`; 
+		displayHtml += `<div style="margin-top: 20px;"><ul>`;
+		displayHtml += `<li style="display: inline-block;"><strong>显示器接口:</strong><ul>`;
 
 		// 遍历display_dev_list（数组），生成每个显示器参数
 		display_dev_list.forEach((display_dev, devIndex) => {
@@ -337,7 +340,7 @@ class ConfigManager {
 			// 选项1：使能显示器
 			const displayStatusField = this.configFieldInfoTable['display_status'];
 			const displayStatusLabel = displayStatusField ? `${displayStatusField.chinese_name}（status）` : 'display_status';
-			displayHtml += `<li><span>${displayStatusLabel}</span>：`; 
+			displayHtml += `<li><span>${displayStatusLabel}</span>：`;
 			if (display_is_valid === 0) {
 				displayHtml += `<input type="text" id="display_${devIndex}_status" value="invalid" readonly class="form-control-sm">`;
 			} else {
@@ -386,7 +389,7 @@ class ConfigManager {
 				const validCamVppList = cam_vpp_list.filter(cam => cam.is_enable === 1 && cam.is_valid === 1);
 				if (validCamVppList.length === 0) {
 					displayHtml += `<input type="text" id="display_${devIndex}_source" value="无可用数据源" readonly class="form-control-sm">`;
-				} else{
+				} else {
 					let dataSourceCSI = '';
 					if (display_vpp.data_source >= 0) { // 有效data_source（-1为无效）
 						dataSourceCSI = `CSI_${display_vpp.data_source}`;
@@ -408,7 +411,7 @@ class ConfigManager {
 
 					// 生成下拉框标签
 					displayHtml += `<select id="${selectId}" class="form-control-sm">`;
-					
+
 					// 遍历有效CSI列表，生成选项（根据最终选中值匹配）
 					validCamVppList.forEach(cam => {
 						const csiOption = `CSI_${cam.csi_index}`;
@@ -416,7 +419,7 @@ class ConfigManager {
 
 						displayHtml += `<option value="${csiOption}" ${isSelected ? 'selected' : ''}>${csiOption}</option>`;
 					});
-					
+
 					// 闭合下拉框标签
 					displayHtml += `</select>`;
 				}
@@ -475,20 +478,20 @@ class ConfigManager {
 					});
 					html += `</select>`;
 					html += `</li>`;
-				}else if((itemKey === "csi_index") || (itemKey === "is_enable") || (itemKey === "is_valid") ||  (itemKey === "mclk_is_not_configed") ){
+				} else if ((itemKey === "csi_index") || (itemKey === "is_enable") || (itemKey === "is_valid") || (itemKey === "mclk_is_not_configed")) {
 					continue;
-				}else if(itemKey === "gdc_status"){
-					if(cam_vpp.gdc_status === -1){
+				} else if (itemKey === "gdc_status") {
+					if (cam_vpp.gdc_status === -1) {
 						const textValue = "invalid";
 						const field = this.configFieldInfoTable[itemKey];
 						const label = ` ${field.chinese_name}（${itemKey}）`;
 						html += `<li><span>${label}</span>：`;
 						html += `<input type="text" id="${uniqueId}" value=" ${textValue}">`;
 						html += `</li>`;
-					}else{
+					} else {
 						html += this._renderLabelName(this.serverConfig, itemKey, uniqueId, cam_vpp);
 					}
-				}else{
+				} else {
 					html += this._renderLabelName(this.serverConfig, itemKey, uniqueId, cam_vpp);
 				}
 			}
@@ -509,13 +512,18 @@ class ConfigManager {
 			document.getElementById(`checkbox${i}`).addEventListener("change", this._createCheckboxChangeHandler(i));
 		}
 
-		// for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
-		//	 const cam_vpp = cam_vpp_list[i];
-		//	 if (cam_vpp.is_enable === 0) continue;
+		// encode_type change: 选中 MJPEG 时禁用码率选择
+		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
+			const cam_vpp = cam_vpp_list[i];
+			if (cam_vpp.is_enable === 0) continue;
 
-		//	 const uniqueId = `item_${i}_encode_type`;
-		//	 document.getElementById(uniqueId).addEventListener("change", this._encodeTypeCamSolutionChangeHandler(i));
-		// }
+			const uniqueId = `item_${i}_encode_type`;
+			const el = document.getElementById(uniqueId);
+			if (el) {
+				el.addEventListener("change", this._encodeTypeCamSolutionChangeHandler(i));
+			}
+		}
+		this._updateBitrateDisabledState(cam_solution.cam_vpp);
 	}
 	// ==================== [4. 智能分析盒]			   ====================
 	generateBoxSolutionHtml(box_solution) {
@@ -549,14 +557,18 @@ class ConfigManager {
 			this.serverConfig["box_solution"]["pipeline_count"] = selectedPipelineCount;
 			this.buildHTMLFromConfig(false);
 		});
-		//意义：点击选项后，最左侧的当前方案配置栏 会在提交前更新
-		// for (let i = 0; i < box_solution.pipeline_count; i++) {
-		//	 const uniqueId = `item_${i}_encode_type`;
-		//	 document.getElementById(uniqueId).addEventListener("change", this._encodeTypeBoxSolutionChangeHandler(i));
-		// }
+		// encode_type change: 选中 MJPEG 时禁用码率选择
+		for (let i = 0; i < box_solution.pipeline_count; i++) {
+			const uniqueId = `item_${i}_encode_type`;
+			const el = document.getElementById(uniqueId);
+			if (el) {
+				el.addEventListener("change", this._encodeTypeBoxSolutionChangeHandler(i));
+			}
+		}
+		this._updateBitrateDisabledState(box_solution.box_vpp);
 	}
 	// ==================== [5. 当前方案配置]			   ====================
-	generateConfigureDescribeHTML(solution){
+	generateConfigureDescribeHTML(solution) {
 		const solution_status = document.getElementById("solution_status");
 		if (!solution_status) {
 			console.error("状态显示元素未找到！");
@@ -667,14 +679,14 @@ class ConfigManager {
 		}
 	}
 
-	updateCamSolution(cam_solution){
+	updateCamSolution(cam_solution) {
 		// 更新 复选框导致的更新
 		// 忽略,在复选框的事件处理函数中已经更新
 		// 更新 cam_vpp
 		const cam_vpp_list = cam_solution.cam_vpp
 		for (let i = 0; i < cam_solution.max_pipeline_count; i++) {
 			const cam_vpp = cam_vpp_list[i];
-			if(cam_vpp.is_valid === 0){
+			if (cam_vpp.is_valid === 0) {
 				continue;
 			}
 			if (cam_vpp.is_enable === 0) {
@@ -684,16 +696,16 @@ class ConfigManager {
 			// console.log("index:" + i);
 
 			for (const itemKey in cam_solution["cam_vpp"][i]) {
-				if(itemKey === "csi_index")
+				if (itemKey === "csi_index")
 					continue;
-				if(itemKey === "is_enable")
+				if (itemKey === "is_enable")
 					continue;
-				if(itemKey === "is_valid")
+				if (itemKey === "is_valid")
 					continue;
-				if(itemKey === "mclk_is_not_configed")
+				if (itemKey === "mclk_is_not_configed")
 					continue;
 
-				if((itemKey === 'gdc_status') && (cam_solution["cam_vpp"][i][itemKey] === -1)){
+				if ((itemKey === 'gdc_status') && (cam_solution["cam_vpp"][i][itemKey] === -1)) {
 					continue;
 				}
 
@@ -721,12 +733,12 @@ class ConfigManager {
 						// 对于 encode_type 或 decode_type，读取下拉选择框的编号值
 						if (itemKey === 'encode_type' || itemKey === 'decode_type') {
 							cam_solution["cam_vpp"][i][itemKey] = parseInt(selectedIndex);
-						}else if (itemKey === 'gdc_status'){
-							if(cam_solution["cam_vpp"][i][itemKey] === -1){
-							}else{
+						} else if (itemKey === 'gdc_status') {
+							if (cam_solution["cam_vpp"][i][itemKey] === -1) {
+							} else {
 								cam_solution["cam_vpp"][i][itemKey] = parseInt(selectedIndex);
 							}
-						}else {
+						} else {
 							// 对于其他字段，直接更新为选择的文本值
 							cam_solution["cam_vpp"][i][itemKey] = selectedValue;
 						}
@@ -736,7 +748,7 @@ class ConfigManager {
 		}
 		this.updateDisplayVpp(cam_solution);
 	}
-		
+
 	updateDisplayVpp(cam_solution) {
 		const display_vpp_list = cam_solution.display_vpp || [];
 		const displayDevCount = display_vpp_list.length;
@@ -803,7 +815,7 @@ class ConfigManager {
 			cam_solution.display_vpp = display_vpp_list;
 		}
 	}
-	updateBoxSolution(box_solution){
+	updateBoxSolution(box_solution) {
 		// 更新 pipeline_count
 		const pipelineCountSelect = document.getElementById("item_box_pipeline_count");
 		box_solution["pipeline_count"] = parseInt(pipelineCountSelect.value);
@@ -846,11 +858,11 @@ class ConfigManager {
 	}
 
 	/* ------------------------ 回调函数  ------------------------------ */
-	onToggleVisibility(){
+	onToggleVisibility() {
 		var solution_configs = document.getElementById("solution_configs");
-		if (this.isConfigVisibility == 0){
+		if (this.isConfigVisibility == 0) {
 			solution_configs.style.display = "table";
-		}else{
+		} else {
 			solution_configs.style.display = "none";
 		}
 		this.isConfigVisibility = this.isConfigVisibility ? 0 : 1;
@@ -919,6 +931,29 @@ class ConfigManager {
 	}
 
 	/**
+	 * 根据编码类型禁用/启用码率选择框
+	 * MJPEG 是固定量化(FIXQP)模式，码率无效，禁用选择
+	 */
+	_updateBitrateDisabledState(vpp_list) {
+		for (let i = 0; i < vpp_list.length; i++) {
+			const vpp = vpp_list[i];
+			if (!vpp || vpp.is_valid === 0 || vpp.is_enable === 0) continue;
+
+			const bitrateId = `item_${i}_encode_bitrate`;
+			const bitrateEl = document.getElementById(bitrateId);
+			if (!bitrateEl) continue;
+
+			const isMjpeg = vpp.encode_type === ENCODE_TYPE.MJPEG;
+			bitrateEl.disabled = isMjpeg;
+			if (isMjpeg) {
+				bitrateEl.style.opacity = '0.5';
+			} else {
+				bitrateEl.style.opacity = '1';
+			}
+		}
+	}
+
+	/**
 	 * 渲染标签名称和对应的输入控件
 	 * @param {string} itemKey - 配置项键名
 	 * @param {string} uniqueId - 控件的唯一 ID
@@ -948,7 +983,7 @@ class ConfigManager {
 					html += `<input type="text" id="${uniqueId}" value="${vpp_config[itemKey]}">`;
 			}
 		} else {
-			console.log("uniqueId:" + uniqueId + " " + "itemKey: " + itemKey );
+			console.log("uniqueId:" + uniqueId + " " + "itemKey: " + itemKey);
 			html += `<input type="text" id="${uniqueId}" value="${vpp_config[itemKey]}">`;
 		}
 
@@ -1018,18 +1053,18 @@ class ConfigManager {
 
 	_getStringDecodeType(encode_type) {
 		const codecMap = {
-			0: "h264",
-			1: "h265",
-			2: "mjpeg",
+			[ENCODE_TYPE.H264]: "h264",
+			[ENCODE_TYPE.H265]: "h265",
+			[ENCODE_TYPE.MJPEG]: "mjpeg",
 		};
 		return codecMap[encode_type] || "unsupport";
 	}
 
 	_getIntDecodeType(decode_type_string) {
 		const decodeTypeMap = new Map([
-			["H264", 0],
-			["H265", 1],
-			["MJPEG", 2],
+			["H264", ENCODE_TYPE.H264],
+			["H265", ENCODE_TYPE.H265],
+			["MJPEG", ENCODE_TYPE.MJPEG],
 		]);
 		const decodeType = decodeTypeMap.get(decode_type_string);
 		if (decodeType === undefined) {
@@ -1107,7 +1142,7 @@ class ConfigManager {
 				if (cam_vpp.is_enable === 0) {
 					continue;
 				}
-				if(cam_vpp.is_valid === 0){
+				if (cam_vpp.is_valid === 0) {
 					console.error('channel:' + i + "is not valid, but cam app is enable:" + cam_vpp.sensor);
 					continue;
 				}

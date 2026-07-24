@@ -126,8 +126,10 @@ typedef struct{
 typedef enum{
 	ION_H264_ENCODEC,
 	ION_H265_ENCODEC,
+	ION_MJPEG_ENCODEC,
 	ION_H264_DECODEC,
 	ION_H265_DECODEC,
+	ION_MJPEG_DECODEC,
 	ION_CODEC_TYPE_SENTRY,
 }vp_ion_codec_type_t;
 typedef struct {

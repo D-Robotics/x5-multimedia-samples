@@ -68,6 +68,10 @@ int32_t vp_codec_set_input(media_codec_context_t *context, ImageFrame *frame, in
 int32_t vp_codec_get_output(media_codec_context_t *context, ImageFrame *frame, int32_t timeout);
 int32_t vp_codec_release_output(media_codec_context_t *context, ImageFrame *frame);
 void vp_codec_get_user_buffer_param(mc_video_codec_enc_params_t *enc_param, int *buffer_region_size, int *buffer_item_count);
+
+// 将解码输出帧(NV12 两平面或 YUV420P 三平面)转拷贝/交织到 dst_w x dst_h 的 NV12 buffer; 返回 0 成功, <0 帧非法需跳过并 release。
+int32_t vp_codec_convert_frame_to_nv12(hbn_vnode_image_t *dst,
+	const mc_video_frame_buffer_info_t *vf, uint32_t dst_w, uint32_t dst_h);
 void *vp_decode_work_func(void *param);
 
 void vp_codec_print_media_codec_output_buffer_info(ImageFrame *frame);

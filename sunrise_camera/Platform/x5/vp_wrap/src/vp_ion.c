@@ -411,8 +411,13 @@ static int vp_ion_vpu_calculator(vp_ion_vpu_param_t *param){
 		{1920, 1080, 16461824, 3112960 * 2},
 		{3840, 2160, 60968960, 12443648 * 2}
 	};
-	if((param->type == ION_H264_DECODEC) || (param->type == ION_H265_DECODEC)){
+	if((param->type == ION_H264_DECODEC) || (param->type == ION_H265_DECODEC) || (param->type == ION_MJPEG_DECODEC)){
 		SC_LOGE("vp ion calculator not support decodec for %d.", param->type);
+		return 0;
+	}
+
+	if(param->type == ION_MJPEG_ENCODEC){
+		// MJPEG 走 JPU（ION_CLIENT_JPU）而非 VPU，不占 vpu-0 堆；JPU 用量待后续补充估算
 		return 0;
 	}
 

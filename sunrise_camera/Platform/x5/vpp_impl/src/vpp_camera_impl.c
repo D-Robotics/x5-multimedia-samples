@@ -1043,6 +1043,8 @@ int32_t vpp_init_ion_pipeline_param_from_vflow_contex(vp_vflow_contex_t *vp_vflo
 		vpu->type = ION_H264_ENCODEC;
 	} else if (codec_user_config->codec_type == MEDIA_CODEC_ID_H265) {
 		vpu->type = ION_H265_ENCODEC;
+	} else if (codec_user_config->codec_type == MEDIA_CODEC_ID_MJPEG) {
+		vpu->type = ION_MJPEG_ENCODEC;
 	} else {
 		SC_LOGE("not support codec type :%d", codec_user_config->codec_type);
 	}
@@ -1555,13 +1557,17 @@ int32_t vpp_camera_param_get(SOLUTION_PARAM_E type, char *val, uint32_t *length)
 					param->height = enc_params->height;
 					param->stream_buf_size = enc_params->bitstream_buf_size;
 					if (p_vpp_codec_ctx->m_encode_context.codec_id == MEDIA_CODEC_ID_H264) {
-						param->type = 96;
+						param->type = SOLUTION_VENC_TYPE_H264;
 						param->bitrate = enc_params->rc_params.h264_cbr_params.bit_rate;
 						param->framerate = enc_params->rc_params.h264_cbr_params.frame_rate;
 					} else if (p_vpp_codec_ctx->m_encode_context.codec_id == MEDIA_CODEC_ID_H265) {
-						param->type = 265;
+						param->type = SOLUTION_VENC_TYPE_H265;
 						param->bitrate = enc_params->rc_params.h265_cbr_params.bit_rate;
 						param->framerate = enc_params->rc_params.h265_cbr_params.frame_rate;
+					} else if (p_vpp_codec_ctx->m_encode_context.codec_id == MEDIA_CODEC_ID_MJPEG) {
+						param->type = SOLUTION_VENC_TYPE_MJPEG;
+						param->bitrate = 0;
+						param->framerate = enc_params->rc_params.mjpeg_fixqp_params.frame_rate;
 					} else {
 						SC_LOGE("unsupport codec id %d.",
 							p_vpp_codec_ctx->m_encode_context.codec_id);

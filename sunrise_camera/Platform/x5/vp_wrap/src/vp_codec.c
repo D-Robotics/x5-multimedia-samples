@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <stdio.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -360,6 +361,10 @@ static int32_t get_rc_params(media_codec_context_t *context,
 		break;
 	case MC_AV_RC_MODE_H265QPMAP:
 		break;
+	case MC_AV_RC_MODE_MJPEGFIXQP:
+		rc_params->mjpeg_fixqp_params.frame_rate = 30;
+		rc_params->mjpeg_fixqp_params.quality_factor = 50;
+		break;
 	default:
 		ret = HB_MEDIA_ERR_INVALID_PARAMS;
 		break;
@@ -380,7 +385,15 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_user_
 	params->width = user_config->width;
 	params->height = user_config->height;
 	params->pix_fmt = MC_PIXEL_FORMAT_NV12;
-	params->bitstream_buf_size = (user_config->width * user_config->height * 3 / 2  + 0x3ff) & ~0x3ff;
+	if (user_config->codec_type == MEDIA_CODEC_ID_MJPEG ||
+		user_config->codec_type == MEDIA_CODEC_ID_JPEG) {
+		params->bitstream_buf_size = (user_config->width * user_config->height * 3 / 2  + 0xfff) & ~0xfff;
+		if (params->bitstream_buf_size < 8192) {
+			params->bitstream_buf_size = 8192;
+		}
+	} else {
+		params->bitstream_buf_size = (user_config->width * user_config->height * 3 / 2  + 0x3ff) & ~0x3ff;
+	}
 	SC_LOGD("params->bitstream_buf_size: %d", params->bitstream_buf_size);
 	params->frame_buf_count = 5;
 	params->external_frame_buf = user_config->input_buffer_is_extrenal;
@@ -426,6 +439,7 @@ int32_t vp_encode_config_param(media_codec_context_t *context, media_codec_user_
 		context->codec_id = MEDIA_CODEC_ID_MJPEG;
 		params->rc_params.mode = MC_AV_RC_MODE_MJPEGFIXQP;
 		get_rc_params(context, &params->rc_params);
+		params->rc_params.mjpeg_fixqp_params.frame_rate = user_config->frame_rate;
 		params->mjpeg_enc_config.restart_interval = user_config->width / 16;
 		break;
 	case MEDIA_CODEC_ID_JPEG:
@@ -449,7 +463,15 @@ int32_t vp_decode_config_param(media_codec_context_t *context, media_codec_id_t 
 	params = &context->video_dec_params;
 	params->feed_mode = MC_FEEDING_MODE_FRAME_SIZE;
 	params->pix_fmt = MC_PIXEL_FORMAT_NV12;
-	params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
+	if (codec_type == MEDIA_CODEC_ID_MJPEG ||
+		codec_type == MEDIA_CODEC_ID_JPEG) {
+		params->bitstream_buf_size = (width * height * 3 / 2  + 0xfff) & ~0xfff;
+		if (params->bitstream_buf_size < 8192) {
+			params->bitstream_buf_size = 8192;
+		}
+	} else {
+		params->bitstream_buf_size = (width * height * 3 / 2  + 0x3ff) & ~0x3ff;
+	}
 	params->bitstream_buf_count = 6;
 	params->frame_buf_count = 6;
 
@@ -587,10 +609,18 @@ int32_t vp_codec_restart(media_codec_context_t *context)
 	return 0;
 }
 void vp_codec_get_user_buffer_param(mc_video_codec_enc_params_t *enc_param, int *buffer_region_size, int *buffer_item_count){
-	int bitrate_byte = enc_param->rc_params.h264_cbr_params.bit_rate * 1024 / 8; //bit_rate单位是kbps
-	int frame_rate = enc_param->rc_params.h264_cbr_params.frame_rate;
+	int bitrate_byte;
+	int frame_rate;
 	int min_buffer_region_size = enc_param->bitstream_buf_size;
 	int min_buffer_item_count = 5;
+
+	if (enc_param->rc_params.mode == MC_AV_RC_MODE_MJPEGFIXQP) {
+		bitrate_byte = enc_param->bitstream_buf_size;
+		frame_rate = enc_param->rc_params.mjpeg_fixqp_params.frame_rate;
+	} else {
+		bitrate_byte = enc_param->rc_params.h264_cbr_params.bit_rate * 1024 / 8; //bit_rate单位是kbps
+		frame_rate = enc_param->rc_params.h264_cbr_params.frame_rate;
+	}
 
 	bitrate_byte = bitrate_byte + bitrate_byte / 5; // 添加余量
 	if(bitrate_byte < min_buffer_region_size){
@@ -964,6 +994,80 @@ int32_t vp_codec_release_output(media_codec_context_t *context, ImageFrame *fram
 	return ret;
 }
 
+int32_t vp_codec_convert_frame_to_nv12(hbn_vnode_image_t *dst,
+	const mc_video_frame_buffer_info_t *vf, uint32_t dst_w, uint32_t dst_h)
+{
+	if ((dst == NULL) || (vf == NULL) || (dst_w == 0) || (dst_h == 0)) {
+		SC_LOGE("invalid param: dst=%p vf=%p dst_w=%u dst_h=%u", dst, vf, dst_w, dst_h);
+		return -1;
+	}
+
+	uint32_t frame_w = (uint32_t)vf->width;
+	uint32_t frame_h = (uint32_t)vf->height;
+	// 目标 NV12 buffer 按 dst_w x dst_h 分配; JPU 解码输出高度会向上对齐到 16
+	// (如 1080 -> 1088), 故只要求 frame_w == dst_w 且 frame_h >= dst_h, 只拷 dst_h 行。
+	if (frame_w == 0 || frame_h == 0 || frame_w != dst_w || frame_h < dst_h) {
+		SC_LOGE("invalid decode frame %ux%u (dst %ux%u)", frame_w, frame_h, dst_w, dst_h);
+		return -1;
+	}
+	if (vf->vir_ptr[0] == NULL || vf->vir_ptr[1] == NULL) {
+		SC_LOGE("decode frame plane ptr NULL (pix_fmt=%d)", vf->pix_fmt);
+		return -1;
+	}
+
+	uint8_t *dst_y = (uint8_t *)dst->buffer.virt_addr[0];
+	uint8_t *dst_uv = (uint8_t *)dst->buffer.virt_addr[1];
+	uint32_t copy_h = dst_h;
+	uint32_t copy_uv_h = dst_h / 2;
+
+	uint32_t src_stride_y = (uint32_t)vf->stride;
+	if (src_stride_y < frame_w) src_stride_y = frame_w;
+	uint32_t dst_stride_y = (uint32_t)dst->buffer.stride;
+	if (dst_stride_y < dst_w) dst_stride_y = dst_w;
+	// NV12 的 UV 平面每行字节数与 Y 相同(每像素对 2 字节交织 CbCr)
+	uint32_t dst_stride_c = dst_stride_y;
+
+	if (vf->pix_fmt == MC_PIXEL_FORMAT_YUV420P) {
+		// MJPEG/JPEG 4:2:0 三平面: Y(strideY*h) + Cb(strideC*h/2) + Cr(strideC*h/2)
+		// 交织成 NV12 的 UV。JPU 分离平面下 Cb/Cr 每行字节数 = luma_stride/2。
+		if (vf->vir_ptr[2] == NULL) {
+			SC_LOGE("YUV420P frame missing Cr plane");
+			return -1;
+		}
+		uint32_t src_stride_c = (uint32_t)vf->vstride;
+		if (src_stride_c < frame_w / 2) src_stride_c = frame_w / 2;
+		uint8_t *cb = vf->vir_ptr[1];
+		uint8_t *cr = vf->vir_ptr[2];
+		for (uint32_t row = 0; row < copy_h; row++) {
+			memcpy(dst_y + row * dst_stride_y,
+				vf->vir_ptr[0] + row * src_stride_y, dst_w);
+		}
+		for (uint32_t row = 0; row < copy_uv_h; row++) {
+			uint8_t *src_cb = cb + row * src_stride_c;
+			uint8_t *src_cr = cr + row * src_stride_c;
+			uint8_t *d = dst_uv + row * dst_stride_c;
+			for (uint32_t col = 0; col < dst_w / 2; col++) {
+				d[col * 2]     = src_cb[col];
+				d[col * 2 + 1] = src_cr[col];
+			}
+		}
+	} else {
+		// H.264/H.265 NV12 两平面: Y(stride*h) + 交织UV(vstride*h/2)
+		uint32_t src_stride_c = (uint32_t)vf->vstride;
+		if (src_stride_c < frame_w) src_stride_c = frame_w;
+		for (uint32_t row = 0; row < copy_h; row++) {
+			memcpy(dst_y + row * dst_stride_y,
+				vf->vir_ptr[0] + row * src_stride_y, dst_w);
+		}
+		for (uint32_t row = 0; row < copy_uv_h; row++) {
+			memcpy(dst_uv + row * dst_stride_c,
+				vf->vir_ptr[1] + row * src_stride_c, dst_w);
+		}
+	}
+
+	return 0;
+}
+
 void *vp_decode_work_func(void *param)
 {
 	tsThread *privThread = (tsThread*)param;
@@ -1278,6 +1382,8 @@ const char *vp_codec_get_codec_type_string(int codec_type){
 			return "h264";
 		case MEDIA_CODEC_ID_H265:
 			return "h265";
+		case MEDIA_CODEC_ID_MJPEG:
+			return "mjpeg";
 		case MEDIA_CODEC_ID_JPEG:
 			return "jpeg";
 		default:

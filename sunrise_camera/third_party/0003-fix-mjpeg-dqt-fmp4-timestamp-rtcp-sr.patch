@@ -1,0 +1,76 @@
+From bf9f73992f4a0ed4d4f82a00037cb8904b9c45fb Mon Sep 17 00:00:00 2001
+From: "lei01.song" <lei01.song@d-robotics.cc>
+Date: Thu, 23 Jul 2026 15:02:22 +0800
+Subject: [PATCH] fix(mjpeg): DQT parse, fmp4 timestamp, RTCP SR for MJPEG
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+1) JPEGRtp.cpp: DQT 段跳跃修复
+   i += tables<<6 只跳 tables*64，少跳 marker+length+Pq/Tq，
+   导致量化值里 0xFF 被误判为 marker，漏掉后续 DQT。
+   改为按 DQT 段实际长度精确跳到下一个 marker。
+
+2) MP4Muxer.cpp: default case 关闭 stamp.revise
+   JPEG 走 default case 未关闭 stamp.revise，导致 fmp4 tfdt 是相对值，
+   和 BPU 算法结果的 wall-clock timestamp 对不上 → 算法框不显示。
+
+3) RtspSession.cpp: 去掉周期性 RTCP SR
+   只发初始 SR，去掉周期性 SR 避免 VLC 时钟跳变卡顿。
+
+Signed-off-by: chengyu.he <chengyu.he@horizon.cc>
+---
+ ext-codec/JPEGRtp.cpp    | 2 +-
+ src/Record/MP4Muxer.cpp  | 6 +++++-
+ src/Rtsp/RtspSession.cpp | 4 ++--
+ 3 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/ext-codec/JPEGRtp.cpp b/ext-codec/JPEGRtp.cpp
+index 648d2d02..d5ae2055 100644
+--- a/ext-codec/JPEGRtp.cpp
++++ b/ext-codec/JPEGRtp.cpp
+@@ -634,7 +634,7 @@ void JPEGRtpEncoder::rtpSendJpeg(const uint8_t *buf, int size, uint64_t pts, uin
+             nb_qtables += tables;
+             // 大致忽略DQT/qtable所占字节数，提高搜寻速度  [AUTO-TRANSLATED:63423997]
+             // Roughly ignore the number of bytes occupied by DQT/qtable to improve search speed
+-            i += tables << 6;
++            i += 2 + AV_RB16(&buf[i + 2]) - 1;
+         } else if (buf[i + 1] == SOF0) {
+             if (buf[i + 14] != 17 || buf[i + 17] != 17) {
+                 av_log(s1, AV_LOG_ERROR,
+diff --git a/src/Record/MP4Muxer.cpp b/src/Record/MP4Muxer.cpp
+index c38a0aa8..7db03679 100644
+--- a/src/Record/MP4Muxer.cpp
++++ b/src/Record/MP4Muxer.cpp
+@@ -140,8 +140,12 @@ bool MP4MuxerInterface::inputFrame(const Frame::Ptr &frame) {
+         }
+
+         default: {
++// edit by hcy for sunrise_camra
++#if 0
+             int64_t dts_out, pts_out;
+-            track.stamp.revise(frame->dts(), frame->pts(), dts_out, pts_out);
++#else
++            int64_t dts_out = frame->dts(), pts_out = frame->pts();
++#endif
+             mp4_writer_write(_mov_writter.get(), track.track_id, frame->data() + frame->prefixSize(), frame->size() - frame->prefixSize(), pts_out, dts_out, frame->keyFrame() ? MOV_AV_FLAG_KEYFREAME : 0);
+             break;
+         }
+diff --git a/src/Rtsp/RtspSession.cpp b/src/Rtsp/RtspSession.cpp
+index 324df6dd..537c495a 100644
+--- a/src/Rtsp/RtspSession.cpp
++++ b/src/Rtsp/RtspSession.cpp
+@@ -1201,8 +1201,8 @@ void RtspSession::updateRtcpContext(const RtpPacket::Ptr &rtp){
+     }
+
+     auto &ticker = _rtcp_send_tickers[track_index];
+-    //send rtcp every 5 second
+-    if (ticker.elapsedTime() > 5 * 1000 || (_send_sr_rtcp[track_index] && !_push_src)) {
++    // [X5] 只发初始 SR，去掉周期性 SR 避免 VLC 时钟跳变卡顿
++    if (_send_sr_rtcp[track_index] && !_push_src) {
+         //确保在发送rtp前，先发送一次sender report rtcp(用于播放器同步音视频)
+         ticker.resetTime();
+         _send_sr_rtcp[track_index] = false;
+--
+2.34.1
+

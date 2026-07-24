@@ -1,0 +1,44 @@
+From a6a5b6a68feff77f26c39821a0db9383de409363 Mon Sep 17 00:00:00 2001
+From: "lei01.song" <lei01.song@d-robotics.cc>
+Date: Wed, 22 Jul 2026 11:58:26 +0800
+Subject: [PATCH] fix(mov): use raw dts and 64bit version for fmp4 tfdt
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+MP4 协议默认 tfdt 用相对时间戳(samples[0].dts - start_dts，从 0 开始)。
+web 端通过 ws-fmp4(.live.mp4)拉流，解码首帧时间戳为相对值，与 BPU 算法
+结果的 wall-clock 时间戳对不上(前端 processAlogResult 容差仅 100ms)，
+导致算法框无法匹配显示而消失。
+
+改用原始 dts(samples[0].dts) + version=1(64位时间戳)，保证 fmp4 时间戳
+与算法结果同基准。配合 ZL 主仓库 patch 关闭 stamp.revise / modify_stamp=0。
+
+Signed-off-by: chengyu.he <chengyu.he@horizon.cc>
+---
+ libmov/source/mov-tfdt.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/libmov/source/mov-tfdt.c b/libmov/source/mov-tfdt.c
+index 994e1b7..c1838e3 100644
+--- a/libmov/source/mov-tfdt.c
++++ b/libmov/source/mov-tfdt.c
+@@ -30,9 +30,14 @@ size_t mov_write_tfdt(const struct mov_t* mov)
+
+     if (mov->track->sample_count < 1)
+         return 0;
+-
++// edit by hcy for sunrise_camra
++#if 0
+     baseMediaDecodeTime = mov->track->samples[0].dts - mov->track->start_dts;
+     version = baseMediaDecodeTime > INT32_MAX ? 1 : 0;
++#else
++    baseMediaDecodeTime = mov->track->samples[0].dts;
++    version = 1;// 1：64位时间戳， 0：32位时间戳
++#endif
+
+     mov_buffer_w32(&mov->io, 0 == version ? 16 : 20); /* size */
+     mov_buffer_write(&mov->io, "tfdt", 4);
+--
+2.34.1
+

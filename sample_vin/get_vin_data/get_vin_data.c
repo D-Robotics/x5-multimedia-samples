@@ -17,18 +17,21 @@
 #include "common_utils.h"
 
 #define MAX_SENSORS 4
+#define FRAME_CHECK_TIMEOUT_NS 5000000000
 #define DEBUG
 
 static struct option const long_options[] = {
 	{"sensor", required_argument, NULL, 's'},
 	{"mode", optional_argument, NULL, 'm'},
 	{"extern_param", optional_argument, NULL, 'e'},
+	{"fps", required_argument, NULL, 'f'},
 	{NULL, 0, NULL, 0}
 };
 
-static int create_and_run_vflow(pipe_contex_t *pipe_contex);
+static int create_and_run_vflow(pipe_contex_t *pipe_contex, uint32_t target_fps);
 static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count);
-static void check_frame_rate(pipe_contex_t *pipe_contex, int sensor_count);
+static int verify_sensor_framerate(pipe_contex_t* pipe_contex, uint32_t target_fps);
+static void set_target_fps(pipe_contex_t *pipe_contex, uint32_t fps);
 
 int32_t hbn_deserial_create(deserial_config_t *des_config, deserial_handle_t *des_fd);
 int32_t hbn_deserial_attach_to_vin(deserial_handle_t des_fd, camera_des_link_t link, vpf_handle_t vin_fd);
@@ -43,6 +46,7 @@ static void print_help() {
 	printf("  		s: Slave\n");
 	printf("  		The default value is determined by the configuration in vp_sensor\n");
 	printf("  -e <extern_param>	     Specify extension parameters through a JSON file\n");
+	printf("  -f <target_fps>        Specify target output FPS (0 = disable, sensor native)\n");
 	printf("  -h                     Show this help message\n");
 	vp_show_sensors_list(); // Assuming this function displays sensor list
 }
@@ -53,39 +57,35 @@ static void command_help() {
 	printf(" g	-- get single frame \n");
 	printf(" l	-- get a set frames \n");
 	printf(" f	-- check frame rate and compare with configured fps \n");
+	printf(" s	-- set target FPS \n");
 	printf(" q	-- quit  \n");
 	printf(" h	-- print help message\n");
 }
 
-static uint16_t date_type = 0;
-static uint32_t link_port = 0;
-static uint32_t sensor_type = 0;
 static uint32_t sensor_mode = INVALID_MOD;
+static uint32_t sensors_target_fps[MAX_SENSORS] = {0};
 
-int main(int argc, char** argv) {
-	int ret = 0;
-	pipe_contex_t pipe_contex[MAX_SENSORS] = {0};
+static int parse_args(int argc, char **argv, int *sensor_indexes,
+		      int *sensor_count, char *json_param_file,
+		      size_t json_file_size)
+{
 	int opt_index = 0;
-	int c = 0;
-	int index = -1;
-	int sensor_indexes[MAX_SENSORS] = {-1};
-	int sensor_count = 0;
+	int c;
 
-	char json_param_file[128] = {0};
-	while((c = getopt_long(argc, argv, "s:e:m:h",
-							long_options, &opt_index)) != -1) {
-		switch (c)
-		{
+	while ((c = getopt_long(argc, argv, "s:e:m:f:h",
+				long_options, &opt_index)) != -1) {
+		switch (c) {
 		case 's':
-			if (sensor_count < MAX_SENSORS) {
-				sensor_indexes[sensor_count++] = atoi(optarg);
+			if (*sensor_count < MAX_SENSORS) {
+				sensor_indexes[(*sensor_count)++] = atoi(optarg);
 			} else {
 				printf("Maximum number of sensors exceeded\n");
 				return 0;
 			}
 			break;
 		case 'e':
-			strcpy(json_param_file, optarg);
+			strncpy(json_param_file, optarg, json_file_size - 1);
+			json_param_file[json_file_size - 1] = '\0';
 			printf("input json param file is %s\n", json_param_file);
 			break;
 		case 'm':
@@ -93,16 +93,45 @@ int main(int argc, char** argv) {
 				sensor_mode = NORMAL_M;
 			} else if (strcmp(optarg, "s") == 0) {
 				sensor_mode = SLAVE_M;
-			}else {
+			} else {
 				printf("Invalid sensor mode %s.\n", optarg);
 				return -1;
+			}
+			break;
+		case 'f':
+			if (*sensor_count > 0) {
+				sensors_target_fps[*sensor_count - 1] = (uint32_t)atoi(optarg);
+				printf("Sensor[%d] target FPS: %u (%s)\n",
+				       *sensor_count - 1,
+				       sensors_target_fps[*sensor_count - 1],
+				       sensors_target_fps[*sensor_count - 1] > 0
+				       ? "ratio skip enabled" : "disable skip, sensor native");
 			}
 			break;
 		case 'h':
 		default:
 			print_help();
-			return 0;
+			return 1;
 		}
+	}
+	return 0;
+}
+
+int main(int argc, char** argv) {
+	int ret = 0;
+	pipe_contex_t pipe_contex[MAX_SENSORS] = {0};
+	int index = -1;
+	int sensor_indexes[MAX_SENSORS];
+	int sensor_count = 0;
+
+	for (int i = 0; i < MAX_SENSORS; i++)
+		sensor_indexes[i] = -1;
+
+	char json_param_file[128] = {0};
+	ret = parse_args(argc, argv, sensor_indexes, &sensor_count,
+			 json_param_file, sizeof(json_param_file));
+	if (ret != 0) {
+		return -1;
 	}
 
 	if (sensor_count == 0) {
@@ -120,9 +149,7 @@ int main(int argc, char** argv) {
 					vp_sensor_config_list[index]->sensor_name,
 					vp_sensor_config_list[index]->config_file);
 
-			sensor_type = pipe_contex[i].sensor_config->sensor_type;
-			date_type = pipe_contex[i].sensor_config->camera_config->format;
-			if(sensor_type != SENSOR_TYPE_NORMAL)
+			if(pipe_contex[i].sensor_config->sensor_type != SENSOR_TYPE_NORMAL)
 				continue;
 			ret = vp_sensor_fixed_mipi_host(pipe_contex[i].sensor_config, &pipe_contex[i].csi_config);
 			if (ret != 0) {
@@ -149,18 +176,18 @@ int main(int argc, char** argv) {
 			int default_sensor_mode = pipe_contex[i].sensor_config->camera_config->sensor_mode;
 			if((is_found_from_support_list == 0) && (sensor_mode != default_sensor_mode)){
 				printf("\nError: index %d  sensor_name(%s) not support input mode: %s\n\n",
-						i, vp_sensor_config_list[index]->sensor_name, sensor_mode_to_str(sensor_mode));
+						i, pipe_contex[i].sensor_config->sensor_name, sensor_mode_to_str(sensor_mode));
 				return -1;
 			}else{
 				if(i == 0){
 					printf("\n\n");
 				}
 				printf("Index %d sensor_name(%s) specify sensor mode to %s\n",
-					i, vp_sensor_config_list[index]->sensor_name, sensor_mode_to_str(sensor_mode));
+					i, pipe_contex[i].sensor_config->sensor_name, sensor_mode_to_str(sensor_mode));
 			}
 		}
 	}else{
-		printf("Not config sensor mode, so usr default mode.");
+		printf("Not config sensor mode, so use default mode.");
 	}
 	printf("\n\n");
 
@@ -177,11 +204,19 @@ int main(int argc, char** argv) {
 	}
 	hb_mem_module_open();
 	for (int i = 0; i < sensor_count; ++i) {
-		ret = create_and_run_vflow(&pipe_contex[i]);
+		ret = create_and_run_vflow(&pipe_contex[i], sensors_target_fps[i]);
 		if (ret != 0) {
 			printf("create_and_run_vflow failed for sensor %d. ret = %d\n", sensor_indexes[i], ret);
 			return ret;
 		}
+	}
+
+	// init sensors_target_fps[]
+	for (int i = 0; i < sensor_count; i++) {
+		if (sensors_target_fps[i])
+			continue;
+		sensors_target_fps[i] =
+		    pipe_contex[i].sensor_config->camera_config->fps;
 	}
 
 	handle_user_command(pipe_contex, sensor_count);
@@ -245,13 +280,13 @@ static int create_deserial_node(pipe_contex_t *pipe_contex) {
 }
 
 
-static int create_vin_node(pipe_contex_t *pipe_contex) {
+static int create_vin_node(pipe_contex_t *pipe_contex, uint32_t target_fps) {
 	vp_sensor_config_t *sensor_config = NULL;
 	vin_node_attr_t *vin_node_attr = NULL;
 	vin_ichn_attr_t *vin_ichn_attr = NULL;
 	vin_ochn_attr_t *vin_ochn_attr = NULL;
 	hbn_vnode_handle_t *vin_node_handle = NULL;
-	vin_attr_ex_t vin_attr_ex;
+	vin_attr_ex_t vin_attr_ex = {0};
 	hbn_buf_alloc_attr_t alloc_attr = {0};
 	uint32_t hw_id = 0;
 	int32_t ret = 0;
@@ -266,7 +301,6 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 
 	hw_id = vin_node_attr->cim_attr.mipi_rx;
 	vin_node_handle = &pipe_contex->vin_node_handle;
-	link_port = vin_node_attr->cim_attr.vc_index;
 
 	if(pipe_contex->csi_config.mclk_is_not_configed){
 		// 设备树中没有配置 mclk：使用外部晶振
@@ -275,8 +309,20 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 	}else{
 		vin_attr_ex.vin_attr_ex_mask = sensor_config->vin_attr_ex->vin_attr_ex_mask;
 		vin_attr_ex.mclk_ex_attr.mclk_freq = sensor_config->vin_attr_ex->mclk_ex_attr.mclk_freq;
-		vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
 	}
+
+	/* merge per-sensor target_fps (from -f) into the same ex_attr channel */
+	uint32_t sensor_fps = sensor_config->camera_config->fps;
+	if (target_fps > 0 && target_fps < sensor_fps) {
+		vin_attr_ex.vin_attr_ex_mask |= (1ULL << VIN_DYNAMIC_FPS_CTRL);
+		vin_attr_ex.fps_ctrl.skip_mode = CIM_IN_RATIO_SKIP;
+		vin_attr_ex.fps_ctrl.in_fps    = sensor_fps;
+		vin_attr_ex.fps_ctrl.out_fps   = target_fps;
+		printf("[FPS] Sensor[%s] %u -> %u fps (init)\n",
+			sensor_config->camera_config->name, sensor_fps, target_fps);
+	}
+	vin_attr_ex_mask = vin_attr_ex.vin_attr_ex_mask;
+
 	ret = hbn_vnode_open(HB_VIN, hw_id, AUTO_ALLOC_ID, vin_node_handle);
 	ERR_CON_EQ(ret, 0);
 	// 设置基本属性
@@ -308,17 +354,20 @@ static int create_vin_node(pipe_contex_t *pipe_contex) {
 						| HB_MEM_USAGE_CPU_WRITE_OFTEN
 						| HB_MEM_USAGE_CACHED;
 	ret = hbn_vnode_set_ochn_buf_attr(*vin_node_handle, ochn_id, &alloc_attr);
+	ERR_CON_EQ(ret, 0);
 
 	return 0;
 }
 
-int create_and_run_vflow(pipe_contex_t *pipe_contex) {
+int create_and_run_vflow(pipe_contex_t *pipe_contex, uint32_t target_fps) {
 	int32_t ret = 0;
+	uint32_t sensor_type = pipe_contex->sensor_config->sensor_type;
+	uint32_t link_port = pipe_contex->sensor_config->vin_node_attr->cim_attr.vc_index;
 
 	// 创建 pipeline 中的每个 node
 	ret = create_camera_node(pipe_contex);
 	ERR_CON_EQ(ret, 0);
-	ret = create_vin_node(pipe_contex);
+	ret = create_vin_node(pipe_contex, target_fps);
 	ERR_CON_EQ(ret, 0);
 
 	// 创建 HBN flow
@@ -348,12 +397,15 @@ int create_and_run_vflow(pipe_contex_t *pipe_contex) {
 }
 
 
-void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
+static void vin_dump_func(pipe_contex_t *pipe_contex) {
 	int ret;
 	char dst_file[128];
 	uint32_t ochn_id = 0;
 	uint32_t timeout = 10000;
 	hbn_vnode_image_t out_img;
+	hbn_vnode_handle_t vin_node_handle = pipe_contex->vin_node_handle;
+	uint32_t date_type = pipe_contex->sensor_config->camera_config->format;
+	uint32_t link_port = pipe_contex->sensor_config->vin_node_attr->cim_attr.vc_index;
 
 	// 获取帧数据
 	ret = hbn_vnode_getframe(vin_node_handle, ochn_id, timeout, &out_img);
@@ -382,7 +434,9 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 					out_img.buffer.size[0],
 					out_img.info.frame_id,
 					out_img.info.timestamps);
-			dump_image_to_file(dst_file, out_img.buffer.virt_addr[0], out_img.buffer.size[0]);
+			ret = dump_image_to_file(dst_file, out_img.buffer.virt_addr[0], out_img.buffer.size[0]);
+			if (ret != 0)
+				printf("Error: Failed to dump RAW to file %s (ret=%d)\n", dst_file, ret);
 			break;
 
 		case SENSOR_DATA_TYPE_YUV422:
@@ -402,7 +456,7 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 			if (ret != 0) {
 				printf("Error: Failed to dump YUV to file\n");
 			} else {
-				printf("Dump successful: %s (size: %ld)\n", dst_file, sizeof(dst_file));
+				printf("Dump successful: %s\n", dst_file);
 			}
 			break;
 
@@ -414,112 +468,174 @@ void vin_dump_func(hbn_vnode_handle_t vin_node_handle) {
 	// 释放帧数据
 	hbn_vnode_releaseframe(vin_node_handle, ochn_id, &out_img);
 }
-static void check_frame_rate(pipe_contex_t *pipe_contex, int sensor_count)
+
+static void set_target_fps(pipe_contex_t *pipe_contex, uint32_t fps)
 {
-	int ret;
-	uint32_t ochn_id = 0;
-	uint32_t timeout = 10000;
-	hbn_vnode_image_t out_img;
-	int64_t first_timestamp = 0;
-	int64_t last_timestamp = 0;
-	uint32_t first_frame_id = 0;
-	uint32_t last_frame_id = 0;
-	double avg_fps = 0.0;
-	double configured_fps = 0.0;
-	double fps_diff = 0.0;
-	const double FPS_TOLERANCE = 1; // Allow 1s difference
+	int ret = 0;
+	uint32_t sensor_fps =
+		pipe_contex->sensor_config->camera_config->fps;
+	vin_attr_ex_t vin_attr_ex = {0};
+	const char *name = pipe_contex->sensor_config->camera_config->name;
 
-	printf("\n========== Frame Rate Check ==========\n");
-	for (int i = 0; i < sensor_count; i++) {
-		hbn_vnode_handle_t vin_node_handle = pipe_contex[i].vin_node_handle;
-		camera_config_t *camera_config = pipe_contex[i].sensor_config->camera_config;
-		char *camera_name = pipe_contex[i].sensor_config->sensor_name;
+	vin_attr_ex.ex_attr_type = VIN_DYNAMIC_FPS_CTRL;
 
-		if (camera_config == NULL) {
-			printf("Sensor %d: Error - camera_config is NULL\n", i);
-			continue;
-		}
-
-		// Get configured fps from camera_config
-		configured_fps = (double)camera_config->fps;
-		printf("Sensor %s: Configured FPS = %.2f\n", camera_name, configured_fps);
-		// Collect 5s frames for statistics
-		const int FRAME_COUNT = configured_fps * 5;
-
-		// Collect frames and timestamps
-		first_timestamp = 0;
-		last_timestamp = 0;
-		first_frame_id = 0;
-		last_frame_id = 0;
-
-		for (int j = 0; j < FRAME_COUNT; j++) {
-			ret = hbn_vnode_getframe(vin_node_handle, ochn_id, timeout, &out_img);
-			if (ret != 0) {
-				printf("Sensor %d: Error - hbn_vnode_getframe failed (ret=%d) at frame %d\n",
-					i, ret, j);
-				return;
-			}
-
-			if (j == 0) {
-				first_timestamp = out_img.info.timestamps;
-				first_frame_id = out_img.info.frame_id;
-			}
-			if (j == FRAME_COUNT - 1) {
-				last_timestamp = out_img.info.timestamps;
-				last_frame_id = out_img.info.frame_id;
-			}
-			hbn_vnode_releaseframe(vin_node_handle, ochn_id, &out_img);
-		}
-
-		// Calculate average frame rate using frame_id difference and timestamp difference
-		if (last_timestamp > first_timestamp && last_frame_id > first_frame_id) {
-			// Timestamps convert to seconds
-			double time_span_seconds = (double)(last_timestamp - first_timestamp) / 1000000000.0;
-			uint32_t frame_id_diff = last_frame_id - first_frame_id + 1;
-			if (time_span_seconds > 0) {
-				avg_fps = (double)frame_id_diff / time_span_seconds;
-			} else {
-				printf("Sensor %d: Error - Invalid timestamp difference\n", i);
-				continue;
-			}
-		} else {
-			printf("Sensor %d: Error - Invalid timestamps or frame_ids (first_frame_id=%u, last_frame_id=%u, first_ts=%ld, last_ts=%ld)\n",
-				i, first_frame_id, last_frame_id, first_timestamp, last_timestamp);
-			continue;
-		}
-
-		// Print statistics
-		printf("Statistics (timestamp): Average FPS = %.2f\n", avg_fps);
-		printf("First frame_id = %u, Last frame_id = %u, Frame count = %u\n",
-			first_frame_id, last_frame_id, last_frame_id - first_frame_id + 1);
-		printf("First timestamp = %ld, Last timestamp = %ld\n",
-			first_timestamp, last_timestamp);
-
-		// Compare with configured fps
-		fps_diff = avg_fps - configured_fps;
-		if (fps_diff < 0) {
-			fps_diff = -fps_diff;
-		}
-
-		printf("Sensor %s: Frame rate check: ", camera_name);
-		if (fps_diff <= FPS_TOLERANCE) {
-			printf("Success\n");
-		} else {
-			printf("Failed (Difference: %.2f fps)\n", fps_diff);
-		}
+	if (fps <= 0 || fps > sensor_fps) {
+		vin_attr_ex.fps_ctrl.skip_mode = CIM_DISABLE_SKIP;
+		vin_attr_ex.fps_ctrl.in_fps = 0;
+		vin_attr_ex.fps_ctrl.out_fps = 0;
+	} else {
+		vin_attr_ex.fps_ctrl.skip_mode = CIM_IN_RATIO_SKIP;
+		vin_attr_ex.fps_ctrl.in_fps = sensor_fps;
+		vin_attr_ex.fps_ctrl.out_fps = fps;
+	}
+	ret = hbn_vnode_set_attr_ex(pipe_contex->vin_node_handle, &vin_attr_ex);
+	if (ret) {
+		printf("Sensor[%s]: set dynamic FPS failed (ret=%d)\n",
+		       name, ret);
+		return;
 	}
 
-	printf("========== Frame Rate Check Complete ==========\n");
+	if (fps > 0 && fps <= sensor_fps)
+		printf("[FPS] Sensor[%s] %u -> %u fps\n",
+		       name, sensor_fps, fps);
+	else
+		printf("[FPS] Sensor[%s] native %u fps\n",
+		       name, sensor_fps);
+}
+
+static int check_frame_rate(uint32_t target_fps, uint32_t frame_count,
+			uint64_t start_ts, uint64_t end_ts,
+			uint32_t start_fid, uint32_t end_fid)
+{
+	double diff = 0;
+	double avg_fps = 0;
+	uint64_t ts_span = end_ts - start_ts;
+
+	if (ts_span == 0)
+		return -2;
+
+	avg_fps = (double)frame_count / (double)(ts_span / 1000000000.0);
+
+
+	printf("Statistics (timestamp): Average FPS = %.2f\n", avg_fps);
+	printf("First frame_id = %u, Last frame_id = %u, Frame count = %d\n",
+		start_fid, end_fid, frame_count);
+	printf("First timestamp = %ld, Last timestamp = %ld\n", start_ts, end_ts);
+
+	diff = avg_fps - target_fps;
+	if (diff < 0)
+		diff = -diff;
+	if (diff > 1.0)
+		return -1;
+
+	return 0;
+}
+
+static int verify_sensor_framerate(pipe_contex_t* pipe_contex, uint32_t target_fps)
+{
+	uint32_t frame_count = 0, start_fid = 0, current_fid = 0;
+	uint64_t start_ts = 0, current_ts = 0;
+	hbn_vnode_image_t img = {0};
+	hbn_vnode_handle_t vin = pipe_contex->vin_node_handle;
+
+	// discard the underlying buffer
+	for (int i = 0; i < 2; i++) {
+		if (hbn_vnode_getframe(vin, 0, 10000, &img) != 0)
+			return -1;
+		hbn_vnode_releaseframe(vin, 0, &img);
+	}
+
+	// starting getframe...
+	printf( "\n======================== Frame Rate Check "
+	        "=======================\n");
+	printf("Sensor %s: Target FPS = %ufps\n",
+	       pipe_contex->sensor_config->sensor_name, target_fps);
+	fflush(stdout);
+	for (frame_count = 0; ((current_ts - start_ts) < FRAME_CHECK_TIMEOUT_NS) &&
+	                      (frame_count < 1000); frame_count++) {
+		if (hbn_vnode_getframe(vin, 0, 10000, &img) != 0)
+			break;
+		if (frame_count == 0) {
+			start_ts = img.info.timestamps;
+			start_fid = img.info.frame_id;
+		}
+		current_ts = img.info.timestamps;
+		current_fid = img.info.frame_id;
+		hbn_vnode_releaseframe(vin, 0, &img);
+	}
+
+	// check fps
+	int ret = check_frame_rate(target_fps, frame_count, start_ts, current_ts,
+	                           start_fid, current_fid);
+	printf("Sensor %s: Frame rate check: ", pipe_contex->sensor_config->sensor_name);
+	if (!ret) {
+		printf("Success\n");
+	} else {
+		printf("Failed\n");
+	}
+	printf( "=================== Frame Rate Check Complete "
+		"===================\n");
+
+	return ret;
+}
+
+static void print_command_prompt(pipe_contex_t *pipe_contex, int sensor_count)
+{
+	printf("Command [");
+	for (int k = 0; k < sensor_count; k++) {
+		uint32_t d = sensors_target_fps[k];
+		if (d == 0)
+			d = pipe_contex[k].sensor_config->camera_config->fps;
+		printf("%s%s:%ufps", k > 0 ? ", " : "",
+			pipe_contex[k].sensor_config->camera_config->name, d);
+	}
+	printf("]: ");
+}
+
+
+static void handle_set_fps_cmd(pipe_contex_t *pipe_contex, int sensor_count)
+{
+	char input_buf[32] = {0};
+	uint32_t sensor_idx = 0, fps_val = 0;
+	int ch;
+
+	while ((ch = getchar()) != '\n' && ch != EOF)
+		;
+	printf("\nEnter sensor index (0..%d): ", sensor_count - 1);
+	fflush(stdout);
+	if (fgets(input_buf, sizeof(input_buf), stdin) == NULL)
+		return;
+	sensor_idx = (uint32_t)atoi(input_buf);
+	if (sensor_idx >= (uint32_t)sensor_count) {
+		printf("Invalid sensor index %u (max %d)\n",
+		       sensor_idx, sensor_count - 1);
+		return;
+	}
+
+	printf("Enter target FPS (0 = disable skip, restore native): ");
+	fflush(stdout);
+	if (fgets(input_buf, sizeof(input_buf), stdin) == NULL)
+		return;
+	fps_val = (uint32_t)atoi(input_buf);
+	uint32_t s_fps =
+		pipe_contex[sensor_idx].sensor_config->camera_config->fps;
+	if (fps_val == 0 || fps_val <= s_fps) {
+		sensors_target_fps[sensor_idx] = fps_val;
+		set_target_fps(&pipe_contex[sensor_idx], fps_val);
+		printf("Use 'f' to check frame rate\n");
+	} else {
+		printf("Invalid FPS %u: valid range is 0 (disable) or 1..%u\n",
+		       fps_val, s_fps);
+	}
 }
 
 static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 {
 	int i, j;
 	char option = 'a';
-	hbn_vnode_handle_t vin_node_handle;
 	int running = 1;
 	command_help();
-	printf("\nCommand: ");
+	print_command_prompt(pipe_contex, sensor_count);
 
 	while (running && ((option = getchar()) != EOF)) {
 		switch (option) {
@@ -529,20 +645,24 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 				return;
 			case 'g':  // get a raw file for all sensors
 				for (i = 0; i < sensor_count; i++) {
-					vin_node_handle = pipe_contex[i].vin_node_handle;
-					vin_dump_func(vin_node_handle);
+					vin_dump_func(&pipe_contex[i]);
 				}
 				break;
 			case 'l': // get multiple frames for all sensors
 				for (j = 0; j < 12; j++) {
 					for (i = 0; i < sensor_count; i++) {
-						vin_node_handle = pipe_contex[i].vin_node_handle;
-						vin_dump_func(vin_node_handle);
+						vin_dump_func(&pipe_contex[i]);
 					}
 				}
 				break;
-			case 'f':  // check frame rate
-				check_frame_rate(pipe_contex, sensor_count);
+			case 'f':  // check fps for all sensors
+				for (i = 0; i < sensor_count; i++) {
+				    verify_sensor_framerate(&pipe_contex[i],
+				                              sensors_target_fps[i]);
+				}
+				break;
+			case 's': // set target fps one by one
+				handle_set_fps_cmd(pipe_contex, sensor_count);
 				break;
 			case 'h':
 				command_help();
@@ -555,7 +675,8 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 				command_help();
 				break;
 		}
-		printf("\nCommand: ");
+
+		print_command_prompt(pipe_contex, sensor_count);
 	}
 
 	return;

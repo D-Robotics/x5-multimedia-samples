@@ -1,6 +1,7 @@
+#include <getopt.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
 #include <string.h>
 
 #include "bmp.h"
@@ -8,94 +9,135 @@
 
 // Vertex Shader
 const char* vertexShaderSource = R"(
-    attribute vec2 a_Position;
-    void main() {
-        gl_Position = vec4(a_Position, 0.0, 1.0);
-    }
+	attribute vec2 a_Position;
+	void main() {
+		gl_Position = vec4(a_Position, 0.0, 1.0);
+	}
 )";
 
 // Fragment Shader
 const char* fragmentShaderSource = R"(
-    precision mediump float;
-    void main() {
-        gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); // Red color
-    }
+	precision mediump float;
+	void main() {
+		gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); // Red color
+	}
 )";
 
 // Control points for Bézier curve
-float controlPoints[] = { -0.8f, -0.8f, 0.0f, 0.8f, 0.8f, -0.8f };
+float controlPoints[] = {-0.8f, -0.8f, 0.0f, 0.8f, 0.8f, -0.8f};
 
-void calculateBezierPoints(float* points, int segments, float* controlPoints) {
-    float t, x, y;
-    for (int i = 0; i <= segments; ++i) {
-        t = (float)i / segments;
-        float u = 1 - t;
+void calculateBezierPoints(float* points, int segments, float* controlPoints)
+{
+	float t, x, y;
+	for (int i = 0; i <= segments; ++i) {
+		t = (float)i / segments;
+		float u = 1 - t;
 
-        // Quadratic Bézier: B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
-        x = u * u * controlPoints[0] +
-            2 * u * t * controlPoints[2] +
-            t * t * controlPoints[4];
-        y = u * u * controlPoints[1] +
-            2 * u * t * controlPoints[3] +
-            t * t * controlPoints[5];
+		// Quadratic Bézier: B(t) = (1-t)^2 * P0 + 2(1-t)t * P1 + t^2 * P2
+		x = u * u * controlPoints[0] + 2 * u * t * controlPoints[2] + t * t * controlPoints[4];
+		y = u * u * controlPoints[1] + 2 * u * t * controlPoints[3] + t * t * controlPoints[5];
 
-        points[i * 2] = x;
-        points[i * 2 + 1] = y;
-    }
+		points[i * 2] = x;
+		points[i * 2 + 1] = y;
+	}
 }
 // Main function
-int main() {
+static struct option const long_options[] = {{"offscreen", no_argument, NULL, 'o'},
+					     {"help", no_argument, NULL, 'h'},
+					     {NULL, 0, NULL, 0}};
+
+static void print_help()
+{
+	printf("Usage: bezier [OPTIONS]\n");
+	printf("Options:\n");
+	printf("  -o, --offscreen   Render headless via fbdev (no physical display)\n");
+	printf("                    If not specified, render via GBM (requires a display panel attached)\n");
+	printf("  -h, --help        Show this help message\n");
+}
+
+int main(int argc, char* argv[])
+{
+	int offscreen = 0;
+	int opt_index = 0;
+	int c = 0;
+	while ((c = getopt_long(argc, argv, "oh", long_options, &opt_index)) != -1) {
+		switch (c) {
+			case 'o':
+				offscreen = 1;
+				break;
+			case 'h':
+			default:
+				print_help();
+				return 0;
+		}
+	}
+	printf("Render mode: %s\n", offscreen ? "offscreen (fbdev)" : "onscreen (gbm)");
 
 	// Set env for vdk
-	if (setenv("VDK_PLATFORM", "gbm", 1) != 0) {
-		perror("setenv failed");
-		return 1;
+	if (offscreen) {
+		if (setenv("VDK_PLATFORM", "fbdev", 1) != 0) {
+			perror("setenv VDK_PLATFORM failed");
+			return 1;
+		}
+		if (setenv("VIV_EGL_PLATFORM", "fbdev", 1) != 0) {
+			perror("setenv VIV_EGL_PLATFORM failed");
+			return 1;
+		}
+		if (setenv("VFB_ENABLE", "1", 1) != 0) {
+			perror("setenv VFB_ENABLE failed");
+			return 1;
+		}
+	} else {
+		if (setenv("VDK_PLATFORM", "gbm", 1) != 0) {
+			perror("setenv failed");
+			return 1;
+		}
+
+		if (setenv("GBM_CRTC_ID", "31", 1) != 0) {
+			perror("setenv failed");
+			return 1;
+		}
+
+		if (setenv("GBM_CONNECTOR_ID", "75", 1) != 0) {
+			perror("setenv failed");
+			return 1;
+		}
 	}
 
-	if (setenv("GBM_CRTC_ID", "31", 1) != 0) {
-        perror("setenv failed");
-        return 1;
-    }
-
-	if (setenv("GBM_CONNECTOR_ID", "75", 1) != 0) {
-        perror("setenv failed");
-        return 1;
-    }
-
-    // Initialize GLES、EGL、DRM、GBM(omitted for brevity)
+	// Initialize GLES、EGL、DRM、GBM(omitted for brevity)
 	vdkEGL VdkEgl;
 	vdk_init(&VdkEgl);
 	vdkShowWindow(VdkEgl.window);
 
-    // Compile shaders and link program
-    GLuint program = glCreateProgram();
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-    glAttachShader(program, vertexShader);
+	// Compile shaders and link program
+	GLuint program = glCreateProgram();
+	GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+	glCompileShader(vertexShader);
+	glAttachShader(program, vertexShader);
 
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-    glAttachShader(program, fragmentShader);
+	GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+	glCompileShader(fragmentShader);
+	glAttachShader(program, fragmentShader);
 
-    glLinkProgram(program);
-    glUseProgram(program);
+	glLinkProgram(program);
+	glUseProgram(program);
 
-    // Calculate Bézier curve points
-    int segments = 100;
-    float* points = (float*)malloc(segments * 2 * sizeof(float));
-    calculateBezierPoints(points, segments, controlPoints);
+	// Calculate Bézier curve points
+	int segments = 100;
+	float* points = (float*)malloc(segments * 2 * sizeof(float));
+	calculateBezierPoints(points, segments, controlPoints);
 
-    // Create Vertex Buffer Object(VBO)
-    GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, segments * 2 * sizeof(float), points, GL_STATIC_DRAW);
+	// Create Vertex Buffer Object(VBO)
+	GLuint vbo;
+	glGenBuffers(1, &vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, segments * 2 * sizeof(float), points, GL_STATIC_DRAW);
 
-    GLint positionLocation = glGetAttribLocation(program, "a_Position");
-    glEnableVertexAttribArray(positionLocation);
-    glVertexAttribPointer(positionLocation, 2, GL_FLOAT, GL_FALSE, 0, 0);
+	GLint positionLocation = glGetAttribLocation(program, "a_Position");
+	glEnableVertexAttribArray(positionLocation);
+	glVertexAttribPointer(positionLocation, 2, GL_FLOAT, GL_FALSE, 0, 0);
 
 	// Create Framebuffer Object (FBO)
 	GLuint fbo, texture, depthBuffer;
@@ -129,27 +171,27 @@ int main() {
 		return -1;
 	}
 
-    // Render to FBO
-    glViewport(0, 0, 512, 512);
-    glClear(GL_COLOR_BUFFER_BIT);
+	// Render to FBO
+	glViewport(0, 0, 512, 512);
+	glClear(GL_COLOR_BUFFER_BIT);
 
-    glDrawArrays(GL_LINE_STRIP, 0, segments);
+	glDrawArrays(GL_LINE_STRIP, 0, segments);
 
-    // Read pixels from FBO
-    unsigned char* pixels = (unsigned char*)malloc(512 * 512 * 4);
-    glReadPixels(0, 0, 512, 512, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+	// Read pixels from FBO
+	unsigned char* pixels = (unsigned char*)malloc(512 * 512 * 4);
+	glReadPixels(0, 0, 512, 512, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 
-    // Save to file (bmp format)
-	SaveBmpImage("bezier.bmp", 512,512,pixels);
+	// Save to file (bmp format)
+	SaveBmpImage("bezier.bmp", 512, 512, pixels);
 
-    // Cleanup
-    free(points);
-    free(pixels);
-    glDeleteProgram(program);
-    glDeleteBuffers(1, &vbo);
-    glDeleteFramebuffers(1, &fbo);
+	// Cleanup
+	free(points);
+	free(pixels);
+	glDeleteProgram(program);
+	glDeleteBuffers(1, &vbo);
+	glDeleteFramebuffers(1, &fbo);
 
 	// destroy vdk
 	vdkFinishEGL(&VdkEgl);
-    return 0;
+	return 0;
 }

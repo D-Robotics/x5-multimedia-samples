@@ -1,0 +1,10 @@
+# Build outputs
+/build/
+/lvgl_camera
+*.o
+*.a
+
+# Editor / OS junk
+*~
+*.swp
+.DS_Store

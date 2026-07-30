@@ -1,16 +1,14 @@
-include ../Makefile.in
+include ../../Makefile.in
 CUR_DIR := $(shell pwd)
 RELATIVE_PATH := $(shell realpath --relative-to=$(PLATFORM_SAMPLES_DIR) $(CUR_DIR))
-INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/include/
-INCS += -I ${DEPLOY_SYSTEM_DIR}/usr/aarch64-linux-gnu/include
-LIBS := -lasound
+LIBS += -lasound
 
-TARGET = sample_audio
+TARGET = sample_alsa
 
 SRCS := $(foreach cf, $(CUR_DIR), $(wildcard $(cf)/*.c))
 OBJS :=  $(SRCS:.c=.o)
 
-.PHONY: all clean
+.PHONY: all clean install
 
 
 %.o:%.c

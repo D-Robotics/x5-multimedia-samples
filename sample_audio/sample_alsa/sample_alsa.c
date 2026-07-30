@@ -12,12 +12,13 @@
 #include <sys/ioctl.h>
 #include <linux/soundcard.h>
 #include <alsa/asoundlib.h>
+#include <stdint.h>
 #include <time.h>
 
-// 定义一个Audio设备基础信息结构体
+// Audio device basic configuration
 typedef struct {
-    char capture_device[32];
-    char playback_device[32];
+    char capture_device[64];
+    char playback_device[64];
     unsigned int rate;
     unsigned int bits;
     unsigned int channels;
@@ -25,10 +26,10 @@ typedef struct {
     char record_file[64];
 } AudioConfig;
 
-// 初始化默认配置
+// Default configuration
 AudioConfig config = {
-    // .capture_device = "default", // 默认录音设备
-    // .playback_device = "default", // 默认播放设备
+    // .capture_device = "default", // default capture device
+    // .playback_device = "default", // default playback device
     .capture_device = "hw:0,0",
     .playback_device = "hw:0,0",
     .rate = 48000,
@@ -38,7 +39,7 @@ AudioConfig config = {
     .record_file = "record_test.wav"
 };
 
-// 枚举音频格式数组，可以用来检查平台是否支持
+// Enumerated audio formats for platform support checking
 snd_pcm_format_t formats[] = {
     SND_PCM_FORMAT_S8,
     SND_PCM_FORMAT_U8,
@@ -61,7 +62,7 @@ snd_pcm_format_t formats[] = {
     SND_PCM_FORMAT_IMA_ADPCM,
     SND_PCM_FORMAT_MPEG,
     SND_PCM_FORMAT_GSM,
-    SND_PCM_FORMAT_UNKNOWN  // 表示结束
+    SND_PCM_FORMAT_UNKNOWN  // sentinel
 };
 /*
 SND_PCM_FORMAT_S8,
@@ -92,19 +93,63 @@ SND_PCM_FORMAT_GSM,
 */
 
 
-// 打印帮助信息
+enum {
+    OPT_CAPTURE = 1,
+    OPT_PLAYBACK,
+};
+
+/* Accept hw:card,device only; shorthand card,device also allowed */
+static int set_hw_device(char *dest, size_t dest_sz, const char *arg,
+                         const char *label)
+{
+    unsigned int card, dev;
+    const char *p = arg;
+
+    if (!arg || !*arg) {
+        fprintf(stderr, "%s: empty device string\n", label);
+        return -1;
+    }
+
+    if (strncmp(arg, "plughw:", 7) == 0 || strncmp(arg, "plug:", 5) == 0) {
+        fprintf(stderr,
+                "%s: this sample uses hw only; use card,device or hw:card,device\n",
+                label);
+        fprintf(stderr, "      (plughw adds a plugin layer; not supported here)\n");
+        return -1;
+    }
+
+    if (strncmp(p, "hw:", 3) == 0)
+        p += 3;
+
+    if (sscanf(p, "%u,%u", &card, &dev) != 2) {
+        fprintf(stderr,
+                "%s: invalid '%s', use hw:card,device (e.g. hw:1,1)\n",
+                label, arg);
+        return -1;
+    }
+
+    snprintf(dest, dest_sz, "hw:%u,%u", card, dev);
+    return 0;
+}
+
+// Print command-line help
 static void print_help() {
-    printf("Usage: sample_audio [OPTIONS]\n");
+    printf("Usage: sample_alsa [OPTIONS]\n");
     printf("Options:\n");
+    printf("  --capture <hw:card,device>     Capture PCM device (default hw:0,0)\n");
+    printf("  --playback <hw:card,device>    Playback PCM device (default hw:0,0)\n");
     printf("  -r <Sampling rate>            Specify sample rate for record or playback\n");
     printf("  -b <Bit depth>                Specify bit depth for record or playback\n");
     printf("  -c <Number of channels>       Specify channels for record or playback\n");
     printf("  -d <Duration>                 Specify duration for record or playback\n");
     printf("  -f <File name>                Specify file for record or playback\n");
     printf("  -h                            Show this help message\n");
+    printf("\n");
+    printf("Device: hw:card,device only (direct hw access, not plughw).\n");
+    printf("Example: sample_alsa --capture hw:1,1 --playback hw:1,0 -r 16000 -c 8\n");
 }
 
-// 打印命令提示信息
+// Print interactive command list
 static void command_help() {
     printf("\n***************  Command Lists  ***************\n");
     printf(" q  -- Quit\n");
@@ -115,58 +160,102 @@ static void command_help() {
 }
 
 
-// 定义一个 WAV 文件头结构，方便后续观察录制和回放效果
-typedef struct {
-    char riff[4];               // 'RIFF'
-    unsigned int chunk_size;    // 文件大小
-    char wave[4];               // 'WAVE'
-    char fmt[4];                // 'fmt '
-    unsigned int fmt_size;      // fmt 子块的大小
-    unsigned short format_type; // 格式类型
-    unsigned short channels;    // 声道数
-    unsigned int sample_rate;   // 采样率
-    unsigned int byte_rate;     // 每秒字节数 (sample_rate * channels * bits_per_sample / 8)
-    unsigned short block_align; // 每块对齐字节数 (channels * bits_per_sample / 8)
-    unsigned short bits_per_sample; // 每个样本的位数
-    char data[4];               // `data`字段
-    unsigned int data_size;     // `data_size`字段
-} WavHeader;
+// Write standard 44-byte PCM WAV header
+static void write_wav_header(FILE *file, unsigned int rate, unsigned int channels,
+                             unsigned int bits, unsigned int data_size)
+{
+    uint8_t hdr[44];
+    uint32_t byte_rate = rate * channels * (bits / 8);
+    uint16_t block_align = channels * (bits / 8);
 
-// 填写WAV头部信息
-void write_wav_header(FILE *file, const AudioConfig *config, unsigned int data_size) {
-    WavHeader header;
-
-    memcpy(header.riff, "RIFF", 4);
-    header.chunk_size = 36 + data_size;  // 总大小 = header + data size
-    memcpy(header.wave, "WAVE", 4);
-    memcpy(header.fmt, "fmt ", 4);
-    header.fmt_size = 16;
-    header.format_type = 1; // PCM格式
-    header.channels = config->channels;
-    header.sample_rate = config->rate;
-    header.byte_rate = config->rate * config->channels * (config->bits / 8);
-    header.block_align = config->channels * (config->bits / 8);
-    header.bits_per_sample = config->bits;
-    memcpy(header.data, "data", 4);
-    header.data_size = data_size;
-
-    // 写入WAV头部
-    fwrite(&header, sizeof(WavHeader), 1, file);
+    memset(hdr, 0, sizeof(hdr));
+    memcpy(hdr, "RIFF", 4);
+    hdr[4] = (uint8_t)((36 + data_size) & 0xff);
+    hdr[5] = (uint8_t)((36 + data_size) >> 8);
+    hdr[6] = (uint8_t)((36 + data_size) >> 16);
+    hdr[7] = (uint8_t)((36 + data_size) >> 24);
+    memcpy(hdr + 8, "WAVE", 4);
+    memcpy(hdr + 12, "fmt ", 4);
+    hdr[16] = 16;
+    hdr[20] = 1;
+    hdr[22] = (uint8_t)(channels & 0xff);
+    hdr[23] = (uint8_t)((channels >> 8) & 0xff);
+    hdr[24] = (uint8_t)(rate & 0xff);
+    hdr[25] = (uint8_t)((rate >> 8) & 0xff);
+    hdr[26] = (uint8_t)((rate >> 16) & 0xff);
+    hdr[27] = (uint8_t)((rate >> 24) & 0xff);
+    hdr[28] = (uint8_t)(byte_rate & 0xff);
+    hdr[29] = (uint8_t)((byte_rate >> 8) & 0xff);
+    hdr[30] = (uint8_t)((byte_rate >> 16) & 0xff);
+    hdr[31] = (uint8_t)((byte_rate >> 24) & 0xff);
+    hdr[32] = (uint8_t)(block_align & 0xff);
+    hdr[33] = (uint8_t)((block_align >> 8) & 0xff);
+    hdr[34] = (uint8_t)(bits & 0xff);
+    hdr[35] = (uint8_t)((bits >> 8) & 0xff);
+    memcpy(hdr + 36, "data", 4);
+    hdr[40] = (uint8_t)(data_size & 0xff);
+    hdr[41] = (uint8_t)((data_size >> 8) & 0xff);
+    hdr[42] = (uint8_t)((data_size >> 16) & 0xff);
+    hdr[43] = (uint8_t)((data_size >> 24) & 0xff);
+    fwrite(hdr, 1, 44, file);
 }
 
-// 设置控制值函数（如设置增益）
-int set_control_value(const char *control_name, long value) {
+/* Read WAV PCM params; leaves file pointer at start of data chunk */
+static int read_wav_pcm_info(FILE *file, unsigned int *rate, unsigned short *channels,
+                             unsigned short *bits, unsigned int *data_size)
+{
+    uint8_t hdr[44];
+
+    if (fread(hdr, 1, 44, file) != 44)
+        return -1;
+    if (memcmp(hdr, "RIFF", 4) != 0 || memcmp(hdr + 8, "WAVE", 4) != 0)
+        return -1;
+    if (memcmp(hdr + 12, "fmt ", 4) != 0)
+        return -1;
+    if ((hdr[20] | (hdr[21] << 8)) != 1)
+        return -1;
+    if (memcmp(hdr + 36, "data", 4) != 0)
+        return -1;
+
+    *channels = hdr[22] | (hdr[23] << 8);
+    *rate = hdr[24] | (hdr[25] << 8) | (hdr[26] << 16) | (hdr[27] << 24);
+    *bits = hdr[34] | (hdr[35] << 8);
+    *data_size = hdr[40] | (hdr[41] << 8) | (hdr[42] << 16) | (hdr[43] << 24);
+    return 0;
+}
+
+/* Parse card number from hw:card,device */
+static int parse_hw_card(const char *hw_device, unsigned int *card)
+{
+    unsigned int dev;
+    const char *p = hw_device;
+
+    if (strncmp(p, "hw:", 3) == 0)
+        p += 3;
+    if (sscanf(p, "%u,%u", card, &dev) != 2)
+        return -1;
+    return 0;
+}
+
+/* Try setting a mixer control on the given card; returns -1 on failure, does not abort */
+static int try_set_mixer_control(const char *hw_device, const char *control_name,
+                                 long value, int for_capture)
+{
     snd_mixer_t *handle;
     snd_mixer_elem_t *elem;
     snd_mixer_selem_id_t *sid;
+    unsigned int card;
+    char mixer_name[16];
+    int ret;
 
-    if (snd_mixer_open(&handle, 0) < 0) {
-        fprintf(stderr, "Unable to open mixer\n");
+    if (parse_hw_card(hw_device, &card) < 0)
         return -1;
-    }
 
-    if (snd_mixer_attach(handle, "default") < 0) {
-        fprintf(stderr, "Unable to attach mixer\n");
+    if (snd_mixer_open(&handle, 0) < 0)
+        return -1;
+
+    snprintf(mixer_name, sizeof(mixer_name), "hw:%u", card);
+    if (snd_mixer_attach(handle, mixer_name) < 0) {
         snd_mixer_close(handle);
         return -1;
     }
@@ -177,18 +266,33 @@ int set_control_value(const char *control_name, long value) {
     snd_mixer_selem_id_set_name(sid, control_name);
     elem = snd_mixer_find_selem(handle, sid);
     if (!elem) {
-        fprintf(stderr, "Unable to find control '%s'\n", control_name);
         snd_mixer_close(handle);
         return -1;
     }
 
-    snd_mixer_selem_set_playback_volume_all(elem, value);
+    if (for_capture && snd_mixer_selem_has_capture_volume(elem))
+        ret = snd_mixer_selem_set_capture_volume_all(elem, value);
+    else if (!for_capture && snd_mixer_selem_has_playback_volume(elem))
+        ret = snd_mixer_selem_set_playback_volume_all(elem, value);
+    else
+        ret = -1;
+
     snd_mixer_close(handle);
-    return 0;
+    return ret < 0 ? -1 : 0;
+}
+
+static void set_control_optional(const char *hw_device, const char *control_name,
+                                 long value, int for_capture)
+{
+    if (try_set_mixer_control(hw_device, control_name, value, for_capture) == 0)
+        return;
+    fprintf(stderr, "Warning: mixer control '%s' not set on %s (skipped)\n",
+            control_name, hw_device);
+    fprintf(stderr, "         Use amixer -c <card> contents to check control names.\n");
 }
 
 
-// 音频格式映射函数：将位深转换为合适的 PCM 格式
+// Map bit depth to PCM format
 snd_pcm_format_t map_format(int bits) {
     switch (bits) {
         case 8:
@@ -200,150 +304,152 @@ snd_pcm_format_t map_format(int bits) {
         case 32:
             return SND_PCM_FORMAT_S32_LE;
         default:
-            return SND_PCM_FORMAT_S16_LE;  // 默认16-bit格式
+            return SND_PCM_FORMAT_S16_LE;  // default 16-bit
     }
 }
 
-// 检查硬件支持的音频格式
+// Check if hardware supports the given format
 int check_supported_format(snd_pcm_t *pcm_handle, snd_pcm_hw_params_t *params, snd_pcm_format_t format) {
     int ret = snd_pcm_hw_params_test_format(pcm_handle, params, format);
-    return (ret == 0) ? 1 : 0;  // 如果返回0，表示支持
+    return (ret == 0) ? 1 : 0;  // 0 means supported
 }
 
-// 返回采样位深度
+// Return a supported sample format
 snd_pcm_format_t set_supported_format(snd_pcm_t *pcm_handle, snd_pcm_hw_params_t *params, int bits) {
-    snd_pcm_format_t format = map_format(bits);  // 将位深转换为实际的PCM格式
+    snd_pcm_format_t format = map_format(bits);
     if (check_supported_format(pcm_handle, params, format)) {
-        return format;  // 如果支持直接返回
+        return format;
     } else {
         printf("Format with %d bits is not supported, setting to SND_PCM_FORMAT_S16_LE\n", bits);
-        return SND_PCM_FORMAT_S16_LE;  // 如果不支持则设置为默认格式 SND_PCM_FORMAT_S16_LE
+        return SND_PCM_FORMAT_S16_LE;
     }
 }
 
-// 检查硬件支持的采样率
+// Check if hardware supports the given sample rate
 int check_supported_rate(snd_pcm_t *pcm_handle, snd_pcm_hw_params_t *params, unsigned int rate) {
     int ret = snd_pcm_hw_params_test_rate(pcm_handle, params, rate, 0);
-    return (ret == 0) ? 1 : 0;  // 如果返回0，表示支持
+    return (ret == 0) ? 1 : 0;  // 0 means supported
 }
 
-// 返回采样率
+// Return a supported sample rate
 unsigned int set_supported_rate(snd_pcm_t *pcm_handle, snd_pcm_hw_params_t *params, unsigned int rate) {
     if (check_supported_rate(pcm_handle, params, rate)) {
-        return rate;  // 如果支持直接返回
+        return rate;
     } else {
         printf("Rate %d is not supported, setting to 44100\n", rate);
-        return 44100;  // 如果不支持则设置为默认采样率 44100
+        return 44100;
     }
 }
 
 
-// 录音函数
+// Record audio
 void record_audio(const AudioConfig *config) {
     snd_pcm_t *pcm_handle;
     snd_pcm_hw_params_t *params;
     snd_pcm_uframes_t frames;
     int ret;
     char *buffer;
-    float gain = 10;//文件操作设置数字增益，改动的是数据幅值，但有限制，后续可以根据实际情况调整或者删除
+    float gain = 10;  // digital gain applied to samples; adjust or remove as needed
 
-    const char *control_name = "ADC PGA Gain";//ADC PGA Gain,需要根据实际情况改写，可放文件开头做全局变量
-    int value_adc_pga_gain = 8;//ADC PGA Gain value,需要根据实际情况改写，可放文件开头做全局变量
+    const char *control_name = "ADC PGA Gain";  // mixer control name; adjust per board
+    int value_adc_pga_gain = 8;                // ADC PGA gain value; adjust per board
     unsigned int rate = config->rate;
+    size_t frame_bytes = config->channels * (config->bits / 8);
 
-    if (set_control_value(control_name, value_adc_pga_gain) != 0) {
-        fprintf(stderr, "Failed to set control value\n");
-        exit(1);
-    }
+    set_control_optional(config->capture_device, control_name, value_adc_pga_gain, 1);
 
-    // 打开 PCM 设备
+    // Open PCM device
     ret = snd_pcm_open(&pcm_handle, config->capture_device, SND_PCM_STREAM_CAPTURE, 0);
     if (ret < 0) {
         fprintf(stderr, "Unable to open PCM device: %s\n", snd_strerror(ret));
         exit(1);
     }
 
-    // 配置硬件参数
+    // Configure hardware parameters
     snd_pcm_hw_params_alloca(&params);
     snd_pcm_hw_params_any(pcm_handle, params);
-    snd_pcm_hw_params_set_access(pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);//一般都是用的左右交错的方式，这里暂时没必要做客制化
+    snd_pcm_hw_params_set_access(pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);  // interleaved is standard
 
-    // 确保硬件支持的采样位深
+    // Ensure supported sample format
     snd_pcm_format_t format = set_supported_format(pcm_handle, params, config->bits);
-    // 设置硬件参数
     snd_pcm_hw_params_set_format(pcm_handle, params, format);
-    // 确保硬件支持的采样率
+    // Ensure supported sample rate
     rate = set_supported_rate(pcm_handle, params, rate);
     snd_pcm_hw_params_set_rate_near(pcm_handle, params, &rate, 0);
-    // 设置声道数
+    // Set channel count
     snd_pcm_hw_params_set_channels(pcm_handle, params, config->channels);
 
-    // 写入硬件参数到设备
+    // Apply hardware parameters
     ret = snd_pcm_hw_params(pcm_handle, params);
     if (ret < 0) {
         fprintf(stderr, "Unable to set hardware parameters: %s\n", snd_strerror(ret));
         exit(1);
     }
 
-    // 获取缓冲区大小
+    // Get buffer size
     snd_pcm_hw_params_get_period_size(params, &frames, 0);
-    buffer = (char *) malloc(frames * 4);  // 2 声道，每个采样 2 字节
+    buffer = (char *) malloc(frames * frame_bytes);
 
-    // 打开文件用于保存录音数据
+    // Open file for recording
     FILE *file = fopen(config->record_file, "wb");
     if (!file) {
         fprintf(stderr, "Unable to open file %s for writing.\n", config->record_file);
         exit(1);
     }
 
-    // 录音并保存到文件
-    printf("Start recording...\n");
-    unsigned int data_size = 0;  // 音频数据大小
+    // Record and save to file
+    printf("Start recording: %s (%u sec, %u Hz, %u ch, %u bit, device %s)\n",
+           config->record_file, config->duration, rate, config->channels,
+           config->bits, config->capture_device);
+    unsigned int data_size = 0;
+    snd_pcm_uframes_t total_frames = (snd_pcm_uframes_t)rate * config->duration;
+    snd_pcm_uframes_t captured = 0;
 
-    // 开始录音并保存到文件
-    time_t start_time = time(NULL);
-    time_t end_time = start_time + config->duration;  // 计算录音结束时间
+    while (captured < total_frames) {
+        snd_pcm_uframes_t chunk = frames;
+        if (captured + chunk > total_frames)
+            chunk = total_frames - captured;
 
-    while (time(NULL) < end_time) {
-        ret = snd_pcm_readi(pcm_handle, buffer, frames);
+        ret = snd_pcm_readi(pcm_handle, buffer, chunk);
         if (ret == -EPIPE) {
             fprintf(stderr, "Buffer overflow error occurred!\n");
             snd_pcm_prepare(pcm_handle);
+            continue;
         } else if (ret < 0) {
             fprintf(stderr, "Recording read error: %s\n", snd_strerror(ret));
-        // } else {
-        //     printf("Get %d frames\n", ret);
-        //     fwrite(buffer, 1, ret * 4, file);  // 将录音数据写入文件
-        //     data_size += ret * 4;  // 增加数据大小
-        // }
-        } else {
-            // 可以通过增加数字增益，这一段可以根据情况注释掉，使用上面未注释的。后续改进
-            // printf("Get %d frames\n", ret);
-            int16_t *samples = (int16_t *)buffer;  // 假设是 16 位采样
+            break;
+        } else if (ret > 0) {
+            int16_t *samples = (int16_t *)buffer;
             size_t sample_count = ret * config->channels;
             for (size_t j = 0; j < sample_count; j++) {
                 int sample = samples[j] * gain;
-                if (sample > 32767) sample = 32767;  // 防止溢出
+                if (sample > 32767) sample = 32767;
                 if (sample < -32768) sample = -32768;
                 samples[j] = (int16_t)sample;
             }
-            fwrite(buffer, 1, ret * config->channels * (config->bits / 8), file);
+            size_t bytes = ret * frame_bytes;
+            fwrite(buffer, 1, bytes, file);
+            data_size += bytes;
+            captured += ret;
         }
     }
 
-    // 写入WAV头部
-    fseek(file, 0, SEEK_SET);  // 回到文件开头写入头部
-    write_wav_header(file, config, data_size);
+    // Write WAV header
+    fseek(file, 0, SEEK_SET);
+    write_wav_header(file, rate, config->channels, config->bits, data_size);
 
-    // 关闭 PCM 设备和文件
+    // Close PCM device and file
     snd_pcm_close(pcm_handle);
     fclose(file);
     free(buffer);
 
-    printf("Recording finished, WAV file saved as:%s\n", config->record_file);
+    printf("Recording finished: %s (%u bytes, %.2f sec, %u Hz, %u ch, %u bit)\n",
+           config->record_file, data_size,
+           rate > 0 ? (double)data_size / (rate * frame_bytes) : 0.0,
+           rate, config->channels, config->bits);
 }
 
-// 播放函数
+// Play audio
 void play_audio(const AudioConfig *config) {
     snd_pcm_t *pcm_handle;
     snd_pcm_hw_params_t *params;
@@ -351,84 +457,113 @@ void play_audio(const AudioConfig *config) {
     FILE *file;
     char *buffer;
     int ret;
-    unsigned int rate = config->rate;
+    unsigned int rate;
+    unsigned short wav_channels, wav_bits;
+    unsigned int wav_data_size;
+    size_t frame_bytes;
+    unsigned int bytes_played = 0;
 
-    const char *control_name = "DAC";//也是codec控件
-    int value_dac = 191;//DAC Vaule数值，可以通过amixer等命令查看详细范围，或者其他接口查看
+    const char *control_name = "DAC";
+    int value_dac = 191;
 
-    if (set_control_value(control_name, value_dac) != 0) {
-        fprintf(stderr, "Failed to set control value\n");
-        exit(1);
-    }
-
-
-    // 打开 PCM 设备
-    ret = snd_pcm_open(&pcm_handle, config->playback_device, SND_PCM_STREAM_PLAYBACK, 0);
-    if (ret < 0) {
-        fprintf(stderr, "Unable to open PCM device:%s\n", snd_strerror(ret));
-        exit(1);
-    }
-
-    // 配置硬件参数
-    snd_pcm_hw_params_alloca(&params);
-    snd_pcm_hw_params_any(pcm_handle, params);
-    snd_pcm_hw_params_set_access(pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);
-
-    // 确保硬件支持的采样位深
-    snd_pcm_format_t format = set_supported_format(pcm_handle, params, config->bits);
-    // 设置硬件参数
-    snd_pcm_hw_params_set_format(pcm_handle, params, format);
-    // 确保硬件支持的采样率
-    rate = set_supported_rate(pcm_handle, params, rate);
-    snd_pcm_hw_params_set_rate_near(pcm_handle, params, &rate, 0);
-    // 设置声道数
-    snd_pcm_hw_params_set_channels(pcm_handle, params, config->channels);
-
-    // 写入硬件参数到设备
-    ret = snd_pcm_hw_params(pcm_handle, params);
-    if (ret < 0) {
-        fprintf(stderr, "Unable to set hardware parameters: %s\n", snd_strerror(ret));
-        exit(1);
-    }
-
-    // 获取缓冲区大小
-    snd_pcm_hw_params_get_period_size(params, &frames, 0);
-    buffer = (char *) malloc(frames * config->channels * (config->bits / 8));  // 动态分配缓冲区大小
-
-    // 打开文件
     file = fopen(config->record_file, "rb");
     if (!file) {
         fprintf(stderr, "Unable to open file: %s\n", config->record_file);
         exit(1);
     }
 
-    // 跳过 WAV 文件头
-    fseek(file, 44, SEEK_SET);  // WAV 文件头通常为 44 字节
-
-    // 播放音频
-    printf("playing...\n");
-    size_t read_size;
-    while ((read_size = fread(buffer, 1, frames * config->channels * (config->bits / 8), file)) > 0) {
-        ret = snd_pcm_writei(pcm_handle, buffer, read_size / (config->channels * (config->bits / 8)));
-        if (ret == -EPIPE) {
-            fprintf(stderr, "Buffer Overflow Error Occurred!\n");
-            snd_pcm_prepare(pcm_handle);
-        } else if (ret < 0) {
-            fprintf(stderr, "Error playing audio: %s\n", snd_strerror(ret));
-        } else if (ret != (read_size / (config->channels * (config->bits / 8)))) {
-            fprintf(stderr, "The number of frames written does not match the number of frames read.\n");
-        }
+    if (read_wav_pcm_info(file, &rate, &wav_channels, &wav_bits, &wav_data_size) < 0) {
+        fprintf(stderr, "Invalid or unsupported WAV file: %s\n", config->record_file);
+        fclose(file);
+        exit(1);
     }
 
-    // 关闭 PCM 设备和文件
+    frame_bytes = wav_channels * (wav_bits / 8);
+    if (frame_bytes == 0) {
+        fprintf(stderr, "Invalid WAV format in %s\n", config->record_file);
+        fclose(file);
+        exit(1);
+    }
+
+    printf("Playing file: %s (%u Hz, %u ch, %u bit, %.2f sec, device %s)\n",
+         config->record_file, rate, wav_channels, wav_bits,
+         rate > 0 ? (double)wav_data_size / (rate * frame_bytes) : 0.0,
+         config->playback_device);
+
+    if (wav_channels != config->channels || rate != config->rate ||
+        wav_bits != config->bits) {
+        printf("Note: WAV format differs from current CLI settings "
+               "(%u Hz, %u ch, %u bit); playback follows WAV header.\n",
+               config->rate, config->channels, config->bits);
+    }
+
+    set_control_optional(config->playback_device, control_name, value_dac, 0);
+
+    ret = snd_pcm_open(&pcm_handle, config->playback_device, SND_PCM_STREAM_PLAYBACK, 0);
+    if (ret < 0) {
+        fprintf(stderr, "Unable to open PCM device:%s\n", snd_strerror(ret));
+        fclose(file);
+        exit(1);
+    }
+
+    snd_pcm_hw_params_alloca(&params);
+    snd_pcm_hw_params_any(pcm_handle, params);
+    snd_pcm_hw_params_set_access(pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);
+
+    snd_pcm_format_t format = set_supported_format(pcm_handle, params, wav_bits);
+    snd_pcm_hw_params_set_format(pcm_handle, params, format);
+    rate = set_supported_rate(pcm_handle, params, rate);
+    snd_pcm_hw_params_set_rate_near(pcm_handle, params, &rate, 0);
+    snd_pcm_hw_params_set_channels(pcm_handle, params, wav_channels);
+
+    ret = snd_pcm_hw_params(pcm_handle, params);
+    if (ret < 0) {
+        fprintf(stderr, "Unable to set hardware parameters: %s\n", snd_strerror(ret));
+        snd_pcm_close(pcm_handle);
+        fclose(file);
+        exit(1);
+    }
+
+    snd_pcm_hw_params_get_period_size(params, &frames, 0);
+    buffer = (char *) malloc(frames * frame_bytes);
+
+    while (bytes_played < wav_data_size) {
+        size_t to_read = frames * frame_bytes;
+        if (bytes_played + to_read > wav_data_size)
+            to_read = wav_data_size - bytes_played;
+
+        size_t read_size = fread(buffer, 1, to_read, file);
+        if (read_size == 0)
+            break;
+
+        snd_pcm_uframes_t pcm_frames = read_size / frame_bytes;
+        snd_pcm_uframes_t offset = 0;
+
+        while (offset < pcm_frames) {
+            ret = snd_pcm_writei(pcm_handle, buffer + offset * frame_bytes,
+                                 pcm_frames - offset);
+            if (ret == -EPIPE) {
+                fprintf(stderr, "Buffer overflow error occurred!\n");
+                snd_pcm_prepare(pcm_handle);
+            } else if (ret < 0) {
+                fprintf(stderr, "Error playing audio: %s\n", snd_strerror(ret));
+                break;
+            } else if (ret > 0) {
+                offset += ret;
+            }
+        }
+        bytes_played += read_size;
+    }
+
+    snd_pcm_drain(pcm_handle);
     snd_pcm_close(pcm_handle);
     fclose(file);
     free(buffer);
 
-    printf("play end.\n");
+    printf("Playback finished: %s\n", config->record_file);
 }
 
-//打印格式化一下，提高阅读性
+// Pretty-print supported formats for readability
 void print_supported_formats(snd_pcm_t *pcm_handle, snd_pcm_hw_params_t *params) {
     printf("Supported formats:\n");
     printf("%-30s%-50s%-15s\n", "Format", "Support", "Description");
@@ -450,7 +585,7 @@ void print_supported_channels(snd_pcm_t *pcm_handle, snd_pcm_hw_params_t *params
     unsigned int min_channels, max_channels;
     int ret;
 
-    // 获取支持的最小和最大声道数
+    // Get min/max channel count
     ret = snd_pcm_hw_params_get_channels_min(params, &min_channels);
     if (ret < 0) {
         fprintf(stderr, "Error getting minimum channels: %s\n", snd_strerror(ret));
@@ -484,13 +619,13 @@ void print_supported_sampling_rates(snd_pcm_t *pcm_handle, snd_pcm_hw_params_t *
 }
 
 
-//获取设备信息函数
+// Query and print device capabilities
 void get_pcm_format(const AudioConfig *config) {
     snd_pcm_t *pcm_handle;
     snd_pcm_hw_params_t *params;
     int ret;
 
-    // 打开录音 PCM 设备
+    // Open capture PCM device
     printf("capture_device:\n");
     ret = snd_pcm_open(&pcm_handle, config->capture_device, SND_PCM_STREAM_CAPTURE, 0);
     if (ret < 0) {
@@ -498,10 +633,10 @@ void get_pcm_format(const AudioConfig *config) {
         exit(1);
     }
 
-    // 分配硬件参数对象
+    // Allocate hardware params object
     snd_pcm_hw_params_alloca(&params);
 
-    // 初始化硬件参数对象
+    // Initialize hardware params object
     ret = snd_pcm_hw_params_any(pcm_handle, params);
     if (ret < 0) {
         fprintf(stderr, "Error initializing hardware parameters: %s\n", snd_strerror(ret));
@@ -509,18 +644,18 @@ void get_pcm_format(const AudioConfig *config) {
         exit(1);
     }
 
-    // 打印支持的音频格式
+    // Print supported formats
     print_supported_formats(pcm_handle, params);
 
-    // 打印支持的声道范围
+    // Print supported channel range
     print_supported_channels(pcm_handle, params);
 
-    // 打印支持的采样率
+    // Print supported sample rates
     print_supported_sampling_rates(pcm_handle, params);
 
-    snd_pcm_close(pcm_handle);  // 关闭设备，释放资源
+    snd_pcm_close(pcm_handle);  // close device, release resources
 
-    // 打开播放 PCM 设备
+    // Open playback PCM device
     printf("playback_device:\n");
     ret = snd_pcm_open(&pcm_handle, config->playback_device, SND_PCM_STREAM_PLAYBACK, 0);
     if (ret < 0) {
@@ -528,10 +663,10 @@ void get_pcm_format(const AudioConfig *config) {
         exit(1);
     }
 
-    // 分配硬件参数对象
+    // Allocate hardware params object
     snd_pcm_hw_params_alloca(&params);
 
-    // 初始化硬件参数对象
+    // Initialize hardware params object
     ret = snd_pcm_hw_params_any(pcm_handle, params);
     if (ret < 0) {
         fprintf(stderr, "Error initializing hardware parameters: %s\n", snd_strerror(ret));
@@ -539,22 +674,22 @@ void get_pcm_format(const AudioConfig *config) {
         exit(1);
     }
 
-    // 打印支持的音频格式
+    // Print supported formats
     print_supported_formats(pcm_handle, params);
 
-    // 打印支持的声道范围
+    // Print supported channel range
     print_supported_channels(pcm_handle, params);
 
-    // 打印支持的采样率
+    // Print supported sample rates
     print_supported_sampling_rates(pcm_handle, params);
 
-    snd_pcm_close(pcm_handle);  // 关闭设备，释放资源
+    snd_pcm_close(pcm_handle);  // close device, release resources
 
     command_help();
 
 }
 
-// 处理用户输入命令
+// Handle user interactive commands
 static void handle_user_command(const AudioConfig *config) {
     char option;
     int running = 1;
@@ -568,15 +703,13 @@ static void handle_user_command(const AudioConfig *config) {
                 running = 0;
                 break;
             case 'r':
-                printf("Recording...\n");
                 record_audio(config);
                 break;
             case 'p':
-                printf("Playing...\n");
                 play_audio(config);
                 break;
             case 'c':
-                //检查硬件信息，设置参数的时候可以查询，一定程度避免设置的时候没有参考
+                // Check hardware info before setting parameters to avoid invalid configs
                 get_pcm_format(config);
                 break;
             case 'h':
@@ -597,9 +730,26 @@ static void handle_user_command(const AudioConfig *config) {
 
 int main(int argc, char **argv) {
     int opt;
+    static const struct option long_opts[] = {
+        {"capture", required_argument, NULL, OPT_CAPTURE},
+        {"playback", required_argument, NULL, OPT_PLAYBACK},
+        {NULL, 0, NULL, 0}
+    };
 
-    while ((opt = getopt(argc, argv, "r:b:c:d:f:h")) != -1) {
+    while ((opt = getopt_long(argc, argv, "r:b:c:d:f:h", long_opts, NULL)) != -1) {
         switch (opt) {
+            case OPT_CAPTURE:
+                if (set_hw_device(config.capture_device,
+                                  sizeof(config.capture_device),
+                                  optarg, "--capture") < 0)
+                    return 1;
+                break;
+            case OPT_PLAYBACK:
+                if (set_hw_device(config.playback_device,
+                                  sizeof(config.playback_device),
+                                  optarg, "--playback") < 0)
+                    return 1;
+                break;
             case 'r':
                 config.rate = atoi(optarg);
                 break;

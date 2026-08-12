@@ -123,6 +123,7 @@ int main(int argc, char** argv) {
 	int index = -1;
 	int sensor_indexes[MAX_SENSORS];
 	int sensor_count = 0;
+	int used_mipi_host = 0;
 
 	for (int i = 0; i < MAX_SENSORS; i++)
 		sensor_indexes[i] = -1;
@@ -151,12 +152,14 @@ int main(int argc, char** argv) {
 
 			if(pipe_contex[i].sensor_config->sensor_type != SENSOR_TYPE_NORMAL)
 				continue;
-			ret = vp_sensor_fixed_mipi_host(pipe_contex[i].sensor_config, &pipe_contex[i].csi_config);
+			ret = vp_sensor_multi_fixed_mipi_host(pipe_contex[i].sensor_config,
+				used_mipi_host, &pipe_contex[i].csi_config);
 			if (ret != 0) {
 				printf("No Camera Sensor found. Please check if the specified "
 					"sensor is connected to the Camera interface.\n");
 				return ret;
 			}
+			used_mipi_host |= (1 << pipe_contex[i].csi_config.index);
 		} else {
 			printf("Unsupported sensor index:%d\n", index);
 			print_help();
@@ -299,7 +302,7 @@ static int create_vin_node(pipe_contex_t *pipe_contex, uint32_t target_fps) {
 	vin_ichn_attr = sensor_config->vin_ichn_attr;
 	vin_ochn_attr = sensor_config->vin_ochn_attr;
 
-	hw_id = vin_node_attr->cim_attr.mipi_rx;
+	hw_id = pipe_contex->csi_config.index;
 	vin_node_handle = &pipe_contex->vin_node_handle;
 
 	if(pipe_contex->csi_config.mclk_is_not_configed){
@@ -410,7 +413,8 @@ static void vin_dump_func(pipe_contex_t *pipe_contex) {
 	// 获取帧数据
 	ret = hbn_vnode_getframe(vin_node_handle, ochn_id, timeout, &out_img);
 	if (ret != 0) {
-		printf("Error: hbn_vnode_getframe failed for vin chn:%d (ret=%d)\n", ochn_id, ret);
+		printf("Error: hbn_vnode_getframe failed for sensor[%s]@csi%d vin chn:%d (ret=%d)\n",
+		       pipe_contex->sensor_config->sensor_name, pipe_contex->csi_config.index, ochn_id, ret);
 		return;
 	}
 
@@ -540,16 +544,19 @@ static int verify_sensor_framerate(pipe_contex_t* pipe_contex, uint32_t target_f
 
 	// discard the underlying buffer
 	for (int i = 0; i < 2; i++) {
-		if (hbn_vnode_getframe(vin, 0, 10000, &img) != 0)
+		if (hbn_vnode_getframe(vin, 0, 10000, &img) != 0) {
+			printf("Sensor[%s]@csi%d: getframe failed during discard, skip frame rate check\n",
+			       pipe_contex->sensor_config->sensor_name, pipe_contex->csi_config.index);
 			return -1;
+		}
 		hbn_vnode_releaseframe(vin, 0, &img);
 	}
 
 	// starting getframe...
 	printf( "\n======================== Frame Rate Check "
 	        "=======================\n");
-	printf("Sensor %s: Target FPS = %ufps\n",
-	       pipe_contex->sensor_config->sensor_name, target_fps);
+	printf("Sensor[%s]@csi%d: Target FPS = %ufps\n",
+	       pipe_contex->sensor_config->sensor_name, pipe_contex->csi_config.index, target_fps);
 	fflush(stdout);
 	for (frame_count = 0; ((current_ts - start_ts) < FRAME_CHECK_TIMEOUT_NS) &&
 	                      (frame_count < 1000); frame_count++) {
@@ -567,7 +574,7 @@ static int verify_sensor_framerate(pipe_contex_t* pipe_contex, uint32_t target_f
 	// check fps
 	int ret = check_frame_rate(target_fps, frame_count, start_ts, current_ts,
 	                           start_fid, current_fid);
-	printf("Sensor %s: Frame rate check: ", pipe_contex->sensor_config->sensor_name);
+	printf("Sensor[%s]@csi%d: Frame rate check: ", pipe_contex->sensor_config->sensor_name, pipe_contex->csi_config.index);
 	if (!ret) {
 		printf("Success\n");
 	} else {
@@ -620,7 +627,7 @@ static void handle_set_fps_cmd(pipe_contex_t *pipe_contex, int sensor_count)
 	uint32_t s_fps =
 		pipe_contex[sensor_idx].sensor_config->camera_config->fps;
 	if (fps_val == 0 || fps_val <= s_fps) {
-		sensors_target_fps[sensor_idx] = fps_val;
+		sensors_target_fps[sensor_idx] = (fps_val == 0) ? s_fps : fps_val;
 		set_target_fps(&pipe_contex[sensor_idx], fps_val);
 		printf("Use 'f' to check frame rate\n");
 	} else {
@@ -657,8 +664,11 @@ static void handle_user_command(pipe_contex_t *pipe_contex, int sensor_count)
 				break;
 			case 'f':  // check fps for all sensors
 				for (i = 0; i < sensor_count; i++) {
-				    verify_sensor_framerate(&pipe_contex[i],
+				    int ret = verify_sensor_framerate(&pipe_contex[i],
 				                              sensors_target_fps[i]);
+				    if (ret != 0)
+				        printf("Sensor[%s]@csi%d: frame rate check aborted\n",
+				               pipe_contex[i].sensor_config->sensor_name, pipe_contex[i].csi_config.index);
 				}
 				break;
 			case 's': // set target fps one by one

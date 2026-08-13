@@ -29,6 +29,8 @@ typedef struct {
 	int32_t encode_bitrate; // 编码码率
 	char model[32]; // 算法模型
 	int32_t gdc_status; //0: 没有gdc file， 1： 关闭 gdc, 2： 打开gdc
+	int32_t sensor_width;
+	int32_t sensor_height;
 } solution_cfg_cam_vpp_t;
 
 typedef struct {

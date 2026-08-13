@@ -1,7 +1,8 @@
-
-
 // encode_type 枚举：0=H264, 1=H265, 2=MJPEG
 const ENCODE_TYPE = { H264: 0, H265: 1, MJPEG: 2 };
+
+const RFC2435_MAX_DIMENSION = 2040;
+const MJPEG_RTP_LIMIT_TIP = "协议限制：无法推送超过2040x2040的MJPEG流";
 
 const configFieldInfoTable = {
 	"pipeline_count": {
@@ -214,6 +215,16 @@ class ConfigManager {
 		return html;
 	}
 
+	// MJPEG 主码流走 RTSP/RTP 时，是否受 RFC 2435 单边 2040 分辨率限制。
+	_isMjpegRtpLimited(encode_type, width, height) {
+		if (encode_type !== ENCODE_TYPE.MJPEG) {
+			return false;
+		}
+		const w = width || 0;
+		const h = height || 0;
+		return (w > RFC2435_MAX_DIMENSION) || (h > RFC2435_MAX_DIMENSION);
+	}
+
 	generateCamSolutionDeviceInfoHTML(cam_solution) {
 		let html = '';
 		let valid_index = 0;
@@ -231,7 +242,11 @@ class ConfigManager {
 			// 主码流（缩进）
 			html += `<div class="stream-url">`;
 			html += `<span class="stream-type">主码流：</span>`;
-			html += `<span class="stream-uri">rtsp://${window.location.host}/ch${valid_index}/main</span>`;
+			if (this._isMjpegRtpLimited(cam_vpp.encode_type, cam_vpp.sensor_width, cam_vpp.sensor_height)) {
+				html += `<span class="stream-uri stream-uri-limited" title="RFC 2435 限制">${MJPEG_RTP_LIMIT_TIP}</span>`;
+			} else {
+				html += `<span class="stream-uri">rtsp://${window.location.host}/ch${valid_index}/main</span>`;
+			}
 			html += `</div>`;
 
 			// 子码流（缩进）
@@ -254,12 +269,17 @@ class ConfigManager {
 		let html = '';
 
 		for (let i = 0; i < pipeline_count; i++) {
+			const box_vpp = box_vpp_list[i];
 			html += `<div class="channel-header"><strong> 第${i}路的码流链接 : </strong></div>`;
 
 			// 主码流（缩进）
 			html += `<div class="stream-url">`;
 			html += `<span class="stream-type">主码流：</span>`;
-			html += `<span class="stream-uri">rtsp://${window.location.host}/ch${i}/main</span>`;
+			if (this._isMjpegRtpLimited(box_vpp.encode_type, box_vpp.encode_width, box_vpp.encode_height)) {
+				html += `<span class="stream-uri stream-uri-limited" title="RFC 2435 限制">${MJPEG_RTP_LIMIT_TIP}</span>`;
+			} else {
+				html += `<span class="stream-uri">rtsp://${window.location.host}/ch${i}/main</span>`;
+			}
 			html += `</div>`;
 
 			// 子码流（缩进）
@@ -478,7 +498,8 @@ class ConfigManager {
 					});
 					html += `</select>`;
 					html += `</li>`;
-				} else if ((itemKey === "csi_index") || (itemKey === "is_enable") || (itemKey === "is_valid") || (itemKey === "mclk_is_not_configed")) {
+				} else if ((itemKey === "csi_index") || (itemKey === "is_enable") || (itemKey === "is_valid") || (itemKey === "mclk_is_not_configed")
+					|| (itemKey === "sensor_width") || (itemKey === "sensor_height")) {
 					continue;
 				} else if (itemKey === "gdc_status") {
 					if (cam_vpp.gdc_status === -1) {
@@ -703,6 +724,10 @@ class ConfigManager {
 				if (itemKey === "is_valid")
 					continue;
 				if (itemKey === "mclk_is_not_configed")
+					continue;
+				if (itemKey === "sensor_width")
+					continue;
+				if (itemKey === "sensor_height")
 					continue;
 
 				if ((itemKey === 'gdc_status') && (cam_solution["cam_vpp"][i][itemKey] === -1)) {

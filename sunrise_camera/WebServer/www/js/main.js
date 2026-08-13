@@ -83,9 +83,7 @@ class App {
 	handleAppSwitch(message) {
 		console.log("收到 APP_SWITCH 命令:", message);
 		if(message.Status == 200){
-			this.configManager.buildHTMLFromConfig(true);
-			this.onChangePlayerWindowState(App.playerWindowState.NORMAL_VIDEO_PLAYER);
-			this.startStream();
+			this.wsProtocolHandler.getConfig();
 		}else{
 			console.log("app switch is error:", message.app_status);
 			this.showAppStatus(message.app_status, message.detailed);

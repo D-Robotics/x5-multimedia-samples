@@ -68,6 +68,8 @@ static key_info_t cfg_cam_vpp_key[] = {
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, encode_bitrate, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_STRING, model, NULL),
 	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, gdc_status, NULL),
+	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, sensor_width, NULL),
+	MAKE_KEY_INFO(solution_cfg_cam_vpp_t, KEY_TYPE_S32, sensor_height, NULL),
 	MAKE_END_INFO()};
 
 static key_info_t cfg_display_vpp_key[] = {
@@ -741,8 +743,35 @@ int32_t solution_cfg_save()
 	return 0;
 }
 
+static void solution_cfg_update_camera_resolution(void)
+{
+	solution_cfg_cam_t *cam = &g_solution_config.cam_solution;
+
+	for (int i = 0; i < cam->max_pipeline_count; i++) {
+		solution_cfg_cam_vpp_t *cam_vpp = &cam->cam_vpp[i];
+		int w = 0, h = 0, fps = 0;
+
+		cam_vpp->sensor_width = 0;
+		cam_vpp->sensor_height = 0;
+
+		if (cam_vpp->is_valid == 0)
+			continue;
+		if (strlen(cam_vpp->sensor) == 0)
+			continue;
+
+		if (vp_get_sensor_info_by_name(cam_vpp->sensor, &w, &h, &fps) == 0) {
+			cam_vpp->sensor_width = w;
+			cam_vpp->sensor_height = h;
+		} else {
+			SC_LOGW("[csi_%d] get sensor info failed for sensor %s, resolution stays 0.", i, cam_vpp->sensor);
+		}
+	}
+}
+
 char *solution_cfg_obj2string()
 {
+	solution_cfg_update_camera_resolution();
+
 	return cjson_object2string(solution_cfg_key, (void *)&g_solution_config);
 }
 

@@ -575,6 +575,8 @@ class ConfigManager {
 	bindBoxSolutionEvents(box_solution) {
 		document.getElementById("item_box_pipeline_count").addEventListener("change", () => {
 			const selectedPipelineCount = parseInt(document.getElementById("item_box_pipeline_count").value);
+			// 避免重渲染后丢失未提交的编辑
+			this._syncBoxVppFromHTML(box_solution, box_solution["pipeline_count"]);
 			this.serverConfig["box_solution"]["pipeline_count"] = selectedPipelineCount;
 			this.buildHTMLFromConfig(false);
 		});
@@ -846,7 +848,12 @@ class ConfigManager {
 		box_solution["pipeline_count"] = parseInt(pipelineCountSelect.value);
 
 		// 更新 box_vpp
-		for (let i = 0; i < box_solution["pipeline_count"]; i++) {
+		this._syncBoxVppFromHTML(box_solution, box_solution["pipeline_count"]);
+	}
+
+	// 回写页面上前 count 路 box_vpp 控件的当前值；count 须传已渲染的通路数，否则会读取不存在的控件。
+	_syncBoxVppFromHTML(box_solution, count) {
+		for (let i = 0; i < count; i++) {
 			for (const itemKey in box_solution["box_vpp"][i]) {
 				const uniqueId = `item_${i}_${itemKey}`;
 				const element = document.getElementById(uniqueId);
@@ -905,6 +912,9 @@ class ConfigManager {
 				return;
 			}
 
+			// 重渲染前先回写页面已有修改，避免丢失未提交的选择
+			this.updateCamSolution(cam_solution);
+
 			cam_vpp.is_enable = event.target.checked ? 1 : 0;
 			this.buildHTMLFromConfig(false); // 重新渲染
 		};
@@ -926,6 +936,8 @@ class ConfigManager {
 				return;
 			}
 
+			// 重渲染前先回写页面已有修改，避免丢失未提交的选择
+			this.updateCamSolution(cam_solution);
 			cam_vpp.encode_type = encode_type_int;
 			this.buildHTMLFromConfig(false);
 		};
@@ -947,7 +959,8 @@ class ConfigManager {
 				return;
 			}
 
-			// 更新配置中的编码类型
+			// 重渲染前先回写页面已有修改，避免丢失未提交的选择
+			this.updateBoxSolution(box_solution);
 			box_vpp["encode_type"] = encode_type_int;
 
 			// 重新渲染页面
@@ -1142,6 +1155,14 @@ class ConfigManager {
 	 * @param {string} imageSrc - 方案对应的图片路径
 	 */
 	_handleSolutionChange(selectedSolution, imageSrc) {
+		// 先回写当前显示方案的页面修改（单选按钮已指向新方案而 DOM 仍是旧方案控件，故不能用 updateConfigFromHTML）
+		const currentSolution = this.serverConfig["solution_name"];
+		if (currentSolution === 'cam_solution') {
+			this.updateCamSolution(this.serverConfig["cam_solution"]);
+		} else if (currentSolution === 'box_solution') {
+			this.updateBoxSolution(this.serverConfig["box_solution"]);
+		}
+
 		// 更新选中的解决方案名称
 		this.serverConfig["solution_name"] = selectedSolution;
 

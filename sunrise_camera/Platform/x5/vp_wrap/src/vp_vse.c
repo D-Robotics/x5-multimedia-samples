@@ -91,7 +91,7 @@ int32_t vp_vse_send_frame(vp_vflow_contex_t *vp_vflow_contex, hbn_vnode_image_t 
 	int32_t ret = 0;
 	ret = hbn_vnode_sendframe(vp_vflow_contex->vse_node_handle, 0, image_frame);
 	if (ret != 0) {
-		SC_LOGE("hbn_vnode_sendframe failed(%d)", ret);
+		SC_LOGW("hbn_vnode_sendframe failed(%d), maybe interrupted by normal stop; confirm via thread state and other errors", ret);
 		return -1;
 	}
 	return ret;

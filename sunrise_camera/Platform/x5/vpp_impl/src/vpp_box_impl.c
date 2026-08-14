@@ -172,7 +172,8 @@ static void *get_decode_and_vse_process_thread_func(void *ptr) {
 
 		ret = vp_vse_send_frame(&vpp_box->vp_vflow_contex, &src_img);
 		if (ret != 0) {
-			SC_LOGE("pipeline %d vp_vse_send_frame failed(%d)", vpp_box->pipline_id, ret);
+			if (privThread->eState == E_THREAD_RUNNING)
+				SC_LOGE("pipeline %d vp_vse_send_frame failed(%d)", vpp_box->pipline_id, ret);
 			break;
 		}
 

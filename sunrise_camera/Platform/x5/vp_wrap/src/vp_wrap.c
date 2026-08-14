@@ -135,12 +135,58 @@ static int32_t vp_get_chip_type(char *chip_type)
 	return 0;
 }
 
+// sunrise_camera 不支持任何 serdes 模式的摄像头（GMSL/HSMT 等），
+static void vp_filter_serdes_sensors(csi_list_info_t *csi_list_info)
+{
+	int valid_count = 0;
+
+	for (int i = 0; i < csi_list_info->max_count; i++) {
+		csi_info_t *csi_info = &csi_list_info->csi_info[i];
+		char filtered[sizeof(csi_info->sensor_config_list)] = { 0 };
+		char *saveptr = NULL;
+		char *name = NULL;
+
+		if (csi_info->is_valid == 0)
+			continue;
+
+		name = strtok_r(csi_info->sensor_config_list, "/", &saveptr);
+		while (name != NULL) {
+			vp_sensor_config_t *cfg = vp_get_sensor_config_by_name(name);
+
+			if (cfg != NULL && cfg->sensor_type != SENSOR_TYPE_NORMAL) {
+				SC_LOGI("skip serdes mode sensor: %s", name);
+			} else {
+				size_t cur_len = strlen(filtered);
+				size_t need_len = cur_len + strlen(name) + ((cur_len > 0) ? 1 : 0);
+
+				if (need_len < sizeof(filtered)) {
+					if (cur_len > 0)
+						strcat(filtered, "/");
+					strcat(filtered, name);
+				} else {
+					SC_LOGE("filtered buffer too small, drop sensor: %s", name);
+				}
+			}
+			name = strtok_r(NULL, "/", &saveptr);
+		}
+
+		snprintf(csi_info->sensor_config_list, sizeof(csi_info->sensor_config_list), "%s", filtered);
+		if (strlen(filtered) == 0)
+			csi_info->is_valid = 0;
+
+		if (csi_info->is_valid)
+			valid_count++;
+	}
+	csi_list_info->valid_count = valid_count;
+}
+
 int32_t vp_get_hard_capability(solution_cfg_t *solution_config)
 {
 	solution_hard_capability_t *capability = &solution_config->hardware_capability;
 
 	vp_get_chip_type(capability->chip_type);
 	vp_sensor_detect_structed(&capability->csi_list_info);
+	vp_filter_serdes_sensors(&capability->csi_list_info);
 	return 0;
 }
 static void get_connector_info_cb(void *handle, int width, int height, float fps, int is_interleave) {

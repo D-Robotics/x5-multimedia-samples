@@ -20,6 +20,7 @@
 
 #include "utils/exception_handling.h"
 #include "utils/utils_log.h"
+#include "utils/utils_mem.h"
 
 static int g_signal_handler_is_processed = 0;
 
@@ -345,6 +346,8 @@ loop:
 	while(1)
 	{
 		usleep(5*1000*1000);
+		// 每60s归还一次glibc arena滞留的空闲堆，抑制RSS碎片化上涨
+		utils_periodic_malloc_trim(MALLOC_TRIM_INTERVAL_MS);
 	}
 
 	return 0;

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <malloc.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -323,6 +324,8 @@ int handle_user_msg(ws_list *ws_lst, ws_client *ws_clt, char *msg)
 
 			usleep(500*1000);
 
+			/* 归还 stop 阶段滞留在 glibc arena 的空闲堆，避免 RSS 台阶式上涨 */
+			malloc_trim(0);
 
 			if(check_param_is_error){
 				//获取当前的配置，传递给网页端

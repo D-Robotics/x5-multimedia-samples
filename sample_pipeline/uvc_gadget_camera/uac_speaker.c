@@ -71,7 +71,7 @@ int uac_speaker_init(uac_speaker_device_t **uac_speaker)
 	}
 
 	/* init uac recorder device*/
-	uac_device->name	= "hw:1,0";
+	uac_device->name	= alsa_uac_pcm_name(); //"hw:1,0";
 	uac_device->format	= SND_PCM_FORMAT_S16;
 	uac_device->direct	= SND_PCM_STREAM_CAPTURE;
 	uac_device->rate	= 48000;

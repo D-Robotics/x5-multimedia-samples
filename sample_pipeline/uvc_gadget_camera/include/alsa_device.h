@@ -52,4 +52,9 @@ void alsa_mixer_deinit(alsa_mixer_t *mixer);
 int alsa_mixer_get_capture_volume_mute(alsa_mixer_t *mixer, long *volume, int *mute);
 int alsa_mixer_get_playback_volume_mute(alsa_mixer_t *mixer, long *volume, int *mute);
 
+/* UAC gadget sound card: auto-detect by kernel driver "u_audio"
+ * (card index is not stable across boards, so do NOT hardcode "hw:N"). */
+char *alsa_uac_pcm_name(void);		/* e.g. "hw:2,0" -> snd_pcm_open */
+char *alsa_uac_mixer_device(void);	/* e.g. "hw:2"   -> snd_mixer_attach */
+
 #endif	/* _ALSA_DEVICE_H_ */

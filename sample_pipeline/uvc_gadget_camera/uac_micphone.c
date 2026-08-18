@@ -82,7 +82,7 @@ int uac_micphone_init(uac_micphone_device_t **uac_micphone)
 	}
 
 	/* init uac recorder device*/
-	uac_device->name	= "hw:1,0";   // uac_playback
+	uac_device->name	= alsa_uac_pcm_name();//"hw:1,0";   // uac_playback (auto-detect UAC gadget card)
 	uac_device->format	= SND_PCM_FORMAT_S16;
 	uac_device->direct	= SND_PCM_STREAM_PLAYBACK;
 	uac_device->rate	= 48000;

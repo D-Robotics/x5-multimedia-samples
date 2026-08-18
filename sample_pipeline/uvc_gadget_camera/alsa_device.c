@@ -632,3 +632,63 @@ int alsa_mixer_get_playback_volume_mute(alsa_mixer_t *mixer, long *volume, int *
 	*mute = _mute;
 	return 0;
 }
+
+/* ----------------------------------------------------------------------- */
+/* UAC gadget sound card auto-detection                                    */
+/* The UAC gadget's ALSA card index is board-dependent (EVB=hw1, MD=hw2),  */
+/* so detect it at runtime by driver/id substring ("u_audio"/"Gadget"/"UAC")*/
+/* instead of hardcoding "hw:N". Detection result is cached on first use.  */
+/* ----------------------------------------------------------------------- */
+
+static int alsa_detect_uac_card(void)
+{
+	snd_ctl_t *ctl = NULL;
+	snd_ctl_card_info_t *info = NULL;
+	int card = -1, found = -1, matches = 0;
+
+	snd_ctl_card_info_alloca(&info);
+	while (snd_card_next(&card) >= 0 && card >= 0) {
+		char nm[16];
+		snprintf(nm, sizeof(nm), "hw:%d", card);
+		if (snd_ctl_open(&ctl, nm, 0) < 0)
+			continue;
+		if (snd_ctl_card_info(ctl, info) >= 0) {
+			const char *drv = snd_ctl_card_info_get_driver(info);
+			const char *cid = snd_ctl_card_info_get_id(info);
+			if ((drv && (strstr(drv, "u_audio") || strstr(drv, "Gadget"))) ||
+			    (cid && (strstr(cid, "UAC") || strstr(cid, "Gadget")))) {
+				found = card;
+				matches++;
+			}
+		}
+		snd_ctl_close(ctl);
+	}
+	if (matches == 1)
+		return found;
+	return -1;
+}
+
+int alsa_uac_card(void)
+{
+	int card = -2;	/* -2 = not resolved yet */
+	if (card == -2) {
+		card = alsa_detect_uac_card();
+		if (card < 0)
+			card = 1;	/* fallback to the original hardcoded index */
+	}
+	return card;
+}
+
+char *alsa_uac_pcm_name(void)
+{
+	static char name[16];
+	snprintf(name, sizeof(name), "hw:%d,0", alsa_uac_card());
+	return name;
+}
+
+char *alsa_uac_mixer_device(void)
+{
+	static char dev[8];
+	snprintf(dev, sizeof(dev), "hw:%d", alsa_uac_card());
+	return dev;
+}

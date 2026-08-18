@@ -161,7 +161,7 @@ int uac_gadget_contex_init(uac_gadget_contex_t *p_uac_gadget_contex)
 	if (p_uac_gadget_contex->uac_mask) {
 		uac_control_t *controller = &p_uac_gadget_contex->controller;
 		alsa_mixer_t *mixer = &controller->mixer;
-		mixer->device = "hw:1";
+		mixer->device = alsa_uac_mixer_device(); //"hw:1";
 
 		if (0 > pthread_create(&controller->thread_id, NULL, uac_controller_loop, controller)) {
 			fprintf(stderr, "create thread uac_controller_loop failed\n");

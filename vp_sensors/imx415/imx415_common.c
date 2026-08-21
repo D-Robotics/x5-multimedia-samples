@@ -37,7 +37,6 @@ int32_t vp_i2c_write_reg16_data8(uint32_t bus, uint8_t i2c_addr, uint16_t reg_ad
 
 	ret = ioctl(file, I2C_RDWR, (uint64_t)&data);
 	if (ret < 0) {
-		printf("WARN: Failed to write to the I2C bus");
 		close(file);
 		return -1;
 	}
@@ -83,7 +82,6 @@ int32_t vp_i2c_read_reg16_data16(uint32_t bus, uint8_t i2c_addr, uint16_t reg_ad
 
 	ret = ioctl(file, I2C_RDWR, (uint64_t)&data);
 	if (ret < 0) {
-		printf("WARN: Failed to read from the I2C bus\n");
 		*value = 0;
 		close(file);
 		return -1;
@@ -104,7 +102,8 @@ int32_t imx415_read_chip_id(vcon_propertie_t vcon_props,
 
 	// imx415 need wakeup at first, IMX415_MODE_OPERATING:0x0
 	if (vp_i2c_write_reg16_data8(vcon_props.bus, addr, IMX415_MODE, IMX415_MODE_OPERATING) != 0) {
-		printf("WARN: Sensor Name: %s, Addr: 0x%02x wakeup failed\n", sensor_config->sensor_name, addr);
+		printf("[wake up] Sensor Name: %s, Addr: 0x%02x not found\n", sensor_config->sensor_name, addr);
+		return -1;
 	}
 	/*
 	 * According to the datasheet we have to wait at least 63 us after
@@ -118,6 +117,7 @@ int32_t imx415_read_chip_id(vcon_propertie_t vcon_props,
 	// IMX415_MODE_STANDBY:0x1
 	if (vp_i2c_write_reg16_data8(vcon_props.bus, addr, IMX415_MODE, IMX415_MODE_STANDBY) != 0) {
 		printf("WARN: Sensor Name: %s, Addr: 0x%02x standby failed\n", sensor_config->sensor_name, addr);
+		return -1;
 	}
 
 	*chip_id = ((chip_id[0] >> 8 & 0xff) | (chip_id[0] << 8 & 0xff00)) & IMX415_SENSOR_INFO_MASK;

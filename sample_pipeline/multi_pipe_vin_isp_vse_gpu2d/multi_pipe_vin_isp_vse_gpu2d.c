@@ -14,6 +14,8 @@
 #include <pthread.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <errno.h>
 
 #include "hbn_api.h"
 #include "gdc_cfg.h"
@@ -84,6 +86,8 @@ static void print_helpcat(void) {
 	printf("-c, --config=\"sensor=id\"\n");
 	printf("\t\tConfigure parameters for each video pipeline, can be repeated up to %d times.\n", MAX_PIPE_NUM);
 	printf("\t\tsensor   --  Sensor index,can have multiple parameters, reference sensor list.\n");
+	printf("\t\tchannel  --  VSE output channel index [0, %d), default 0.\n", VSE_MAX_CHANNELS);
+	printf("\t\toutput   --  Output file name prefix (extension stripped), default 'sensor_name'.\n");
 	printf("-v, --verbose\tEnable verbose mode\n");
 	printf("-y, --enable\tSave yuv file\n");
 	printf("-h, --help\tShow help message\n");
@@ -171,6 +175,25 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 				pipeline_info->active_mipi_host = pipeline_info->pipe_contexts.csi_config.index;
 				used_mipi_host |= (1 << pipeline_info->pipe_contexts.csi_config.index);
 			}
+		} else if (strcmp(key_value[0], "channel") == 0) {
+			// Validate channel with strtol before use to avoid OOB access into vse_ochn_attr[]
+			char *end = NULL;
+			errno = 0;
+			long v = strtol(key_value[1], &end, 10);
+			if (end == key_value[1] || *end != '\0' || errno == ERANGE ||
+			    v < 0 || v >= VSE_MAX_CHANNELS) {
+				fprintf(stderr, "Invalid channel ID: %s (expect [0, %d))\n",
+					key_value[1], VSE_MAX_CHANNELS);
+			} else {
+				pipeline_info->gpu2d_channel = (int)v;
+			}
+		} else if (strcmp(key_value[0], "output") == 0) {
+			if (key_value[1][0] == '\0') {
+				fprintf(stderr, "Empty output file name\n");
+			} else {
+				strncpy(pipeline_info->output_file, key_value[1], sizeof(pipeline_info->output_file) - 1);
+				pipeline_info->output_file[sizeof(pipeline_info->output_file) - 1] = '\0';
+			}
 		} else {
 			fprintf(stderr, "Unknown key: %s\n", key_value[0]);
 		}
@@ -182,6 +205,13 @@ void parse_config(pipeline_info_t *pipeline_info, const char *config, int pipeli
 
 	for (int i = 0; i < count; i++) {
 		free(parts[i]);
+	}
+
+	// 'sensor' is mandatory: missing it NULL-derefs sensor_config in check_sensor_config_valid
+	if (pipeline_info->pipe_contexts.sensor_config == NULL) {
+		fprintf(stderr, "Missing required key 'sensor'. Config: %s\n", config);
+		print_helpcat();
+		exit(0);
 	}
 }
 
@@ -666,7 +696,7 @@ void *encode_vse_chn_data(void *context)
 
 			if (ret != 0) {
 				printf("sensor_%s_hbn_vnode_getframe failed, error=%d\n",
-					current_pipeline[index]->output_file, ret);
+					current_pipeline[index]->pipe_contexts.sensor_config->sensor_name, ret);
 				continue;
 			}
 
@@ -688,7 +718,7 @@ void *encode_vse_chn_data(void *context)
 					vse_chn_frame.buffer.virt_addr[1],
 					vse_chn_frame.buffer.size[0],
 					vse_chn_frame.buffer.size[1]);
-				printf("dump %s ok\n" , current_pipeline[index]->output_file);
+				printf("dump %s ok\n" , dst_file);
 			}
 
 			uint32_t width = vse_chn_frame.buffer.width;
@@ -736,7 +766,7 @@ void *encode_vse_chn_data(void *context)
 			error = create_n2d_buffer_from_hbm_graphic(&src_buffer[index], &input_img->buffer);
 			if (N2D_IS_ERROR(error)) {
 				printf("Error loading buffer from hb_mem, error=%d.\n", error);
-				hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.isp_node_handle,
+				hbn_vnode_releaseframe(current_pipeline[index]->pipe_contexts.vse_node_handle,
 					args->pipeline_info[index]->gpu2d_channel, &vse_chn_frame);
 				continue;
 			}
@@ -756,9 +786,26 @@ void *encode_vse_chn_data(void *context)
 				goto on_free_src;
 			}
 
-			char dst_file[128];
+			char dst_file[512];
+			char name_prefix[256];
+
+			if (pipeline_info[index].output_file[0] != '\0') {
+				/* User-specified output prefix (extension stripped) */
+				strncpy(name_prefix, pipeline_info[index].output_file, sizeof(name_prefix) - 1);
+				name_prefix[sizeof(name_prefix) - 1] = '\0';
+				char *dot = strrchr(name_prefix, '.');
+				if (dot != NULL) {
+					*dot = '\0';
+				}
+			} else {
+				/* Fallback to default sensor_name prefix */
+				strncpy(name_prefix, pipeline_info[index].pipe_contexts.sensor_config->sensor_name,
+					sizeof(name_prefix) - 1);
+				name_prefix[sizeof(name_prefix) - 1] = '\0';
+			}
+
 			int len = snprintf(dst_file, sizeof(dst_file), "./%s_%dx%d_rotated_frameid%d_ts_%ld_ch%d.bmp",
-					   pipeline_info[index].pipe_contexts.sensor_config->sensor_name,
+					   name_prefix,
 					   vse_chn_frame.buffer.height,
 					   vse_chn_frame.buffer.width,
 					   vse_chn_frame.info.frame_id,

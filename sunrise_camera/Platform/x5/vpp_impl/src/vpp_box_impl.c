@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include <pthread.h>
 #include <signal.h>
@@ -300,10 +301,12 @@ static void* get_vse_and_codec_process_thread_func(void *ptr)
 			SC_LOGE("vp_vse_release_frame failed");
 			exit(-1);
 		}
-		ret = vp_codec_release_output(&p_vpp_codec_ctx->m_encode_context, &encode_stream);
-		if (ret != 0) {
-			SC_LOGE("vp_vse_release_frame failed");
-			exit(-1);
+		if (is_geted_codec_stream) {
+			ret = vp_codec_release_output(&p_vpp_codec_ctx->m_encode_context, &encode_stream);
+			if (ret != 0) {
+				SC_LOGE("channel %d stream %s vp_codec_release_output failed, ret=%d", p_vpp_box->pipline_id, p_vpp_codec_ctx->stream_name, ret);
+				break;
+			}
 		}
 	}
 

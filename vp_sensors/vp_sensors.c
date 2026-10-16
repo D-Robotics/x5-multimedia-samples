@@ -80,6 +80,7 @@ extern vp_sensor_config_t isx031_linear_1920x1536_yuv422_30fps_4lane_vc0;
 extern vp_sensor_config_t isx031_linear_1920x1536_yuv422_30fps_4lane_vc1;
 extern vp_sensor_config_t isx031_linear_1920x1536_yuv422_30fps_4lane_vc2;
 extern vp_sensor_config_t isx031_linear_1920x1536_yuv422_30fps_4lane_vc3;
+extern vp_sensor_config_t sc233_linear_1920x1080_raw10_120fps_4lane;
 
 vp_sensor_config_t *vp_sensor_config_list[] = {
 	&sc1330t_linear_1280x960_raw10_30fps_1lane,
@@ -147,6 +148,7 @@ vp_sensor_config_t *vp_sensor_config_list[] = {
 	&isx031_linear_1920x1536_yuv422_30fps_4lane_vc1,
 	&isx031_linear_1920x1536_yuv422_30fps_4lane_vc2,
 	&isx031_linear_1920x1536_yuv422_30fps_4lane_vc3,
+	&sc233_linear_1920x1080_raw10_120fps_4lane
 };
 uint32_t vp_get_sensors_list_number() {
 	return sizeof(vp_sensor_config_list) / sizeof(vp_sensor_config_list[0]);

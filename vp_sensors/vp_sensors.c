@@ -1114,3 +1114,111 @@ int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_conf
 
 	return ret;
 }
+
+vp_sensor_config_t *vp_get_sensor_config_by_mipi_host(int32_t mipi_host_index,
+	vp_csi_config_t* csi_config,int sensor_height,int sensor_width,int sensor_fps)
+{
+	int32_t j = 0;
+	int32_t sensor_n = 0;
+	int32_t sensor_list[10] = {-1};
+
+	struct vcon_properties vcon_props_array[VP_MAX_VCON_NUM];
+
+	if (check_mipi_host_status(mipi_host_index) == 0) {
+		printf("Mipi csi%d has been used, please use other Cam interfaces\n", mipi_host_index);
+		return NULL;
+	}
+	int mclk_is_not_configed = vp_sensor_mipi_host_mclk_is_not_configed(mipi_host_index);
+	read_vcon_info_from_device_tree(mipi_host_index, &vcon_props_array[mipi_host_index]);
+
+	if(!mclk_is_not_configed) {
+		/* enable mclk */
+		write_mipi_host_freq(mipi_host_index, vp_sensor_config_list[mipi_host_index]->vin_attr_ex->mclk_ex_attr.mclk_freq);
+		enable_mipi_host_clock(mipi_host_index, 1);
+	}
+
+	csi_config->mclk_is_not_configed = mclk_is_not_configed;
+
+	printf("Searching camera sensor on device: %s ", vcon_props_array[mipi_host_index].device_path);
+	printf("i2c bus: %d ", vcon_props_array[mipi_host_index].bus);
+	printf("mipi rx phy: %d\n", vcon_props_array[mipi_host_index].rx_phy[1]);
+
+	// 如果该vcon使能了，检测该vcon上是否有连接 sensor
+	if (vcon_props_array[mipi_host_index].status[0] == 'o') { // okay
+		// 检测该vcon上连接的 sensor
+		for (j = 0; j < vp_get_sensors_list_number(); j++) {
+			if(vp_sensor_config_list[j]->camera_config->sensor_mode == DOL2_M){
+				continue;
+			}
+			/*enable gpio_oth, enable camera sensor gpio, maybe pwd/reset gpio */
+			for (int k = 0; k < 8; ++k) {
+				if (vcon_props_array[mipi_host_index].gpio_oth[k] != 0) {
+					if ((vp_sensor_config_list[j]->camera_config->gpio_enable_bit & (1 << k)) != 0) {
+						enable_sensor_pin(vcon_props_array[mipi_host_index].gpio_oth[k],
+							(1 - vp_sensor_config_list[j]->camera_config->gpio_level_bit));
+					}
+				}
+			}
+
+			uint32_t sensor_addr = 0;
+			int ret = check_sensor_reg_value(vcon_props_array[mipi_host_index], vp_sensor_config_list[j], &sensor_addr);
+			if (ret == 0) {
+				if ((sensor_height == -1 || vp_sensor_config_list[j]->camera_config->height == sensor_height) && 
+    			  (sensor_width == -1 || vp_sensor_config_list[j]->camera_config->width == sensor_width) && 
+    			  (sensor_fps == -1 || vp_sensor_config_list[j]->camera_config->fps == sensor_fps)) {
+					printf("[%d] INFO: Found sensor name:%s on mipi rx csi %d, "
+						"i2c addr 0x%x, config_file:%s\n",
+					sensor_n,
+					vp_sensor_config_list[j]->sensor_name,
+					vcon_props_array[mipi_host_index].rx_phy[1],
+					vp_sensor_config_list[j]->camera_config->addr,
+					vp_sensor_config_list[j]->config_file);
+					if(sensor_n < 10)
+					{
+						sensor_list[sensor_n] = j;
+						sensor_n++;
+					}
+					else
+						break;
+				}
+			}
+		}
+
+		if(sensor_n > 0)
+		{
+			j = 0;
+			if(sensor_n > 1)
+			{
+				/* 这里需要更改一下，不能手动选， 看用 fps 匹配的策略 还是 什么方法 ，现在明确，优先完整匹配，但如果不匹配，就选择最接近的一项，然后输出log，进行提醒。*/
+				int best_index = 0;
+				int max_resolution = 0;
+				int max_fps = 0;
+				for (int k = 0; k < sensor_n; k++) 
+				{
+					vp_sensor_config_t *config = vp_sensor_config_list[sensor_list[k]];
+					int current_res = config->camera_config->width * config->camera_config->height;
+					int current_fps = config->camera_config->fps;
+
+					// 优先比较分辨率，若相同则比较 FPS
+					if (current_res > max_resolution || 
+					(current_res == max_resolution && current_fps > max_fps)) 
+					{
+						best_index = k;
+						max_resolution = current_res;
+						max_fps = current_fps;
+					}
+				}
+				j = best_index;
+				printf("Auto-selected sensor: %s (Resolution: %dx%d@%dfps)\n",
+					vp_sensor_config_list[sensor_list[j]]->sensor_name,
+					vp_sensor_config_list[sensor_list[j]]->camera_config->width,
+					vp_sensor_config_list[sensor_list[j]]->camera_config->height,
+					vp_sensor_config_list[sensor_list[j]]->camera_config->fps);
+			}
+			/* Fixed Mipi host */
+			vp_sensor_config_list[sensor_list[j]]->vin_node_attr->cim_attr.mipi_rx = vcon_props_array[mipi_host_index].rx_phy[1];
+			return vp_sensor_config_list[sensor_list[j]];
+		}
+	}
+	return NULL;
+}

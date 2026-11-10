@@ -111,6 +111,10 @@ typedef struct vp_sensor_config_s {
 	uint32_t support_sensor_mode[SENSOR_MODE_SUPPORT_COUNT];
 } vp_sensor_config_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern vp_sensor_config_t *vp_sensor_config_list[];
 
 uint32_t vp_get_sensors_list_number();
@@ -118,7 +122,14 @@ void vp_show_sensors_list();
 void vp_show_sensors_list_vse_limit(uint32_t width_limit, uint32_t height_limit);
 vp_sensor_config_t *vp_get_sensor_config_by_name(char *sensor_name);
 void vp_sensor_detect_structed(csi_list_info_t *csi_list_info);
+vp_sensor_config_t *vp_get_sensor_config_by_mipi_host(int32_t mipi_host_index,
+	vp_csi_config_t* csi_config,int sensor_height,int sensor_width,int sensor_fps);
 int vp_get_sensor_info_by_name(const char *sensor_name, int *width , int *height, int *fps);
 int32_t vp_sensor_fixed_mipi_host(vp_sensor_config_t *sensor_config, vp_csi_config_t* mipi_config);
 int32_t vp_sensor_multi_fixed_mipi_host(vp_sensor_config_t *sensor_config, int used_mipi_host, vp_csi_config_t* mipi_config);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif // __VP_SENSORS_H__

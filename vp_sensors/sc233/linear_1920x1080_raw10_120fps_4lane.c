@@ -1,9 +1,5 @@
 #include "vp_sensors.h"
 
-/*
- * sc233: sensor outputs 1920x1080@120fps RAW10 4lane (window via 0x3200~0x320b).
- * No GPU2D; MIPI/VIN/ISP all 1920x1080.
- */
 #define SENSOR_WIDTH  1920
 #define SENSOR_HEIGHT  1080
 #define SENSOE_FPS 120
@@ -16,7 +12,7 @@ static mipi_config_t sc233_mipi_config = {
 		.lane = 4,
 		.datatype = RAW10,
 		.fps = SENSOE_FPS,
-		.mclk = 24,
+		.mclk = 1,
 		.mipiclk = 3240,
 		.width = SENSOR_WIDTH,
 		.height = SENSOR_HEIGHT,
@@ -40,7 +36,7 @@ static camera_config_t sc233_camera_config = {
 	.format = RAW10,
 	.width = SENSOR_WIDTH,
 	.height = SENSOR_HEIGHT,
-	.gpio_enable_bit = 0x07,
+	.gpio_enable_bit = 0x01,
 	.gpio_level_bit = 0x00,
 	.mipi_cfg = &sc233_mipi_config,
 	.calib_lname = "/usr/hobot/lib/sensor/sc233_tuning.json",
@@ -52,7 +48,7 @@ static vin_node_attr_t sc233_vin_node_attr = {
 		.mipi_rx = 0,
 		.vc_index = 0,
 		.ipi_channel = 1,
-		.cim_isp_flyby = 0,
+		.cim_isp_flyby = 1,
 		.func = {
 			.enable_frame_id = 1,
 			.set_init_frame_id = 0,
@@ -123,7 +119,7 @@ static vin_ochn_attr_t sc233_vin_ochn_attr = {
 };
 
 static isp_attr_t sc233_isp_attr = {
-	.input_mode = DDR_MODE,
+	.input_mode = PASSTHROUGH_MODE,
 	.sensor_mode = ISP_NORMAL_M,
 	.crop = {
 		.x = 0,

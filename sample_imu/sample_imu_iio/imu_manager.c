@@ -22,11 +22,13 @@
 extern const struct SensorDriver bmi08x_driver;
 extern const struct SensorDriver icm42688_driver_gyro;
 extern const struct SensorDriver icm42688_driver_accel;
+extern const struct SensorDriver icm42607_driver;
 
 static const struct SensorDriver *drivers[] = {
 	&bmi08x_driver,
 	&icm42688_driver_gyro,
 	&icm42688_driver_accel,
+	&icm42607_driver,
 	NULL
 };
 
